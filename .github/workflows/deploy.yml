@@ -1,0 +1,57 @@
+name: Deploy to Google Apps Script
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: gas-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+      DEPLOYMENT_ID: ${{ secrets.DEPLOYMENT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Kiểm tra cú pháp backend
+        run: node --check src/Code.js
+
+      - name: Kiểm tra secret xác thực
+        id: auth
+        run: |
+          if [ -n "$CLASPRC_JSON" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Chưa có secret CLASPRC_JSON nên bỏ qua bước triển khai. Xem README, mục GitHub Actions."
+          fi
+
+      - name: Cài clasp
+        if: steps.auth.outputs.ready == 'true'
+        run: npm install -g @google/clasp@2.4.2
+
+      - name: Ghi thông tin xác thực clasp
+        if: steps.auth.outputs.ready == 'true'
+        run: printf '%s' "$CLASPRC_JSON" > ~/.clasprc.json
+
+      - name: Đẩy mã nguồn
+        if: steps.auth.outputs.ready == 'true'
+        run: clasp push -f
+
+      # Có DEPLOYMENT_ID: cập nhật đúng bản triển khai cũ -> URL Web App không đổi.
+      # Chưa có: chỉ đẩy mã nguồn, không tạo bản triển khai mới (tránh sinh URL lạ mỗi lần push).
+      - name: Cập nhật bản triển khai Web App
+        if: steps.auth.outputs.ready == 'true' && env.DEPLOYMENT_ID != ''
+        run: clasp deploy --deploymentId "$DEPLOYMENT_ID" --description "CI ${GITHUB_SHA::7}"
+
+      - name: Xoá thông tin xác thực
+        if: always()
+        run: rm -f ~/.clasprc.json
