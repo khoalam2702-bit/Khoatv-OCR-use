@@ -76,6 +76,10 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 - **Xuất Excel** tạo ngay trên trình duyệt: đúng các bản ghi đang lọc, không kèm ảnh / PDF; loại có bảng chi tiết (nhập kho, đơn hàng...) có thêm một sheet chi tiết.
 - Màn quét: chọn loại tài liệu là hiện sẵn các trường (để trống), quét xong mới điền thông tin vào.
 
+## Phiếu nhập / xuất kho
+
+Trên form, ô **Kho nhập / Kho xuất** nằm ngay dưới bảng chi tiết hàng. Bảng chi tiết có cột **Mã hàng** đứng đầu (dùng chung cho đơn hàng, nhập kho, xuất kho; lưu trong cùng ô JSON nên không cần đổi cấu trúc sheet). Thứ tự cột trong Google Sheets không đổi.
+
 ## Định dạng tiền
 
 Các ô tiền (đơn giá, số tiền, thành tiền, tổng tiền hàng, giảm giá, thanh toán, tiền COD, cước phí, tổng giá trị, kể cả các dòng chi tiết) hiển thị dạng `1.234.567` ngay khi gõ (chấm ngăn hàng nghìn, phẩy cho số lẻ). Dữ liệu lưu vào Sheets vẫn là số thuần. Khối lượng, số lượng, diện tích không định dạng kiểu tiền.

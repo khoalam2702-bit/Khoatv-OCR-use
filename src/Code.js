@@ -44,6 +44,7 @@ const MIME_EXT = {
 
 // Cột của các bảng chi tiết hàng hoá / vật tư (lưu jsonb)
 const ITEM_FIELDS = [
+  { k: 'ma_hang', label: 'Mã hàng', type: 'string' },
   { k: 'ten_hang', label: 'Tên hàng / vật tư', type: 'string' },
   { k: 'don_vi', label: 'ĐVT', type: 'string' },
   { k: 'so_luong', label: 'Số lượng', type: 'number' },
@@ -52,6 +53,8 @@ const ITEM_FIELDS = [
 ];
 
 function f_(k, label, type) { return { k: k, label: label, type: type || 'string' }; }
+/** Trường hiển thị NGAY DƯỚI bảng chi tiết trên form (thứ tự cột dữ liệu trong Sheets không đổi). */
+function a_(k, label) { return { k: k, label: label, type: 'string', afterItems: true }; }
 /** Trường tiền: giao diện hiển thị dạng 1.234.567 (dấu chấm ngăn cách hàng nghìn). */
 function m_(k, label) { return { k: k, label: label, type: 'number', money: true }; }
 
@@ -117,16 +120,16 @@ const DOC_TYPES = {
   },
   NHAP_KHO: {
     label: 'Phiếu nhập kho', uniqueKey: 'so_phieu_nhap', required: ['so_phieu_nhap'],
-    hint: 'Phiếu nhập kho. Liệt kê đủ từng dòng vật tư.',
-    fields: [f_('so_phieu_nhap', 'Số phiếu nhập'), f_('ngay_nhap', 'Ngày nhập'), f_('nha_cung_cap', 'Nhà cung cấp'), f_('kho_nhap', 'Kho nhập'),
+    hint: 'Phiếu nhập kho. Liệt kê đủ từng dòng vật tư; ma_hang là mã vật tư / mã hàng của dòng đó (để null nếu phiếu không ghi). kho_nhap là mã hoặc tên kho nhập.',
+    fields: [f_('so_phieu_nhap', 'Số phiếu nhập'), f_('ngay_nhap', 'Ngày nhập'), f_('nha_cung_cap', 'Nhà cung cấp'), a_('kho_nhap', 'Kho nhập'),
       f_('nguoi_giao', 'Người giao'), f_('nguoi_nhan', 'Người nhận'), f_('chi_tiet_vat_tu', 'Chi tiết vật tư', 'items'),
       m_('tong_gia_tri', 'Tổng giá trị')]
   },
   XUAT_KHO: {
     label: 'Phiếu xuất kho', uniqueKey: 'so_phieu_xuat', required: ['so_phieu_xuat'],
-    hint: 'Phiếu xuất kho. Liệt kê đủ từng dòng vật tư xuất.',
+    hint: 'Phiếu xuất kho. Liệt kê đủ từng dòng vật tư xuất; ma_hang là mã vật tư / mã hàng của dòng đó (để null nếu phiếu không ghi). kho_xuat là mã hoặc tên kho xuất.',
     fields: [f_('so_phieu_xuat', 'Số phiếu xuất'), f_('ngay_xuat', 'Ngày xuất'), f_('nguoi_nhan', 'Người nhận'), f_('bo_phan_nhan', 'Bộ phận / công trình nhận'),
-      f_('kho_xuat', 'Kho xuất'), f_('ly_do_xuat', 'Lý do xuất'), f_('chi_tiet_hang_xuat', 'Chi tiết hàng xuất', 'items'), f_('ghi_chu', 'Ghi chú', 'long')]
+      a_('kho_xuat', 'Kho xuất'), f_('ly_do_xuat', 'Lý do xuất'), f_('chi_tiet_hang_xuat', 'Chi tiết hàng xuất', 'items'), f_('ghi_chu', 'Ghi chú', 'long')]
   },
   CAN_DIEN_TU: {
     label: 'Màn hình cân điện tử', uniqueKey: null, required: ['khoi_luong', 'don_vi'],
