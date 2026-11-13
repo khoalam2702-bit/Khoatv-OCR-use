@@ -103,7 +103,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
 .thumb{position:relative;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel2);aspect-ratio:4/3;display:grid;place-items:center;cursor:zoom-in;padding:0;color:var(--tx2);font:600 12px inherit;font-family:inherit}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb .no{position:absolute;left:4px;top:4px;padding:1px 7px;border-radius:999px;background:rgba(2,6,23,.78);color:#fff;font-size:11.5px;font-weight:700}
-.thumb .rm{position:absolute;right:4px;top:4px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(2,6,23,.78);color:#fff;cursor:pointer;font-size:14px;line-height:1;padding:0}
+.thumb .rm{position:absolute;right:3px;top:3px;z-index:2;width:32px;height:32px;border-radius:50%;border:0;background:rgba(190,18,60,.92);color:#fff;cursor:pointer;font-size:20px;line-height:1;padding:0;display:grid;place-items:center}
+.thumb .rm:disabled{opacity:.4;cursor:not-allowed}
 .thumb .pdf{display:grid;gap:2px;text-align:center;padding:6px}
 .res-foot{position:sticky;bottom:0;display:flex;gap:8px;justify-content:flex-end;padding:10px 0 2px;margin-top:12px;background:var(--card);border-top:1px solid var(--line)}
 html[data-theme=dark] .res-foot{background:var(--panel)}
@@ -471,8 +472,12 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     return true;
   }
   function removeFile(i) {
-    if (S.busy || S.scan) return;
-    S.files.splice(i, 1); renderThumbs(); refresh();
+    if (S.busy) return;
+    if (S.scan && S.scan.saved) { toast('Bản ghi đã lưu. Bấm "Quét tài liệu khác" để quét bộ mới.', 'err'); return; }
+    var go3 = function () { S.files.splice(i, 1); clearResult(); renderThumbs(); refresh(); };
+    // đã quét nhưng chưa lưu: bỏ tệp thì kết quả cũ không còn đúng, hỏi trước khi bỏ
+    if (S.scan) askConfirm('Bỏ tệp này sẽ bỏ luôn kết quả đang kiểm tra (chưa lưu) để quét lại. Tiếp tục?', 'Bỏ tệp').then(function (ok) { if (ok) go3(); });
+    else go3();
   }
   function setFiles(list) { S.files = list || []; clearResult(); renderThumbs(); refresh(); }
   function showFile(file) {
@@ -490,7 +495,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
         : el('img', { src: 'data:' + f.mimeType + ';base64,' + f.base64, alt: 'Tệp ' + (i + 1) });
       var rm = el('button', { type: 'button', 'class': 'rm', 'aria-label': 'Bỏ tệp ' + (i + 1), text: '×',
         on: { click: function (e) { e.stopPropagation(); removeFile(i); } } });
-      rm.disabled = !!S.scan;
+      rm.disabled = !!(S.scan && S.scan.saved);
       box.appendChild(el('div', { 'class': 'thumb', role: 'button', tabindex: '0', title: f.name, on: {
         click: function () { showFile(f); },
         keydown: function (e) { if (e.key === 'Enter') showFile(f); }
@@ -709,7 +714,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
       (S.files.length > 1 ? 'Quét ' + S.files.length + ' tệp' : 'Bắt đầu quét'));
     $('btnReset').textContent = hasScan && S.scan.saved ? 'Quét tài liệu khác' : 'Làm lại';
     ['btnCam', 'btnImg', 'btnPdf'].forEach(function (id) { $(id).disabled = hasScan; });
-    Array.prototype.forEach.call(document.querySelectorAll('.thumb .rm'), function (b) { b.disabled = hasScan; });
+    Array.prototype.forEach.call(document.querySelectorAll('.thumb .rm'), function (b) { b.disabled = hasScan && S.scan.saved; });
   }
 
   $('btnScan').addEventListener('click', function () {
