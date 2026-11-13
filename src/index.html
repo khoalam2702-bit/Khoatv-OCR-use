@@ -633,6 +633,18 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
       if (required) lbl.appendChild(el('span', { 'class': 'req', text: '*' }));
       box.appendChild(el('div', { 'class': isLong(f) ? 'full' : '' }, [lbl, inp]));
     });
+    // Biển số xe: tên tỉnh/thành tự tra theo mã tỉnh (2 số đầu của biển)
+    var pc = box.querySelector('[data-k="ma_tinh_thanh"]'), pn = box.querySelector('[data-k="ten_tinh_thanh"]'), pp = box.querySelector('[data-k="bien_so_day_du"]');
+    if (pc && pn && S.cfg && S.cfg.plateProvinces) {
+      var lookup = function () {
+        var m = /^\s*(\d{2})/.exec(pc.value) || /^\s*(\d{2})/.exec(pp ? pp.value : '');
+        var name = m && S.cfg.plateProvinces[m[1]];
+        if (name) pn.value = name;
+      };
+      pc.addEventListener('input', lookup);
+      if (pp) pp.addEventListener('input', function () { if (pc.value.trim() === '') lookup(); });
+      pn.title = 'Tự tra theo mã tỉnh';
+    }
     // Cân điện tử: số tiền = số kg × đơn giá, trừ khi người dùng đã tự nhập số tiền
     var q = box.querySelector('[data-k="khoi_luong"]'), g = box.querySelector('[data-k="don_gia"]'), s = box.querySelector('[data-k="so_tien"]');
     if (q && g && s) {

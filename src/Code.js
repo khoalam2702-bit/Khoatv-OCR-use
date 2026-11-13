@@ -139,11 +139,39 @@ const DOC_TYPES = {
   BIEN_SO_XE: {
     label: 'Biển số xe', uniqueKey: null, required: ['bien_so_day_du'],
     hint: 'Biển số xe Việt Nam. ma_tinh_thanh là 2 chữ số đầu; seri_dang_ky là phần chữ/số seri sau mã tỉnh; ' +
-      'loai_phuong_tien: ô tô, xe máy, xe tải...; mau_bien: trắng, vàng, xanh, đỏ.',
-    fields: [f_('bien_so_day_du', 'Biển số đầy đủ'), f_('ma_tinh_thanh', 'Mã tỉnh/thành'), f_('seri_dang_ky', 'Seri đăng ký'),
+      'loai_phuong_tien: ô tô, xe máy, xe tải...; mau_bien: trắng, vàng, xanh, đỏ. ' +
+      'Không cần điền ten_tinh_thanh (hệ thống tự tra theo ma_tinh_thanh), để null.',
+    fields: [f_('bien_so_day_du', 'Biển số đầy đủ'), f_('ma_tinh_thanh', 'Mã tỉnh/thành'), f_('ten_tinh_thanh', 'Tên tỉnh/thành'), f_('seri_dang_ky', 'Seri đăng ký'),
       f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển')]
   }
 };
+
+/** Mã biển số xe (2 chữ số đầu) → tên tỉnh/thành theo mã biển kiểm soát. Hệ thống tự tra, không để AI đoán. */
+const PLATE_PROVINCES = (function () {
+  const m = {};
+  function s(name, codes) { codes.forEach(function (c) { m[String(c)] = name; }); }
+  s('Cao Bằng', [11]); s('Lạng Sơn', [12]); s('Quảng Ninh', [14]); s('Hải Phòng', [15, 16]); s('Thái Bình', [17]);
+  s('Nam Định', [18]); s('Phú Thọ', [19]); s('Thái Nguyên', [20]); s('Yên Bái', [21]); s('Tuyên Quang', [22]);
+  s('Hà Giang', [23]); s('Lào Cai', [24]); s('Lai Châu', [25]); s('Sơn La', [26]); s('Điện Biên', [27]);
+  s('Hòa Bình', [28]); s('Hà Nội', [29, 30, 31, 32, 33, 40]); s('Hải Dương', [34]); s('Ninh Bình', [35]);
+  s('Thanh Hóa', [36]); s('Nghệ An', [37]); s('Hà Tĩnh', [38]); s('Đồng Nai', [39, 60]); s('Đà Nẵng', [43]);
+  s('Đắk Lắk', [47]); s('Đắk Nông', [48]); s('Lâm Đồng', [49]); s('TP. Hồ Chí Minh', [41, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59]);
+  s('Bình Dương', [61]); s('Long An', [62]); s('Tiền Giang', [63]); s('Vĩnh Long', [64]); s('Cần Thơ', [65]);
+  s('Đồng Tháp', [66]); s('An Giang', [67]); s('Kiên Giang', [68]); s('Cà Mau', [69]); s('Tây Ninh', [70]);
+  s('Bến Tre', [71]); s('Bà Rịa - Vũng Tàu', [72]); s('Quảng Bình', [73]); s('Quảng Trị', [74]); s('Thừa Thiên Huế', [75]);
+  s('Quảng Ngãi', [76]); s('Bình Định', [77]); s('Phú Yên', [78]); s('Khánh Hòa', [79]); s('Gia Lai', [81]);
+  s('Kon Tum', [82]); s('Sóc Trăng', [83]); s('Trà Vinh', [84]); s('Ninh Thuận', [85]); s('Bình Thuận', [86]);
+  s('Vĩnh Phúc', [88]); s('Hưng Yên', [89]); s('Hà Nam', [90]); s('Quảng Nam', [92]); s('Bình Phước', [93]);
+  s('Bạc Liêu', [94]); s('Hậu Giang', [95]); s('Bắc Kạn', [97]); s('Bắc Giang', [98]); s('Bắc Ninh', [99]);
+  return m;
+})();
+
+/** Tên tỉnh từ mã biển ("43", "43A") hoặc từ biển số đầy đủ ("43A-123.45"). Trả '' nếu không tra được. */
+function plateProvince_(code, plate) {
+  let m = /^\s*(\d{2})/.exec(String(code == null ? '' : code));
+  if (!m) m = /^\s*(\d{2})/.exec(String(plate == null ? '' : plate));
+  return m && PLATE_PROVINCES[m[1]] ? PLATE_PROVINCES[m[1]] : '';
+}
 
 /* ============================ WEB APP ============================ */
 
@@ -161,7 +189,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, plateProvinces: PLATE_PROVINCES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
@@ -607,7 +635,8 @@ function scanDocument(token, payload) {
     return file.getId();
   });
 
-  const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
+  const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {};
+  if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   return { data: data, fileIds: fileIds, ms: Date.now() - started };
 }
 
@@ -700,6 +729,11 @@ function buildRecord_(type, data) {
   data = data || {};
   const record = {};
   type.fields.forEach(function (f) { record[f.k] = clean_(data[f.k], f.type); });
+  if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) {
+    // tên tỉnh luôn tra theo mã biển; chỉ giữ giá trị nhập tay khi mã không tra được
+    const pn = plateProvince_(record.ma_tinh_thanh, record.bien_so_day_du);
+    if (pn) record.ten_tinh_thanh = pn;
+  }
   const missing = type.fields.filter(function (f) {
     return type.required.indexOf(f.k) >= 0 && (record[f.k] === null || record[f.k] === '');
   });

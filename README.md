@@ -80,6 +80,10 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 
 Các trường: `khoi_luong` (số kg), `don_vi`, `don_gia`, `so_tien`, `trang_thai`, `ghi_chu_can`. Khi nhập khối lượng và đơn giá, `so_tien` tự tính = khối lượng × đơn giá, vẫn sửa tay được. AI chỉ điền đơn giá / số tiền nếu ảnh hoặc phiếu có ghi, không tự tính. Sheet `CAN_DIEN_TU` của các tháng đã có sẽ tự được chèn thêm 2 cột mới, dữ liệu cũ giữ nguyên.
 
+## Biển số xe
+
+Có thêm cột `ten_tinh_thanh` (ngay sau `ma_tinh_thanh`). Tên tỉnh/thành do hệ thống tự tra theo 2 số đầu của biển (bảng `PLATE_PROVINCES` trong `Code.js`), không để AI đoán; sửa mã tỉnh trên form thì tên tỉnh đổi theo. Tên theo mã biển kiểm soát vốn có (chưa gộp tỉnh 2025); mã không có trong bảng thì để trống và nhập tay được. Sheet `BIEN_SO_XE` các tháng cũ tự được chèn thêm cột.
+
 ## Phân quyền
 
 Chỉ ADMIN được tạo / sửa / khoá / xoá tài khoản, đặt lại mật khẩu và tick quyền riêng cho từng người. ADMIN luôn có toàn quyền. Quyền áp dụng cho **bản ghi OCR đã quét**:
