@@ -2,31 +2,39 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <title>OCR Tài liệu</title>
 <style>
   :root{color-scheme:light dark;--bg:#f1f5f9;--panel:#fff;--line:#cbd5e1;--tx1:#0f172a;--tx3:#64748b;--pri:#2563eb;--prih:#1d4ed8}
   @media (prefers-color-scheme:dark){:root{--bg:#020617;--panel:#0b1220;--line:#1e293b;--tx1:#fff;--tx3:#9aa8bd}}
   *{box-sizing:border-box}
-  body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;background:var(--bg);color:var(--tx1);
-    font:14.5px/1.45 '72','Segoe UI','Be Vietnam Pro',Arial,sans-serif}
-  .card{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;text-align:center}
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--tx1);font:14.5px/1.45 '72','Segoe UI','Be Vietnam Pro',Arial,sans-serif}
+  /* Ứng dụng chạy trong khung toàn màn hình: thanh địa chỉ vẫn là khoatv-ocr-use.vercel.app */
+  #app{position:fixed;inset:0;width:100%;height:100%;border:0;background:var(--bg)}
+  #boot{position:fixed;inset:0;display:grid;place-items:center;padding:16px;pointer-events:none;transition:opacity .25s}
+  #boot.done{opacity:0}
+  .card{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;text-align:center;pointer-events:auto}
   .logo{width:44px;height:44px;margin:0 auto 12px;border-radius:12px;background:var(--pri);color:#fff;display:grid;place-items:center;font-weight:800}
   h1{font-size:18px;margin:0 0 6px}
   p{margin:0 0 16px;color:var(--tx3)}
+  p.warn{color:#b45309}
   a.btn{display:block;padding:11px 14px;border-radius:8px;background:var(--pri);color:#fff;text-decoration:none;font-weight:700}
   a.btn:hover{background:var(--prih)}
-  .warn{color:#b45309}
+  #alt{position:fixed;right:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:5;padding:5px 10px;border-radius:999px;
+    background:var(--panel);border:1px solid var(--line);color:var(--tx3);font-size:12px;text-decoration:none;opacity:.75}
+  #alt:hover{opacity:1;color:var(--tx1)}
 </style>
 </head>
 <body>
-<main class="card">
+<div id="boot"><main class="card">
   <div class="logo">OCR</div>
   <h1>Quét &amp; nhận dạng tài liệu</h1>
-  <p id="msg">Đang chuyển đến ứng dụng...</p>
-  <a class="btn" id="go" href="#" hidden>Mở ứng dụng</a>
-</main>
+  <p id="msg">Đang mở ứng dụng...</p>
+  <a class="btn" id="go" href="#" hidden target="_top">Mở ứng dụng ở tab mới</a>
+</main></div>
+<iframe id="app" title="OCR Tài liệu" hidden allow="camera; microphone; clipboard-write; fullscreen" referrerpolicy="no-referrer"></iframe>
+<a id="alt" href="#" target="_blank" rel="noopener" hidden>Mở tab mới</a>
 <script>
   // Dán URL Web App của Apps Script vào đây (dạng https://script.google.com/macros/s/.../exec).
   // Lấy sau khi Deploy > New deployment > Web app trong Apps Script.
@@ -34,9 +42,19 @@
 
   var ok = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(APP_URL);
   var msg = document.getElementById('msg'), go = document.getElementById('go');
+  var frame = document.getElementById('app'), alt = document.getElementById('alt'), boot = document.getElementById('boot');
   if (ok) {
-    go.href = APP_URL; go.hidden = false;
-    location.replace(APP_URL);
+    alt.href = APP_URL; alt.hidden = false;
+    go.href = APP_URL;
+    frame.addEventListener('load', function () { boot.classList.add('done'); });
+    frame.src = APP_URL; frame.hidden = false;
+    // Nếu khung không tải được (Apps Script chưa cho nhúng hoặc bị chặn), hiện nút mở trực tiếp
+    setTimeout(function () {
+      if (!boot.classList.contains('done')) {
+        msg.textContent = 'Ứng dụng đang tải chậm. Nếu màn hình vẫn trống, hãy mở trực tiếp:';
+        go.hidden = false; boot.style.pointerEvents = 'auto';
+      }
+    }, 8000);
   } else {
     msg.textContent = 'Chưa cấu hình địa chỉ ứng dụng. Quản trị viên cần điền APP_URL trong public/index.html.';
     msg.className = 'warn';

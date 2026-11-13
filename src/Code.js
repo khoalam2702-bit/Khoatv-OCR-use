@@ -23,7 +23,9 @@ const TZ = 'Asia/Ho_Chi_Minh';
 const DIRS = { RAW: 'ANH_GOC', DATA: 'DU_LIEU', USERS_BOOK: 'OCR_USERS', BOOK_PREFIX: 'OCR_' };
 
 const LIMITS = {
-  MAX_FILE_BYTES: 14 * 1024 * 1024,   // sau khi giải mã base64
+  MAX_FILE_BYTES: 14 * 1024 * 1024,   // mỗi tệp, sau khi giải mã base64
+  MAX_TOTAL_BYTES: 24 * 1024 * 1024,  // tổng các tệp của một tài liệu
+  MAX_FILES: 6,                       // số tệp (mặt / trang) tối đa cho một tài liệu
   SESSION_SECONDS: 21600,             // 6 giờ (mức tối đa của CacheService)
   LOGIN_MAX_FAIL: 5,
   LOGIN_LOCK_SECONDS: 900,
@@ -144,6 +146,8 @@ const DOC_TYPES = {
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
     .setTitle('OCR Tài liệu')
+    // Cho phép nhúng trong khung của trang Vercel (khoatv-ocr-use.vercel.app) để giữ nguyên địa chỉ
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
@@ -153,7 +157,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
@@ -553,9 +557,9 @@ function canViewAll_(me) {
 /* ============================ BƯỚC 1: QUÉT ============================ */
 
 /**
- * Lưu tệp gốc vào Drive rồi gọi Gemini bóc tách. CHƯA ghi Google Sheets:
- * người dùng xem và sửa kết quả trên giao diện, sau đó mới gọi saveRecord.
- * payload = { docType, mimeType, base64 }
+ * Lưu các tệp gốc vào Drive rồi gọi Gemini MỘT lần cho cả bộ tệp (ví dụ CCCD 2 mặt = 2 ảnh, 1 bản ghi).
+ * CHƯA ghi Google Sheets: người dùng xem và sửa kết quả trên giao diện, sau đó mới gọi saveRecord.
+ * payload = { docType, files: [{ mimeType, base64 }, ...] }  (tối đa LIMITS.MAX_FILES tệp)
  */
 function scanDocument(token, payload) {
   const started = Date.now();
@@ -564,28 +568,43 @@ function scanDocument(token, payload) {
   payload = payload || {};
   const type = DOC_TYPES[payload.docType];
   if (!type) throw new Error('Loại tài liệu không hợp lệ.');
-  const ext = MIME_EXT[payload.mimeType];
-  if (!ext) throw new Error('Chỉ hỗ trợ ảnh JPG, PNG, WEBP hoặc tệp PDF.');
-  const b64 = String(payload.base64 || '');
-  if (!b64) throw new Error('Chưa có tệp để quét.');
-  if (b64.length * 0.75 > LIMITS.MAX_FILE_BYTES) throw new Error('Tệp quá lớn (tối đa 14 MB). Với PDF dài, hãy tách 5-10 trang mỗi lượt.');
+  const input = Array.isArray(payload.files) ? payload.files : [];
+  if (!input.length) throw new Error('Chưa có tệp để quét.');
+  if (input.length > LIMITS.MAX_FILES) throw new Error('Tối đa ' + LIMITS.MAX_FILES + ' tệp cho một tài liệu.');
+  let total = 0;
+  const items = input.map(function (f) {
+    f = f || {};
+    const ext = MIME_EXT[f.mimeType];
+    if (!ext) throw new Error('Chỉ hỗ trợ ảnh JPG, PNG, WEBP hoặc tệp PDF.');
+    const b64 = String(f.base64 || '');
+    if (!b64) throw new Error('Có tệp rỗng, hãy chọn lại.');
+    const size = b64.length * 0.75;
+    if (size > LIMITS.MAX_FILE_BYTES) throw new Error('Có tệp quá lớn (tối đa 14 MB mỗi tệp). Với PDF dài, hãy tách 5-10 trang mỗi lượt.');
+    total += size;
+    return { mimeType: f.mimeType, ext: ext, b64: b64 };
+  });
+  if (total > LIMITS.MAX_TOTAL_BYTES) throw new Error('Tổng dung lượng các tệp quá lớn (tối đa 24 MB).');
   rateLimit_(me.username);
 
-  let bytes;
-  try { bytes = Utilities.base64Decode(b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
+  const blobs = items.map(function (it) {
+    try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
+  });
 
   const now = new Date();
-  const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss');
-  const name = 'RAW_' + payload.docType + '_' + stamp + '_' + Utilities.getUuid().slice(0, 6) + '.' + ext;
+  const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss') + '_' + Utilities.getUuid().slice(0, 6);
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   let folder;
   try { folder = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]); } finally { lock.releaseLock(); }
-  const file = folder.createFile(Utilities.newBlob(bytes, payload.mimeType, name));
-  file.setDescription('Quét bởi ' + me.username);
+  const fileIds = items.map(function (it, i) {
+    const name = 'RAW_' + payload.docType + '_' + stamp + (items.length > 1 ? '_' + (i + 1) : '') + '.' + it.ext;
+    const file = folder.createFile(Utilities.newBlob(blobs[i], it.mimeType, name));
+    file.setDescription('Quét bởi ' + me.username);
+    return file.getId();
+  });
 
-  const data = callGemini_(type, payload.mimeType, b64);
-  return { data: data, fileId: file.getId(), fileUrl: file.getUrl(), ms: Date.now() - started };
+  const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
+  return { data: data, fileIds: fileIds, ms: Date.now() - started };
 }
 
 function rateLimit_(username) {
@@ -614,7 +633,7 @@ function buildSchema_(type) {
   return { type: 'OBJECT', properties: props, required: type.fields.map(function (f) { return f.k; }) };
 }
 
-function callGemini_(type, mimeType, b64) {
+function callGemini_(type, files) {
   const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const system =
     'Bạn là bộ máy OCR bóc tách dữ liệu từ tài liệu tiếng Việt. Quy tắc bắt buộc:\n' +
@@ -628,10 +647,11 @@ function callGemini_(type, mimeType, b64) {
     systemInstruction: { parts: [{ text: system }] },
     contents: [{
       role: 'user',
-      parts: [
-        { inlineData: { mimeType: mimeType, data: b64 } },
-        { text: 'Loại tài liệu: ' + type.label + '. ' + type.hint + '\nHãy bóc tách dữ liệu theo đúng schema.' }
-      ]
+      parts: files.map(function (f) { return { inlineData: { mimeType: f.mimeType, data: f.b64 } }; }).concat([
+        { text: 'Loại tài liệu: ' + type.label + '. ' + type.hint +
+          (files.length > 1 ? '\nCó ' + files.length + ' tệp: đây là các mặt / trang khác nhau của CÙNG MỘT tài liệu. Hãy gộp thông tin từ tất cả các tệp vào MỘT kết quả duy nhất.' : '') +
+          '\nHãy bóc tách dữ liệu theo đúng schema.' }
+      ])
     }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type) }
   };
@@ -710,16 +730,28 @@ function locateRow_(sh, headers, fileId) {
 }
 
 /** Ghi bản ghi MỚI đã được người dùng kiểm tra vào Google Sheets (ghi đè theo khoá nghiệp vụ để chống trùng). */
-function saveRecord(token, docType, data, fileId) {
+function saveRecord(token, docType, data, fileIds) {
   const me = auth_(token);
   if (!me.perms.perm_add) throw new Error('Tài khoản của bạn không có quyền thêm bản ghi.');
   const type = checkType_(docType);
-  if (!/^[A-Za-z0-9_-]{20,80}$/.test(String(fileId || ''))) throw new Error('Thiếu tệp gốc đối soát. Hãy quét lại.');
+  const ids = (Array.isArray(fileIds) ? fileIds : [fileIds]).map(String);
+  if (!ids.length || ids.length > LIMITS.MAX_FILES || ids.some(function (id) { return !/^[A-Za-z0-9_-]{20,80}$/.test(id); })) {
+    throw new Error('Thiếu tệp gốc đối soát. Hãy quét lại.');
+  }
+  // Chỉ nhận các tệp chính người này vừa quét (do scanDocument tạo), không cho gắn tệp Drive tuỳ ý vào bản ghi
+  ids.forEach(function (id) {
+    let f = null;
+    try { f = DriveApp.getFileById(id); } catch (e) { f = null; }
+    if (!f || f.isTrashed() || f.getName().indexOf('RAW_') !== 0 || f.getDescription() !== 'Quét bởi ' + me.username) {
+      throw new Error('Tệp gốc không hợp lệ hoặc không phải do bạn quét. Hãy quét lại.');
+    }
+  });
+  const fileId = ids[0]; // tệp đầu tiên là mã định danh của bản ghi; mọi tệp được ghi trong raw_file_url (mỗi dòng một link)
   const record = buildRecord_(type, data);
 
   record.scan_timestamp = new Date();
   record.document_type = docType;
-  record.raw_file_url = 'https://drive.google.com/file/d/' + fileId + '/view';
+  record.raw_file_url = ids.map(function (id) { return 'https://drive.google.com/file/d/' + id + '/view'; }).join('\n');
   record.raw_file_id = fileId;
   record.scanned_by = me.username;
 
@@ -817,15 +849,34 @@ function getRawFile(token, docType, period, fileId) {
   if (!row) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
   const owner = String(sh.getRange(row, headers.indexOf('scanned_by') + 1).getDisplayValue());
   if (!canViewAll_(me) && owner !== me.username) throw new Error('Bạn không có quyền xem tệp của bản ghi này.');
-  let file;
-  try { file = DriveApp.getFileById(fileId); } catch (e) { throw new Error('Không tìm thấy tệp gốc trên Drive (có thể đã bị xoá).'); }
-  if (file.isTrashed()) throw new Error('Tệp gốc đã bị chuyển vào thùng rác trên Drive.');
-  const blob = file.getBlob();
-  const mime = blob.getContentType();
-  if (!MIME_EXT[mime]) throw new Error('Định dạng tệp gốc không được hỗ trợ xem.');
-  const bytes = blob.getBytes();
-  if (bytes.length > LIMITS.MAX_FILE_BYTES) throw new Error('Tệp quá lớn để xem trên giao diện. Hãy mở trực tiếp trên Drive.');
-  return { mimeType: mime, name: file.getName(), base64: Utilities.base64Encode(bytes) };
+  // Chỉ trả các tệp được ghi trong chính dòng này (raw_file_url), không đọc tệp Drive tuỳ ý
+  const urls = String(sh.getRange(row, headers.indexOf('raw_file_url') + 1).getDisplayValue());
+  const ids = [];
+  const re = /file\/d\/([A-Za-z0-9_-]{20,80})/g;
+  let m;
+  while ((m = re.exec(urls)) !== null && ids.length < LIMITS.MAX_FILES) ids.push(m[1]);
+  if (!ids.length) ids.push(fileId);
+
+  let total = 0, firstErr = null;
+  const files = ids.map(function (id, i) {
+    try {
+      const file = DriveApp.getFileById(id);
+      if (file.isTrashed()) throw new Error('Tệp gốc đã bị chuyển vào thùng rác trên Drive.');
+      const blob = file.getBlob();
+      const mime = blob.getContentType();
+      if (!MIME_EXT[mime]) throw new Error('Định dạng tệp gốc không được hỗ trợ xem.');
+      const bytes = blob.getBytes();
+      total += bytes.length;
+      if (total > LIMITS.MAX_TOTAL_BYTES) throw new Error('Tệp quá lớn để xem trên giao diện. Hãy mở trực tiếp trên Drive.');
+      return { mimeType: mime, name: file.getName(), base64: Utilities.base64Encode(bytes) };
+    } catch (e) {
+      const msg = e.message && /^(Tệp|Định dạng)/.test(e.message) ? e.message : 'Không tìm thấy tệp gốc trên Drive (có thể đã bị xoá).';
+      if (!firstErr) firstErr = msg;
+      return { error: msg, name: 'Tệp ' + (i + 1) };
+    }
+  });
+  if (files.every(function (f) { return f.error; })) throw new Error(firstErr);
+  return { files: files };
 }
 
 /** Sửa một bản ghi đã lưu. Cần quyền sửa của chính mình / của người khác tuỳ chủ sở hữu. */

@@ -62,6 +62,12 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 5. Đăng nhập lần đầu bằng tài khoản mặc định `admin` / `khoatv@123`. Hệ thống **bắt buộc đổi mật khẩu ngay** trước khi dùng bất kỳ chức năng nào. Kho mã này là **public** nên mật khẩu mặc định ai cũng đọc được: hãy đăng nhập và đổi ngay sau khi triển khai (hoặc chuyển repo sang private).
 6. Vào tab **Tài khoản** (chỉ ADMIN thấy) để tạo người dùng. Người dùng mới phải đổi mật khẩu ở lần đăng nhập đầu tiên.
 
+## Quét nhiều tệp trong một lần
+
+- Tab **Quét tài liệu** gom mọi thứ trên một màn hình: bên trái chọn loại tài liệu và thêm tệp, bên phải hiện ngay kết quả để kiểm tra, sửa và lưu (điện thoại thì xếp dọc, tự cuộn tới kết quả).
+- Một tài liệu có thể có tối đa 6 tệp (ví dụ CCCD 2 mặt = 2 ảnh): chụp liên tiếp (camera giữ mở đến khi bấm Xong) hoặc chọn nhiều ảnh / PDF một lượt. Tất cả được gửi cho Gemini **trong một lần gọi** và gộp thành **một bản ghi**. Mỗi tệp tối đa 14 MB, tổng tối đa 24 MB.
+- Mọi tệp được lưu trong `ANH_GOC/<năm>`; `raw_file_id` là mã của tệp đầu tiên, cột `raw_file_url` chứa link của tất cả các tệp (mỗi dòng một link). Chỉ gắn được các tệp chính người dùng vừa quét.
+
 ## Phân quyền
 
 Chỉ ADMIN được tạo / sửa / khoá / xoá tài khoản, đặt lại mật khẩu và tick quyền riêng cho từng người. ADMIN luôn có toàn quyền. Quyền áp dụng cho **bản ghi OCR đã quét**:
@@ -73,7 +79,7 @@ Chỉ ADMIN được tạo / sửa / khoá / xoá tài khoản, đặt lại m�
 | `perm_edit_other` / `perm_del_other` | Sửa / xoá bản ghi do người khác quét |
 
 - Người dùng chỉ thấy bản ghi của mình, trừ khi được cấp quyền sửa hoặc xoá bản ghi của người khác (khi đó thấy tất cả).
-- Tab **Bản ghi đã lưu**: lọc theo loại tài liệu và tháng, mở từng bản ghi để xem, sửa, xoá và **xem lại ảnh / PDF đã upload** (xem ngay trên giao diện, không cần quyền vào Drive).
+- Tab **Bản ghi đã lưu**: lọc theo loại tài liệu và tháng, mở từng bản ghi để xem, sửa, xoá và **xem lại ảnh / PDF đã upload** (xem ngay trên giao diện, không cần quyền vào Drive; bản ghi nhiều tệp có nút chuyển Tệp 1/2, 2/2).
 - Quyền được kiểm tra lại ở mỗi lần gọi, nên khoá tài khoản hoặc đổi quyền có hiệu lực ngay. Đặt lại mật khẩu vô hiệu hoá các phiên đang mở.
 - Xoá bản ghi chỉ xoá dòng trong Google Sheets; tệp gốc trên Drive được giữ lại để đối soát. Lưu trùng khoá nghiệp vụ (ví dụ số CCCD) là ghi đè nên cần quyền sửa bản ghi đó; chủ sở hữu giữ nguyên.
 - Luôn còn ít nhất một ADMIN hoạt động; ADMIN không thể tự khoá, tự hạ quyền hay tự xoá.
@@ -113,9 +119,12 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 - Một số trình duyệt chặn camera trực tiếp trong khung Apps Script; khi đó nút "Chụp ảnh" tự chuyển sang ứng dụng camera của máy.
 - Quét xong nhưng không bấm lưu thì tệp gốc vẫn nằm trên Drive, không có dòng tương ứng.
 
-## Hosting trên Vercel (chỉ phục vụ trang chuyển hướng)
+## Hosting trên Vercel (khung bao quanh ứng dụng)
 
 - Vercel không build mã nguồn: `vercel.json` đặt `outputDirectory` là `public`, không có lệnh build. `src/` (mã Apps Script) không được phát tán.
-- `public/index.html` chuyển người dùng sang URL Web App của Apps Script. Sau khi deploy Web App, điền URL vào biến `APP_URL` trong file này rồi push; Vercel tự cập nhật.
-- Ứng dụng thực sự chạy trên Apps Script (backend dùng `DriveApp`, `SpreadsheetApp`, giao diện dùng `google.script.run`), nên không chạy được nếu mở trực tiếp trên Vercel.
+- `public/index.html` mở ứng dụng Apps Script trong một khung toàn màn hình (iframe), nên thanh địa chỉ vẫn là `khoatv-ocr-use.vercel.app` và **không bị chuyển sang `script.google.com`**. Góc phải dưới có nút "Mở tab mới"; nếu khung tải chậm quá 8 giây sẽ hiện nút mở trực tiếp.
+- Để Apps Script cho phép nhúng, `doGet` dùng `setXFrameOptionsMode(ALLOWALL)`. Sau khi cập nhật mã phải **tạo version mới** của deployment thì Vercel mới hiển thị được.
+- Sau khi deploy Web App, điền URL vào biến `APP_URL` trong `public/index.html` rồi push (ASC-BOT tự cập nhật dòng này); Vercel tự cập nhật.
+- Ứng dụng thực sự chạy trên Apps Script (backend dùng `DriveApp`, `SpreadsheetApp`, giao diện dùng `google.script.run`), nên không chạy được nếu chép nguyên `src/index.html` lên Vercel.
 - Cấu hình trên Vercel: Application Preset = Other, Root Directory = `./`.
+- Lưu ý: vì cho phép nhúng, trang khác cũng có thể nhúng ứng dụng này; ứng dụng vẫn yêu cầu đăng nhập.
