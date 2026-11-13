@@ -96,3 +96,10 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 - Tệp tối đa 14 MB; PDF dài nên tách 5-10 trang mỗi lượt.
 - Một số trình duyệt chặn camera trực tiếp trong khung Apps Script; khi đó nút "Chụp ảnh" tự chuyển sang ứng dụng camera của máy.
 - Quét xong nhưng không bấm lưu thì tệp gốc vẫn nằm trên Drive, không có dòng tương ứng.
+
+## Hosting trên Vercel (chỉ phục vụ trang chuyển hướng)
+
+- Vercel không build mã nguồn: `vercel.json` đặt `outputDirectory` là `public`, không có lệnh build. `src/` (mã Apps Script) không được phát tán.
+- `public/index.html` chuyển người dùng sang URL Web App của Apps Script. Sau khi deploy Web App, điền URL vào biến `APP_URL` trong file này rồi push; Vercel tự cập nhật.
+- Ứng dụng thực sự chạy trên Apps Script (backend dùng `DriveApp`, `SpreadsheetApp`, giao diện dùng `google.script.run`), nên không chạy được nếu mở trực tiếp trên Vercel.
+- Cấu hình trên Vercel: Application Preset = Other, Root Directory = `./`.
