@@ -25,6 +25,7 @@ const DIRS = { RAW: 'ANH_GOC', DATA: 'DU_LIEU', USERS_BOOK: 'OCR_USERS', BOOK_PR
 const LIMITS = {
   MAX_FILE_BYTES: 14 * 1024 * 1024,   // mỗi tệp, sau khi giải mã base64
   MAX_TOTAL_BYTES: 24 * 1024 * 1024,  // tổng các tệp của một tài liệu
+  MAX_LIST: 3000,                     // số bản ghi tối đa mỗi lần xem / xuất
   MAX_FILES: 6,                       // số tệp (mặt / trang) tối đa cho một tài liệu
   SESSION_SECONDS: 21600,             // 6 giờ (mức tối đa của CacheService)
   LOGIN_MAX_FAIL: 5,
@@ -127,10 +128,13 @@ const DOC_TYPES = {
   },
   CAN_DIEN_TU: {
     label: 'Màn hình cân điện tử', uniqueKey: null, required: ['khoi_luong', 'don_vi'],
-    hint: 'Ảnh màn hình LED/LCD 7 đoạn của cân điện tử. Đọc từng chữ số và vị trí dấu thập phân thật cẩn thận; ' +
-      'don_vi là kg, g, tấn hoặc lb; trang_thai là Gross, Net, Stable nếu màn hình có hiển thị. ' +
+    hint: 'Ảnh màn hình LED/LCD 7 đoạn của cân điện tử (có thể kèm phiếu cân). Đọc từng chữ số và vị trí dấu thập phân thật cẩn thận; ' +
+      'khoi_luong là số kg (hoặc số theo don_vi); don_vi là kg, g, tấn hoặc lb; ' +
+      'don_gia là giá tiền trên mỗi đơn vị và so_tien là thành tiền CHỈ khi ảnh / phiếu có ghi, nếu không có thì trả null, không tự tính; ' +
+      'trang_thai là Gross, Net, Stable nếu màn hình có hiển thị. ' +
       'Nếu có chữ số bị chói hoặc đứt nét không chắc chắn, mô tả rõ trong ghi_chu_can.',
-    fields: [f_('khoi_luong', 'Khối lượng', 'number'), f_('don_vi', 'Đơn vị'), f_('trang_thai', 'Trạng thái'), f_('ghi_chu_can', 'Ghi chú cân', 'long')]
+    fields: [f_('khoi_luong', 'Khối lượng (số kg)', 'number'), f_('don_vi', 'Đơn vị'), f_('don_gia', 'Đơn giá', 'number'), f_('so_tien', 'Số tiền', 'number'),
+      f_('trang_thai', 'Trạng thái'), f_('ghi_chu_can', 'Ghi chú cân', 'long')]
   },
   BIEN_SO_XE: {
     label: 'Biển số xe', uniqueKey: null, required: ['bien_so_day_du'],
@@ -793,44 +797,95 @@ function saveRecord(token, docType, data, fileIds) {
   return { book: book.getName(), sheet: docType, row: row, updated: updated };
 }
 
-/** Danh sách bản ghi của một loại tài liệu trong một tháng ("yyyy-MM"). Mới nhất ở trên, tối đa 1000 dòng. */
-function listRecords(token, docType, period) {
+/** Danh sách các tháng (yyyy, MM) từ ngày `from` đến ngày `to` (yyyy-MM-dd). */
+function monthsBetween_(from, to) {
+  const out = [];
+  let y = Number(from.slice(0, 4)), m = Number(from.slice(5, 7));
+  const ey = Number(to.slice(0, 4)), em = Number(to.slice(5, 7));
+  while (y < ey || (y === ey && m <= em)) {
+    out.push({ y: String(y), m: ('0' + m).slice(-2) });
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return out;
+}
+
+function parseRange_(from, to) {
+  const re = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+  if (!to && /^\d{4}-(0[1-9]|1[0-2])$/.test(String(from || ''))) { // tương thích: chỉ truyền tháng yyyy-MM
+    const p = parsePeriod_(from);
+    const last = new Date(Number(p.y), Number(p.m), 0).getDate();
+    return { from: p.y + '-' + p.m + '-01', to: p.y + '-' + p.m + '-' + ('0' + last).slice(-2) };
+  }
+  from = String(from || ''); to = String(to || '');
+  if (!re.test(from) || !re.test(to)) throw new Error('Ngày không hợp lệ (định dạng yyyy-MM-dd).');
+  if (from > to) throw new Error('"Từ ngày" phải trước hoặc bằng "Đến ngày".');
+  return { from: from, to: to };
+}
+
+/**
+ * Danh sách bản ghi của một loại tài liệu có ngày lưu từ `from` đến `to` (yyyy-MM-dd, gồm cả hai đầu).
+ * Dữ liệu chia theo tháng nên đọc lần lượt các file tháng trong khoảng (tối đa 24 tháng).
+ * Mới nhất ở trên, tối đa LIMITS.MAX_LIST dòng. Mỗi dòng có _period (yyyy-MM) để sửa / xoá / xem tệp.
+ */
+function listRecords(token, docType, from, to) {
   const me = auth_(token);
   const type = checkType_(docType);
-  const p = parsePeriod_(period);
+  const range = parseRange_(from, to);
+  const months = monthsBetween_(range.from, range.to);
+  if (months.length > 24) throw new Error('Khoảng thời gian tối đa 24 tháng.');
   const viewAll = canViewAll_(me);
-  const out = { rows: [], viewAll: viewAll, truncated: false, total: 0 };
-  const book = findMonthBook_(p.y, p.m);
-  const sh = book ? book.getSheetByName(docType) : null;
-  if (!sh || sh.getLastRow() < 2) return out;
+  const out = { rows: [], viewAll: viewAll, truncated: false, total: 0, from: range.from, to: range.to };
 
   const cols = typeCols_(type), headers = typeHeaders_(type);
-  const cur = sh.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
-  if (cur.join('|') !== headers.join('|')) throw new Error('Dòng tiêu đề sheet ' + docType + ' đã bị sửa, không khớp cấu trúc.');
-  const raw = sh.getRange(2, 1, sh.getLastRow() - 1, headers.length).getValues();
-  const rows = [];
-  for (let i = raw.length - 1; i >= 0; i--) {
-    const r = raw[i];
-    const o = {};
-    cols.forEach(function (c, j) {
-      let v = r[j];
-      if (v instanceof Date) v = Utilities.formatDate(v, TZ, 'yyyy-MM-dd HH:mm:ss');
-      else if (c.type === 'items') {
-        try { v = v === '' ? null : JSON.parse(unesc_(String(v))); } catch (e) { v = null; }
-      } else if (c.type === 'number') v = v === '' ? null : Number(v);
-      else v = unesc_(String(v === null || v === undefined ? '' : v));
-      o[c.k] = v;
+  const all = [];
+  months.forEach(function (mo) {
+    const book = findMonthBook_(mo.y, mo.m);
+    const sh = book ? book.getSheetByName(docType) : null;
+    if (!sh || sh.getLastRow() < 2) return;
+    const width = Math.max(headers.length, sh.getLastColumn());
+    const cur = sh.getRange(1, 1, 1, width).getDisplayValues()[0].map(String);
+    const pos = {};
+    cur.forEach(function (h, i) { if (h !== '') pos[h] = i; });
+    if (headers.some(function (h) { return SYS_COLS.some(function (c) { return c.k === h; }) && pos[h] === undefined; })) {
+      throw new Error('Dòng tiêu đề sheet ' + docType + ' (' + mo.y + '-' + mo.m + ') đã bị sửa, không khớp cấu trúc.');
+    }
+    const raw = sh.getRange(2, 1, sh.getLastRow() - 1, width).getValues();
+    raw.forEach(function (r) {
+      const o = {};
+      cols.forEach(function (c) {
+        let v = pos[c.k] === undefined ? '' : r[pos[c.k]];
+        if (v instanceof Date) v = Utilities.formatDate(v, TZ, 'yyyy-MM-dd HH:mm:ss');
+        else if (c.type === 'items') {
+          try { v = v === '' ? null : JSON.parse(unesc_(String(v))); } catch (e) { v = null; }
+        } else if (c.type === 'number') v = v === '' ? null : Number(v);
+        else v = unesc_(String(v === null || v === undefined ? '' : v));
+        o[c.k] = v;
+      });
+      if (!o.raw_file_id) return;
+      if (!viewAll && o.scanned_by !== me.username) return;
+      const day = String(o.scan_timestamp).slice(0, 10);
+      if (day < range.from || day > range.to) return;
+      o._period = mo.y + '-' + mo.m;
+      all.push(o);
     });
-    if (!o.raw_file_id) continue;
-    if (!viewAll && o.scanned_by !== me.username) continue;
-    out.total++;
-    if (rows.length >= 1000) { out.truncated = true; continue; }
+  });
+  all.sort(function (a, b) { return a.scan_timestamp < b.scan_timestamp ? 1 : (a.scan_timestamp > b.scan_timestamp ? -1 : 0); });
+  out.total = all.length;
+  if (all.length > LIMITS.MAX_LIST) { out.truncated = true; all.length = LIMITS.MAX_LIST; }
+  all.forEach(function (o) {
     o._edit = canEdit_(me, o.scanned_by);
     o._del = canDelete_(me, o.scanned_by);
-    rows.push(o);
-  }
-  out.rows = rows;
+  });
+  out.rows = all;
   return out;
+}
+
+/** Ghi nhật ký việc kết xuất Excel (file được tạo ở trình duyệt từ dữ liệu người dùng được phép xem). */
+function logExport(token, docType, from, to, count) {
+  const me = auth_(token);
+  checkType_(docType);
+  audit_(me.username, 'XUAT_EXCEL', docType, String(from || '').slice(0, 10) + ' đến ' + String(to || '').slice(0, 10) + '; ' + Number(count || 0) + ' bản ghi');
+  return true;
 }
 
 /**
@@ -974,9 +1029,22 @@ function sheet_(ss, name, headers) {
     sh.setFrozenRows(1);
     if (name === 'USERS') sh.getRange(2, 1, sh.getMaxRows() - 1, headers.length).setNumberFormat('@');
   } else {
-    const cur = sh.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
+    const width = Math.max(headers.length, sh.getLastColumn ? sh.getLastColumn() : headers.length);
+    const cur = sh.getRange(1, 1, 1, width).getDisplayValues()[0].map(function (h) { return String(h); });
+    while (cur.length && cur[cur.length - 1] === '') cur.pop();
     if (cur.join('|') !== headers.join('|')) {
-      throw new Error('Dòng tiêu đề sheet ' + name + ' đã bị sửa, không khớp cấu trúc. Vui lòng khôi phục.');
+      // Cấu trúc được bổ sung cột mới (ví dụ thêm đơn giá, số tiền cho cân điện tử): chèn thêm cột đúng vị trí,
+      // dữ liệu cũ giữ nguyên. Chỉ làm khi mọi cột cũ vẫn còn và đúng thứ tự; ngược lại coi là tiêu đề bị sửa.
+      let j = 0;
+      const isSub = cur.every(function (h) { while (j < headers.length && headers[j] !== h) j++; return j++ < headers.length; });
+      if (!isSub) throw new Error('Dòng tiêu đề sheet ' + name + ' đã bị sửa, không khớp cấu trúc. Vui lòng khôi phục.');
+      for (let i = 0; i < headers.length; i++) {
+        if (cur[i] !== headers[i]) {
+          sh.insertColumnBefore(i + 1);
+          sh.getRange(1, i + 1).setValue(headers[i]).setFontWeight('bold');
+          cur.splice(i, 0, headers[i]);
+        }
+      }
     }
   }
   return sh;

@@ -68,6 +68,18 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 - Một tài liệu có thể có tối đa 6 tệp (ví dụ CCCD 2 mặt = 2 ảnh): chụp liên tiếp (camera giữ mở đến khi bấm Xong) hoặc chọn nhiều ảnh / PDF một lượt. Tất cả được gửi cho Gemini **trong một lần gọi** và gộp thành **một bản ghi**. Mỗi tệp tối đa 14 MB, tổng tối đa 24 MB.
 - Mọi tệp được lưu trong `ANH_GOC/<năm>`; `raw_file_id` là mã của tệp đầu tiên, cột `raw_file_url` chứa link của tất cả các tệp (mỗi dòng một link). Chỉ gắn được các tệp chính người dùng vừa quét.
 
+## Bản ghi đã lưu: lọc, xem ảnh, xuất Excel
+
+- Lọc theo **từ ngày / đến ngày lưu** (mặc định từ mùng 1 tháng này đến hôm nay) và theo **loại tài liệu**.
+- Ô **lọc chữ** gợi ý sẵn các giá trị có trong loại tài liệu đó (tên, nơi, số...); không phân biệt hoa thường và dấu.
+- Bảng hiển thị **đầy đủ mọi trường** của loại tài liệu. Cột **Ảnh** (cố định bên trái) có nút "Xem (n)" mở ngay ảnh / PDF đã upload của bản ghi; mở một bản ghi để sửa cũng tự hiện ảnh.
+- **Xuất Excel** tạo ngay trên trình duyệt: đúng các bản ghi đang lọc, không kèm ảnh / PDF; loại có bảng chi tiết (nhập kho, đơn hàng...) có thêm một sheet chi tiết.
+- Màn quét: chọn loại tài liệu là hiện sẵn các trường (để trống), quét xong mới điền thông tin vào.
+
+## Cân điện tử
+
+Các trường: `khoi_luong` (số kg), `don_vi`, `don_gia`, `so_tien`, `trang_thai`, `ghi_chu_can`. Khi nhập khối lượng và đơn giá, `so_tien` tự tính = khối lượng × đơn giá, vẫn sửa tay được. AI chỉ điền đơn giá / số tiền nếu ảnh hoặc phiếu có ghi, không tự tính. Sheet `CAN_DIEN_TU` của các tháng đã có sẽ tự được chèn thêm 2 cột mới, dữ liệu cũ giữ nguyên.
+
 ## Phân quyền
 
 Chỉ ADMIN được tạo / sửa / khoá / xoá tài khoản, đặt lại mật khẩu và tick quyền riêng cho từng người. ADMIN luôn có toàn quyền. Quyền áp dụng cho **bản ghi OCR đã quét**:

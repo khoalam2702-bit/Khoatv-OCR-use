@@ -128,6 +128,8 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
 .tbl.rec td{padding:7px 8px}
 .tbl.rec td.ell{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tbl.rec td.n{text-align:right;font-variant-numeric:tabular-nums}
+.tbl.rec th.stk,.tbl.rec td.stk{position:sticky;left:0;z-index:2;background:var(--panel);white-space:nowrap;box-shadow:1px 0 0 var(--line)}
+.tbl.rec th.stk{z-index:3}
 .tbl tr.row-click{cursor:pointer}
 .tbl tr.row-click:hover td{background:var(--hover)}
 .muted{color:var(--tx3);font-size:13px}
@@ -227,8 +229,15 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     <div class="card"><div class="card-b">
       <div class="toolbar">
         <div><label class="lbl" for="recType">Loại tài liệu</label><select class="inp" id="recType"></select></div>
-        <div><label class="lbl" for="recMonth">Tháng</label><input class="inp" id="recMonth" type="month"></div>
-        <div class="fit"><button class="btn btn-primary" id="btnRecLoad" type="button">Tải danh sách</button></div>
+        <div><label class="lbl" for="recFrom">Từ ngày lưu</label><input class="inp" id="recFrom" type="date"></div>
+        <div><label class="lbl" for="recTo">Đến ngày lưu</label><input class="inp" id="recTo" type="date"></div>
+        <div style="flex:2;min-width:220px"><label class="lbl" for="recText">Lọc theo nội dung</label>
+          <input class="inp" id="recText" type="search" list="recSug" autocomplete="off" placeholder="Tìm theo nội dung...">
+          <datalist id="recSug"></datalist></div>
+        <div class="fit" style="display:flex;gap:8px">
+          <button class="btn btn-primary" id="btnRecLoad" type="button">Tải danh sách</button>
+          <button class="btn btn-success" id="btnRecExport" type="button" disabled>Xuất Excel</button>
+        </div>
       </div>
       <div class="muted" id="recInfo"></div>
     </div></div>
@@ -624,6 +633,19 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
       if (required) lbl.appendChild(el('span', { 'class': 'req', text: '*' }));
       box.appendChild(el('div', { 'class': isLong(f) ? 'full' : '' }, [lbl, inp]));
     });
+    // Cân điện tử: số tiền = số kg × đơn giá, trừ khi người dùng đã tự nhập số tiền
+    var q = box.querySelector('[data-k="khoi_luong"]'), g = box.querySelector('[data-k="don_gia"]'), s = box.querySelector('[data-k="so_tien"]');
+    if (q && g && s) {
+      var manual = s.value !== '' && !(Number(q.value) * Number(g.value) === Number(s.value));
+      s.addEventListener('input', function () { manual = s.value !== '' && !(Number(q.value) * Number(g.value) === Number(s.value)); if (s.value === '') manual = false; });
+      var calc = function () {
+        if (manual) return;
+        var a = Number(q.value), b = Number(g.value);
+        if (q.value !== '' && g.value !== '' && isFinite(a) && isFinite(b)) s.value = String(Math.round(a * b * 100) / 100);
+      };
+      q.addEventListener('input', calc); g.addEventListener('input', calc);
+      s.title = 'Tự tính = khối lượng × đơn giá; có thể sửa tay';
+    }
   }
   function collect(box, type) {
     var out = {};
@@ -652,6 +674,18 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     $('resMeta').classList.add('hidden');
     $('form').textContent = '';
     $('btnSave').classList.remove('hidden');
+    showBlank();
+  }
+  /* Chọn loại tài liệu là hiện sẵn các trường (để trống, chưa nhập được); quét xong mới điền thông tin vào */
+  function showBlank() {
+    if (!S.type) return;
+    renderForm($('form'), S.type, {}, 'f_');
+    Array.prototype.forEach.call($('form').querySelectorAll('.inp'), function (i) { i.classList.remove('empty-req'); });
+    lockForm($('form'));
+    var note = $('resNote');
+    note.className = 'note';
+    note.textContent = 'Các trường của "' + S.type.label + '". Thêm tệp và bấm quét, thông tin đọc được sẽ tự điền vào đây để bạn kiểm tra.';
+    $('resEmpty').classList.add('hidden'); $('resBody').classList.remove('hidden');
   }
   function resetAll() { S.type = null; S.files = []; clearResult(); if (S.cfg) { renderTypes(); renderThumbs(); } refresh(); }
   function refresh() {
@@ -707,106 +741,253 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
 
   $('btnReset').addEventListener('click', function () {
     if (S.busy) return;
-    var doReset = function () { var keep = S.type; resetAll(); S.type = keep; renderTypes(); refresh(); };
+    var doReset = function () { var keep = S.type; resetAll(); S.type = keep; renderTypes(); showBlank(); refresh(); };
     if (S.scan && !S.scan.saved) askConfirm('Bỏ kết quả chưa lưu?', 'Bỏ kết quả').then(function (ok) { if (ok) doReset(); });
     else if (!S.scan && S.files.length) askConfirm('Bỏ các tệp đã thêm?', 'Bỏ tệp').then(function (ok) { if (ok) doReset(); });
     else doReset();
   });
 
-  /* ---------- bản ghi đã lưu ---------- */
-  var REC = { type: null, period: null };
-  function curMonth() {
-    var d = new Date();
-    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  /* ---------- bản ghi đã lưu: lọc theo ngày lưu, lọc chữ, xuất Excel ---------- */
+  var REC = { type: null, rows: [], shown: [], from: null, to: null, total: 0, truncated: false, viewAll: false };
+  function pad2(n) { return ('0' + n).slice(-2); }
+  function ymd(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function norm(s) {
+    return String(s === null || s === undefined ? '' : s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd');
+  }
+  function typeByCode(code) { return S.cfg.types.filter(function (t) { return t.code === code; })[0]; }
+  function itemsText(v) {
+    if (!Array.isArray(v) || !v.length) return '';
+    return v.map(function (r) {
+      return [r.ten_hang, r.don_vi, r.so_luong === null ? '' : 'SL ' + r.so_luong, r.don_gia === null ? '' : 'ĐG ' + r.don_gia, r.thanh_tien === null ? '' : 'TT ' + r.thanh_tien]
+        .filter(function (x) { return x !== '' && x !== null && x !== undefined; }).join(' ');
+    }).join('; ');
+  }
+  function cellText(v, f) {
+    if (f && f.type === 'items') return Array.isArray(v) && v.length ? v.length + ' dòng' : '';
+    if (v === null || v === undefined || v === '') return '';
+    if (typeof v === 'number') return v.toLocaleString('vi-VN');
+    return String(v);
+  }
+  function searchHint(type) {
+    var names = type.fields.filter(function (f) { return f.type === 'string' || f.type === 'long'; }).slice(0, 4).map(function (f) { return f.label; });
+    return 'Tìm theo ' + names.join(', ') + '...';
   }
   function initRecControls() {
     var sel = $('recType');
     if (sel.options.length) return;
     S.cfg.types.forEach(function (t) { sel.appendChild(el('option', { value: t.code, text: t.label })); });
-    $('recMonth').value = curMonth();
-  }
-  function typeByCode(code) {
-    return S.cfg.types.filter(function (t) { return t.code === code; })[0];
-  }
-  function cellText(v) {
-    if (v === null || v === undefined || v === '') return '';
-    if (typeof v === 'number') return v.toLocaleString('vi-VN');
-    return String(v);
+    var now = new Date();
+    $('recFrom').value = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-01';
+    $('recTo').value = ymd(now);
+    $('recText').placeholder = searchHint(S.cfg.types[0]);
   }
   function loadRecords() {
     initRecControls();
-    var code = $('recType').value, period = $('recMonth').value;
-    if (!/^\d{4}-\d{2}$/.test(period)) { toast('Hãy chọn tháng.', 'err'); return Promise.resolve(); }
+    var code = $('recType').value, from = $('recFrom').value, to = $('recTo').value;
+    if (!from || !to) { toast('Hãy chọn Từ ngày và Đến ngày.', 'err'); return Promise.resolve(); }
+    if (from > to) { toast('"Từ ngày" phải trước hoặc bằng "Đến ngày".', 'err'); return Promise.resolve(); }
     $('recInfo').textContent = 'Đang tải...';
-    return rpc('listRecords', [S.token, code, period]).then(function (r) {
-      REC.type = typeByCode(code); REC.period = period;
-      renderRecords(r);
-    }).catch(function (err) { $('recInfo').textContent = ''; $('recBox').textContent = ''; toast(err.message, 'err'); });
+    $('btnRecExport').disabled = true;
+    return rpc('listRecords', [S.token, code, from, to]).then(function (r) {
+      REC.type = typeByCode(code); REC.from = from; REC.to = to;
+      REC.total = r.total; REC.truncated = r.truncated; REC.viewAll = r.viewAll;
+      REC.rows = r.rows;
+      REC.rows.forEach(function (rec) {
+        rec._s = norm(REC.type.fields.map(function (f) { return f.type === 'items' ? itemsText(rec[f.k]) : rec[f.k]; })
+          .concat([rec.scanned_by, rec.scan_timestamp]).join(' | '));
+      });
+      $('recText').placeholder = searchHint(REC.type);
+      buildSuggestions();
+      applyFilter();
+    }).catch(function (err) { $('recInfo').textContent = ''; $('recBox').textContent = ''; REC.rows = []; REC.shown = []; toast(err.message, 'err'); });
   }
-  function renderRecords(r) {
+  // Gợi ý theo nội dung thật của loại tài liệu đang xem (giá trị chữ đã có trong danh sách)
+  function buildSuggestions() {
+    var dl = $('recSug'); dl.textContent = '';
+    var count = {};
+    REC.rows.forEach(function (rec) {
+      REC.type.fields.forEach(function (f) {
+        if (f.type !== 'string') return;
+        var v = rec[f.k];
+        if (typeof v === 'string' && v.length >= 2 && v.length <= 60) count[v] = (count[v] || 0) + 1;
+      });
+    });
+    Object.keys(count).sort(function (a, b) { return count[b] - count[a] || a.localeCompare(b, 'vi'); }).slice(0, 300)
+      .forEach(function (v) { dl.appendChild(el('option', { value: v })); });
+  }
+  function applyFilter() {
+    var q = norm($('recText').value).split(/\s+/).filter(Boolean);
+    REC.shown = q.length ? REC.rows.filter(function (rec) { return q.every(function (w) { return rec._s.indexOf(w) >= 0; }); }) : REC.rows;
+    renderRecords();
+  }
+  function renderRecords() {
     var type = REC.type, box = $('recBox'); box.textContent = '';
-    var info = r.total + ' bản ghi';
-    if (!r.viewAll) info += ' (chỉ hiển thị bản ghi do bạn quét)';
-    if (r.truncated) info += '. Chỉ hiện 1000 bản ghi mới nhất';
+    var info = REC.total + ' bản ghi từ ' + REC.from + ' đến ' + REC.to;
+    if (REC.shown.length !== REC.rows.length) info += '; khớp từ khoá: ' + REC.shown.length;
+    if (!REC.viewAll) info += ' (chỉ gồm bản ghi do bạn quét)';
+    if (REC.truncated) info += '. Chỉ tải ' + REC.rows.length + ' bản ghi mới nhất, hãy thu hẹp khoảng ngày để xuất đủ';
     $('recInfo').textContent = info;
-    if (!r.rows.length) { box.appendChild(el('div', { 'class': 'card' }, [el('div', { 'class': 'empty', text: 'Chưa có bản ghi nào trong tháng này.' })])); return; }
-    var cols = [{ k: 'scan_timestamp', label: 'Thời gian quét' }, { k: 'scanned_by', label: 'Người quét' }]
-      .concat(type.fields.filter(function (f) { return f.type !== 'items'; }).slice(0, 4));
-    var head = el('tr', {}, cols.map(function (c) { return el('th', { text: c.label }); }).concat([el('th', { text: 'Quyền' })]));
+    $('btnRecExport').disabled = !REC.shown.length;
+    if (!REC.shown.length) { box.appendChild(el('div', { 'class': 'card' }, [el('div', { 'class': 'empty', text: REC.rows.length ? 'Không có bản ghi nào khớp từ khoá.' : 'Chưa có bản ghi nào trong khoảng ngày này.' })])); return; }
+    var cols = [{ k: 'scan_timestamp', label: 'Thời gian lưu' }, { k: 'scanned_by', label: 'Người quét' }].concat(type.fields);
+    var head = el('tr', {}, [el('th', { 'class': 'stk', text: 'Ảnh' }), el('th', { text: '#' })].concat(cols.map(function (c) { return el('th', { text: c.label }); })).concat([el('th', { text: 'Quyền' })]));
     var tbody = el('tbody');
-    r.rows.forEach(function (rec) {
+    REC.shown.forEach(function (rec, i) {
       var tr = el('tr', { 'class': 'row-click', tabindex: '0', on: {
         click: function () { openRecord(rec); },
         keydown: function (e) { if (e.key === 'Enter') openRecord(rec); }
       } });
+      var nf = rec.raw_file_url ? String(rec.raw_file_url).split('\n').filter(Boolean).length : 1;
+      tr.appendChild(el('td', { 'class': 'stk' }, [el('button', { type: 'button', 'class': 'btn btn-xs', text: 'Xem (' + nf + ')', title: 'Xem ảnh / PDF đã upload',
+        on: { click: function (e) { e.stopPropagation(); openImages(rec); }, keydown: function (e) { e.stopPropagation(); } } })]));
+      tr.appendChild(el('td', { 'class': 'n', text: String(i + 1) }));
       cols.forEach(function (c) {
-        tr.appendChild(el('td', { 'class': 'ell' + (typeof rec[c.k] === 'number' ? ' n' : ''), text: cellText(rec[c.k]) }));
+        var full = c.type === 'items' ? itemsText(rec[c.k]) : cellText(rec[c.k], c);
+        tr.appendChild(el('td', { 'class': 'ell' + (typeof rec[c.k] === 'number' ? ' n' : ''), title: full, text: cellText(rec[c.k], c) }));
       });
       var perm = rec._edit && rec._del ? 'Sửa, xoá' : (rec._edit ? 'Sửa' : (rec._del ? 'Xoá' : 'Chỉ xem'));
       tr.appendChild(el('td', {}, [el('span', { 'class': 'badge ' + (rec._edit || rec._del ? 'b-green' : 'b-gray'), text: perm })]));
       tbody.appendChild(tr);
     });
-    box.appendChild(el('div', { 'class': 'tbl-wrap' }, [el('table', { 'class': 'tbl rec' }, [el('thead', {}, [head]), tbody])]));
+    box.appendChild(el('div', { 'class': 'tbl-wrap' }, [el('table', { 'class': 'tbl rec', style: 'min-width:' + Math.max(640, cols.length * 130) + 'px' }, [el('thead', {}, [head]), tbody])]));
   }
   $('btnRecLoad').addEventListener('click', function () { loadRecords(); });
-  $('recType').addEventListener('change', function () { loadRecords(); });
-  $('recMonth').addEventListener('change', function () { loadRecords(); });
+  ['recType', 'recFrom', 'recTo'].forEach(function (id) { $(id).addEventListener('change', function () { if (id === 'recType') $('recText').value = ''; loadRecords(); }); });
+  var recTimer;
+  $('recText').addEventListener('input', function () { clearTimeout(recTimer); recTimer = setTimeout(applyFilter, 150); });
 
-  function openRecord(rec) {
-    var type = REC.type, period = REC.period;
-    var form = el('div', { 'class': 'grid' });
-    renderForm(form, type, rec, 'e_');
-    if (!rec._edit) lockForm(form);
-    var parts = [el('div', { 'class': 'muted', style: 'margin-bottom:10px',
-      text: 'Quét bởi ' + (rec.scanned_by || '?') + ' lúc ' + (rec.scan_timestamp || '?') + '. ' +
-        (rec._edit ? '' : 'Bạn chỉ có quyền xem bản ghi này. ') })];
-    var viewer = el('div', { style: 'margin-bottom:12px' });
-    var bView = el('button', { type: 'button', 'class': 'btn', text: 'Xem ảnh / PDF đã upload', style: 'margin-bottom:10px' });
+  /* ---------- kết xuất Excel (.xlsx tạo ngay trên trình duyệt, không kèm ảnh / PDF) ---------- */
+  var CRC_T = (function () {
+    var t = [], c, n, k;
+    for (n = 0; n < 256; n++) { c = n; for (k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+    return t;
+  })();
+  function crc32(u8) { var c = 0xFFFFFFFF; for (var i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+  function zipStore(files) {
+    var enc = new TextEncoder(), parts = [], central = [], offset = 0;
+    function u16(n) { return [n & 255, (n >>> 8) & 255]; }
+    function u32(n) { return [n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255]; }
+    var DATE = ((2026 - 1980) << 9) | (1 << 5) | 1;
+    files.forEach(function (f) {
+      var name = enc.encode(f.name), data = f.data, crc = crc32(data);
+      var lh = [].concat(u32(0x04034b50), u16(20), u16(0x0800), u16(0), u16(0), u16(DATE), u32(crc), u32(data.length), u32(data.length), u16(name.length), u16(0));
+      parts.push(new Uint8Array(lh), name, data);
+      central.push({ name: name, crc: crc, size: data.length, offset: offset });
+      offset += lh.length + name.length + data.length;
+    });
+    var cdStart = offset, cdSize = 0;
+    central.forEach(function (c) {
+      var h = [].concat(u32(0x02014b50), u16(20), u16(20), u16(0x0800), u16(0), u16(0), u16(DATE), u32(c.crc), u32(c.size), u32(c.size),
+        u16(c.name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(c.offset));
+      parts.push(new Uint8Array(h), c.name); cdSize += h.length + c.name.length;
+    });
+    parts.push(new Uint8Array([].concat(u32(0x06054b50), u16(0), u16(0), u16(central.length), u16(central.length), u32(cdSize), u32(cdStart), u16(0))));
+    var total = parts.reduce(function (s, p) { return s + p.length; }, 0), out = new Uint8Array(total), pos = 0;
+    parts.forEach(function (p) { out.set(p, pos); pos += p.length; });
+    return out;
+  }
+  function xmlEsc(s) {
+    return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function colName(i) { var s = ''; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+  // sheet = { name, headers: [..], rows: [[string|number|null, ...], ...] }
+  function sheetXml(sh) {
+    var widths = sh.headers.map(function (h) { return Math.min(60, Math.max(10, String(h).length + 4)); });
+    sh.rows.forEach(function (r) { r.forEach(function (v, i) { if (v !== null && v !== undefined) widths[i] = Math.min(60, Math.max(widths[i], String(v).length + 2)); }); });
+    var x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>' +
+      widths.map(function (w, i) { return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>'; }).join('') + '</cols><sheetData>';
+    function str(ref, v, style) { return '<c r="' + ref + '"' + (style ? ' s="' + style + '"' : '') + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(v) + '</t></is></c>'; }
+    x += '<row r="1">' + sh.headers.map(function (h, i) { return str(colName(i) + '1', h, 1); }).join('') + '</row>';
+    sh.rows.forEach(function (r, ri) {
+      x += '<row r="' + (ri + 2) + '">' + r.map(function (v, i) {
+        var ref = colName(i) + (ri + 2);
+        if (v === null || v === undefined || v === '') return '';
+        if (typeof v === 'number' && isFinite(v)) return '<c r="' + ref + '" s="2"><v>' + v + '</v></c>';
+        return str(ref, v, 0);
+      }).join('') + '</row>';
+    });
+    return x + '</sheetData></worksheet>';
+  }
+  function buildXlsx(sheets) {
+    var enc = new TextEncoder(), NS = 'http://schemas.openxmlformats.org/', head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    var files = [
+      { name: '[Content_Types].xml', text: head + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+        sheets.map(function (s, i) { return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') + '</Types>' },
+      { name: '_rels/.rels', text: head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + NS + 'officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', text: head + '<workbook xmlns="' + NS + 'spreadsheetml/2006/main" xmlns:r="' + NS + 'officeDocument/2006/relationships"><sheets>' +
+        sheets.map(function (s, i) { return '<sheet name="' + xmlEsc(s.name) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets></workbook>' },
+      { name: 'xl/_rels/workbook.xml.rels', text: head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        sheets.map(function (s, i) { return '<Relationship Id="rId' + (i + 1) + '" Type="' + NS + 'officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('') +
+        '<Relationship Id="rId' + (sheets.length + 1) + '" Type="' + NS + 'officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+      { name: 'xl/styles.xml', text: head + '<styleSheet xmlns="' + NS + 'spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.###"/></numFmts>' +
+        '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>' +
+        '<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDCE6F1"/></patternFill></fill></fills>' +
+        '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+        '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>' +
+        '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>' }
+    ].concat(sheets.map(function (s, i) { return { name: 'xl/worksheets/sheet' + (i + 1) + '.xml', text: sheetXml(s) }; }));
+    return zipStore(files.map(function (f) { return { name: f.name, data: enc.encode(f.text) }; }));
+  }
+  // Bảng "Bản ghi" gồm toàn bộ trường của loại tài liệu; bảng chi tiết hàng hoá / vật tư (nếu có) ghi ở sheet thứ hai
+  function exportSheets(type, rows) {
+    var plain = type.fields.filter(function (f) { return f.type !== 'items'; });
+    var itemF = type.fields.filter(function (f) { return f.type === 'items'; });
+    var headers = ['STT', 'Thời gian lưu', 'Người quét'].concat(plain.map(function (f) { return f.label; }));
+    var main = rows.map(function (rec, i) {
+      return [i + 1, rec.scan_timestamp, rec.scanned_by].concat(plain.map(function (f) { var v = rec[f.k]; return v === '' ? null : v; }));
+    });
+    var sheets = [{ name: 'Bản ghi', headers: headers, rows: main }];
+    itemF.forEach(function (f) {
+      var ih = ['STT bản ghi', 'Thời gian lưu'].concat(S.cfg.itemFields.map(function (c) { return c.label; }));
+      var ir = [];
+      rows.forEach(function (rec, i) {
+        (rec[f.k] || []).forEach(function (it) { ir.push([i + 1, rec.scan_timestamp].concat(S.cfg.itemFields.map(function (c) { return it[c.k]; }))); });
+      });
+      sheets.push({ name: f.label.replace(/[\[\]:*?\/\\]/g, ' ').slice(0, 31), headers: ih, rows: ir });
+    });
+    return sheets;
+  }
+  $('btnRecExport').addEventListener('click', function () {
+    if (!REC.shown.length) return;
+    var bytes = buildXlsx(exportSheets(REC.type, REC.shown));
+    var blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    var url = URL.createObjectURL(blob);
+    var a = el('a', { href: url, download: REC.type.code + '_' + REC.from + '_' + REC.to + '.xlsx' });
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+    toast('Đã xuất ' + REC.shown.length + ' bản ghi ra Excel', 'ok');
+    google.script.run.logExport(S.token, REC.type.code, REC.from, REC.to, REC.shown.length);
+  });
+
+  /* Khung xem lại ảnh / PDF đã upload của một bản ghi (tải tự động khi gọi load) */
+  function rawViewer(code, period, rawId) {
+    var node = el('div', { 'class': 'rawv', style: 'margin-bottom:12px' });
     var urls = [];
-    function freeUrls() { urls.forEach(function (u) { if (u) URL.revokeObjectURL(u); }); urls = []; }
-    function showRaw(files, k) {
-      viewer.textContent = '';
+    function free() { urls.forEach(function (u) { if (u) URL.revokeObjectURL(u); }); urls = []; }
+    function show(files, k) {
+      node.textContent = '';
       if (files.length > 1) {
-        viewer.appendChild(el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px' }, files.map(function (f, i) {
+        node.appendChild(el('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px' }, files.map(function (f, i) {
           return el('button', { type: 'button', 'class': 'btn btn-xs' + (i === k ? ' btn-primary' : ''), text: 'Tệp ' + (i + 1) + '/' + files.length,
-            on: { click: function () { showRaw(files, i); } } });
+            on: { click: function () { show(files, i); } } });
         })));
       }
       var f = files[k];
-      if (f.error) { viewer.appendChild(el('div', { 'class': 'note', text: f.name + ': ' + f.error })); return; }
+      if (f.error) { node.appendChild(el('div', { 'class': 'note', text: f.name + ': ' + f.error })); return; }
       if (f.mimeType === 'application/pdf') {
-        viewer.appendChild(el('iframe', { src: urls[k], title: 'PDF đã upload', style: 'width:100%;height:60vh;border:1px solid var(--line);border-radius:8px;background:#fff' }));
+        node.appendChild(el('iframe', { src: urls[k], title: 'PDF đã upload', style: 'width:100%;height:60vh;border:1px solid var(--line);border-radius:8px;background:#fff' }));
       } else {
-        viewer.appendChild(el('img', { src: urls[k], alt: 'Ảnh đã upload', style: 'max-width:100%;border-radius:8px;display:block;margin:0 auto' }));
+        node.appendChild(el('img', { src: urls[k], alt: 'Ảnh đã upload', style: 'max-width:100%;border-radius:8px;display:block;margin:0 auto' }));
       }
-      viewer.appendChild(el('a', { href: urls[k], download: f.name, target: '_blank', rel: 'noopener', text: 'Tải tệp về máy',
+      node.appendChild(el('a', { href: urls[k], download: f.name, target: '_blank', rel: 'noopener', text: 'Tải tệp về máy',
         style: 'display:inline-block;margin-top:6px;color:var(--acc)' }));
     }
-    bView.addEventListener('click', function () {
-      if (S.busy) return;
-      if (urls.length) { viewer.textContent = ''; freeUrls(); bView.textContent = 'Xem ảnh / PDF đã upload'; return; }
-      setBusy(bView, true, 'Đang tải tệp');
-      rpc('getRawFile', [S.token, type.code, period, rec.raw_file_id]).then(function (r) {
+    function load() {
+      node.textContent = '';
+      node.appendChild(el('div', { 'class': 'muted', text: 'Đang tải ảnh / PDF đã upload...' }));
+      rpc('getRawFile', [S.token, code, period, rawId]).then(function (r) {
+        free();
         var files = r.files;
         urls = files.map(function (f) {
           if (f.error) return null;
@@ -814,11 +995,35 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
           for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
           return URL.createObjectURL(new Blob([arr], { type: f.mimeType }));
         });
-        showRaw(files, 0);
-        S.busy = false; bView.disabled = false; bView.textContent = 'Ẩn tệp';
-      }).catch(function (err) { setBusy(bView, false, 'Xem ảnh / PDF đã upload'); toast(err.message, 'err'); });
-    });
-    parts.push(bView); parts.push(viewer);
+        show(files, 0);
+      }).catch(function (err) {
+        node.textContent = '';
+        node.appendChild(el('div', { 'class': 'note', text: 'Không tải được tệp: ' + err.message }));
+        node.appendChild(el('button', { type: 'button', 'class': 'btn btn-xs', text: 'Thử lại', on: { click: load } }));
+      });
+    }
+    return { node: node, load: load, free: free };
+  }
+  function openImages(rec) {
+    var vw = rawViewer(REC.type.code, rec._period, rec.raw_file_id), m;
+    var sub = el('div', { 'class': 'muted', style: 'margin-bottom:10px', text: 'Quét bởi ' + (rec.scanned_by || '?') + ' lúc ' + (rec.scan_timestamp || '?') });
+    var bClose = el('button', { type: 'button', 'class': 'btn', text: 'Đóng', on: { click: function () { m.close(); } } });
+    m = openModal('Ảnh / PDF đã upload', el('div', {}, [sub, vw.node]), el('div', { 'class': 'modal-f' }, [el('div', { 'class': 'grp' }), el('div', { 'class': 'grp' }, [bClose])]), true);
+    var rc = m.close; m.close = function () { vw.free(); rc(); };
+    vw.load();
+  }
+
+  function openRecord(rec) {
+    var type = REC.type, period = rec._period;
+    var form = el('div', { 'class': 'grid' });
+    renderForm(form, type, rec, 'e_');
+    if (!rec._edit) lockForm(form);
+    var parts = [el('div', { 'class': 'muted', style: 'margin-bottom:10px',
+      text: 'Quét bởi ' + (rec.scanned_by || '?') + ' lúc ' + (rec.scan_timestamp || '?') + '. ' +
+        (rec._edit ? '' : 'Bạn chỉ có quyền xem bản ghi này. ') })];
+    var vw = rawViewer(type.code, period, rec.raw_file_id);
+    parts.push(vw.node);
+    vw.load();
     var body = el('div', {}, parts.concat([form]));
     var m;
     var bClose = el('button', { type: 'button', 'class': 'btn', text: 'Đóng', on: { click: function () { m.close(); } } });
@@ -827,7 +1032,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     var left = el('div', { 'class': 'grp' }, rec._del ? [bDel] : []);
     var right = el('div', { 'class': 'grp' }, [bClose].concat(rec._edit ? [bSave] : []));
     m = openModal(rec._edit ? 'Sửa bản ghi' : 'Xem bản ghi', body, el('div', { 'class': 'modal-f' }, [left, right]), true);
-    var rawClose = m.close; m.close = function () { freeUrls(); rawClose(); };
+    var rawClose = m.close; m.close = function () { vw.free(); rawClose(); };
     bSave.addEventListener('click', function () {
       if (S.busy) return;
       setBusy(bSave, true, 'Đang lưu');
