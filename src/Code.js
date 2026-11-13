@@ -9,7 +9,7 @@
  * Cấu trúc trong thư mục gốc (hệ thống tự tạo khi cần):
  *   ANH_GOC/2026/RAW_CCCD_20261112_083000_ab12cd.jpg      tệp gốc đối soát, chia theo năm
  *   DU_LIEU/2026/11/OCR_2026_11                           file Google Sheets của tháng, mỗi loại tài liệu 1 sheet
- *   OCR_USERS                                             file Google Sheets chứa tài khoản đăng nhập
+ *   OCR_USERS                                             file Google Sheets: sheet USERS (tài khoản, phân quyền) và NHAT_KY (nhật ký)
  *
  * Quy ước: hàm kết thúc bằng "_" là hàm nội bộ, trình duyệt không gọi được qua google.script.run.
  */
@@ -156,7 +156,178 @@ function getAppConfig() {
   return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES };
 }
 
-/* ============================ ĐĂNG NHẬP ============================ */
+/* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
+ * File OCR_USERS, sheet USERS (một dòng / tài khoản) và sheet NHAT_KY (nhật ký thao tác).
+ * Chỉ vai trò ADMIN được tạo / sửa / khoá / xoá tài khoản và tích quyền cho từng người dùng.
+ * Quyền áp dụng cho BẢN GHI OCR đã quét: thêm, sửa / xoá bản ghi của chính mình, sửa / xoá bản ghi của người khác.
+ * ADMIN luôn có toàn quyền. Tài khoản mặc định lần đầu: admin / khoatv@123 (bắt buộc đổi mật khẩu khi đăng nhập).
+ */
+const OLD_USER_HEADERS = ['username', 'full_name', 'active', 'new_password', 'salt', 'password_hash'];
+const USER_HEADERS = [
+  'username', 'full_name', 'role', 'active',
+  'perm_add', 'perm_edit_own', 'perm_edit_other', 'perm_del_own', 'perm_del_other',
+  'must_change', 'salt', 'password_hash', 'token_ver'
+];
+const AUDIT_HEADERS = ['time', 'user', 'action', 'target', 'detail'];
+const ROLES = ['ADMIN', 'USER'];
+const PERM_KEYS = ['perm_add', 'perm_edit_own', 'perm_edit_other', 'perm_del_own', 'perm_del_other'];
+const PERM_DEFAULT = { perm_add: true, perm_edit_own: true, perm_edit_other: false, perm_del_own: false, perm_del_other: false };
+const DEFAULT_ADMIN = { username: 'admin', full_name: 'Quản trị viên', password: 'khoatv@123' };
+
+function toBool_(v) { return v === true || String(v).trim().toUpperCase() === 'TRUE'; }
+function boolCell_(b) { return b ? 'TRUE' : 'FALSE'; }
+function unesc_(s) { return /^'[=+\-@']/.test(s) ? s.slice(1) : s; }
+
+function withLock_(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+
+function rowToUser_(r) {
+  const u = {};
+  USER_HEADERS.forEach(function (h, i) { u[h] = r[i]; });
+  u.username = String(u.username || '').trim().toLowerCase();
+  u.full_name = unesc_(String(u.full_name || ''));
+  u.role = String(u.role).trim().toUpperCase() === 'ADMIN' ? 'ADMIN' : 'USER';
+  u.active = toBool_(u.active);
+  u.must_change = toBool_(u.must_change);
+  PERM_KEYS.forEach(function (k) { u[k] = u.role === 'ADMIN' ? true : toBool_(u[k]); });
+  u.salt = String(u.salt || '');
+  u.password_hash = String(u.password_hash || '');
+  u.token_ver = Number(u.token_ver) || 1;
+  return u;
+}
+
+function userToRow_(u) {
+  return USER_HEADERS.map(function (h) {
+    const v = u[h];
+    if (h === 'active' || h === 'must_change' || PERM_KEYS.indexOf(h) >= 0) return boolCell_(v);
+    if (h === 'token_ver') return String(v || 1);
+    if (h === 'full_name') return cell_(v, 'string');
+    return String(v === undefined || v === null ? '' : v);
+  });
+}
+
+function readUsers_() {
+  const sh = sheet_(usersBook_(), 'USERS', USER_HEADERS);
+  const last = sh.getLastRow();
+  const list = [];
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, USER_HEADERS.length).getValues().forEach(function (r, i) {
+      if (!String(r[0]).trim()) return;
+      const u = rowToUser_(r);
+      u._row = i + 2;
+      list.push(u);
+    });
+  }
+  return { sh: sh, list: list };
+}
+
+function findUser_(username) {
+  username = String(username || '').trim().toLowerCase();
+  const list = readUsers_().list;
+  for (let i = 0; i < list.length; i++) if (list[i].username === username) return list[i];
+  return null;
+}
+
+function writeUser_(sh, row, u) {
+  sh.getRange(row, 1, 1, USER_HEADERS.length).setNumberFormat('@').setValues([userToRow_(u)]);
+  SpreadsheetApp.flush();
+}
+
+function appendUser_(sh, u) {
+  const row = sh.getLastRow() + 1;
+  if (row > sh.getMaxRows()) sh.insertRowAfter(sh.getMaxRows());
+  writeUser_(sh, row, u);
+}
+
+function newPasswordFields_(u, password) {
+  u.salt = Utilities.getUuid();
+  u.password_hash = hashPassword_(password, u.salt);
+}
+
+function hashPassword_(password, salt) {
+  let d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ':' + password, Utilities.Charset.UTF_8);
+  for (let i = 0; i < LIMITS.HASH_ROUNDS; i++) d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, d);
+  return Utilities.base64Encode(d);
+}
+
+function checkPasswordRule_(pw) {
+  if (pw.length < LIMITS.MIN_PASSWORD || pw.length > 200) {
+    throw new Error('Mật khẩu phải từ ' + LIMITS.MIN_PASSWORD + ' đến 200 ký tự.');
+  }
+}
+
+/** Chuyển sheet USERS cũ (6 cột) sang cấu trúc mới. Chỉ gọi khi đang giữ khoá. */
+function migrateUsers_(book) {
+  const sh = book.getSheetByName('USERS');
+  if (!sh || sh.getLastRow() === 0) return;
+  const cur = sh.getRange(1, 1, 1, OLD_USER_HEADERS.length).getDisplayValues()[0];
+  if (cur.join('|') !== OLD_USER_HEADERS.join('|')) return;
+  const last = sh.getLastRow();
+  const rows = last > 1 ? sh.getRange(2, 1, last - 1, OLD_USER_HEADERS.length).getValues() : [];
+  const out = [];
+  rows.forEach(function (r) {
+    const name = String(r[0]).trim().toLowerCase();
+    if (!name) return;
+    const u = {
+      username: name, full_name: String(r[1] || ''), role: 'USER',
+      active: !(r[2] === false || String(r[2]).toUpperCase() === 'FALSE'),
+      must_change: false, salt: String(r[4] || ''), password_hash: String(r[5] || ''), token_ver: 1
+    };
+    PERM_KEYS.forEach(function (k) { u[k] = PERM_DEFAULT[k]; });
+    const pw = String(r[3] || '');
+    if (pw.length >= LIMITS.MIN_PASSWORD) { newPasswordFields_(u, pw); u.must_change = true; }
+    out.push(userToRow_(u));
+  });
+  sh.clear();
+  sh.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS]).setFontWeight('bold');
+  sh.setFrozenRows(1);
+  sh.getRange(2, 1, Math.max(sh.getMaxRows() - 1, 1), USER_HEADERS.length).setNumberFormat('@');
+  if (out.length) sh.getRange(2, 1, out.length, USER_HEADERS.length).setValues(out);
+  SpreadsheetApp.flush();
+}
+
+/** Bảo đảm luôn có ít nhất một ADMIN: nếu chưa có thì tạo tài khoản mặc định (bắt buộc đổi mật khẩu). */
+function ensureAdmin_() {
+  const cache = CacheService.getScriptCache();
+  if (cache.get('admin_ok')) return;
+  let seeded = false;
+  withLock_(function () {
+    const book = usersBook_();
+    migrateUsers_(book);
+    const ctx = readUsers_();
+    const hasAdmin = ctx.list.some(function (u) { return u.role === 'ADMIN'; });
+    if (!hasAdmin) {
+      const exist = ctx.list.filter(function (u) { return u.username === DEFAULT_ADMIN.username; })[0];
+      const u = exist || { username: DEFAULT_ADMIN.username, token_ver: 0 };
+      u.full_name = u.full_name || DEFAULT_ADMIN.full_name;
+      u.role = 'ADMIN'; u.active = true; u.must_change = true;
+      PERM_KEYS.forEach(function (k) { u[k] = true; });
+      newPasswordFields_(u, DEFAULT_ADMIN.password);
+      u.token_ver = (Number(u.token_ver) || 0) + 1;
+      if (exist) writeUser_(ctx.sh, exist._row, u); else appendUser_(ctx.sh, u);
+      seeded = true;
+    }
+    cache.put('admin_ok', '1', 300);
+  });
+  if (seeded) audit_('system', 'TAO_ADMIN_MAC_DINH', DEFAULT_ADMIN.username, 'Bắt buộc đổi mật khẩu khi đăng nhập lần đầu');
+}
+
+function me_(u) {
+  const perms = {};
+  PERM_KEYS.forEach(function (k) { perms[k] = !!u[k]; });
+  return { username: u.username, name: u.full_name || u.username, role: u.role, perms: perms, must_change: !!u.must_change };
+}
+
+function newSession_(u) {
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('sess_' + token, JSON.stringify({ u: u.username, v: u.token_ver }), LIMITS.SESSION_SECONDS);
+  return token;
+}
+
+/* ---------- Đăng nhập / phiên ---------- */
 
 function login(username, password) {
   username = String(username || '').trim().toLowerCase();
@@ -171,83 +342,212 @@ function login(username, password) {
     throw new Error('Tài khoản tạm khoá do nhập sai nhiều lần. Thử lại sau 15 phút.');
   }
 
-  const found = verifyUser_(username, password);
-  if (!found) {
+  ensureAdmin_();
+  const u = findUser_(username);
+  let ok = false;
+  if (u && u.active && u.salt && u.password_hash) ok = hashPassword_(password, u.salt) === u.password_hash;
+  else hashPassword_(password, 'x'); // cân bằng thời gian xử lý, không lộ tài khoản có tồn tại hay không
+  if (!ok) {
     cache.put(failKey, String(fails + 1), LIMITS.LOGIN_LOCK_SECONDS);
     throw new Error('Sai tên đăng nhập hoặc mật khẩu.');
   }
   cache.remove(failKey);
-
-  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
-  const user = { u: found.username, name: found.full_name || found.username };
-  cache.put('sess_' + token, JSON.stringify(user), LIMITS.SESSION_SECONDS);
-  return { token: token, name: user.name };
+  return { token: newSession_(u), me: me_(u) };
 }
 
 function logout(token) {
-  if (token) CacheService.getScriptCache().remove('sess_' + String(token));
+  if (/^[a-f0-9]{64}$/.test(String(token || ''))) CacheService.getScriptCache().remove('sess_' + token);
   return true;
-}
-
-/* ---------- Sheet USERS ----------
- * Cột: username | full_name | active | new_password | salt | password_hash
- * Quản trị viên tạo / đổi mật khẩu bằng cách gõ mật khẩu vào cột new_password.
- * Lần đăng nhập kế tiếp (của bất kỳ ai) hệ thống băm mật khẩu và xoá ô đó.
- */
-const USER_HEADERS = ['username', 'full_name', 'active', 'new_password', 'salt', 'password_hash'];
-
-function hashPassword_(password, salt) {
-  let d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, salt + ':' + password, Utilities.Charset.UTF_8);
-  for (let i = 0; i < LIMITS.HASH_ROUNDS; i++) d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, d);
-  return Utilities.base64Encode(d);
-}
-
-function verifyUser_(username, password) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  let rows;
-  try {
-    const sh = sheet_(usersBook_(), 'USERS', USER_HEADERS);
-    const last = sh.getLastRow();
-    if (last < 2) return null;
-    const rng = sh.getRange(2, 1, last - 1, USER_HEADERS.length);
-    rows = rng.getValues();
-    // Băm các mật khẩu mới do quản trị viên vừa nhập
-    rows.forEach(function (r, i) {
-      const pw = String(r[3] || '');
-      if (pw.length < LIMITS.MIN_PASSWORD) return;
-      const salt = Utilities.getUuid();
-      r[3] = ''; r[4] = salt; r[5] = hashPassword_(pw, salt);
-      sh.getRange(i + 2, 4, 1, 3).setValues([['', salt, r[5]]]);
-    });
-    SpreadsheetApp.flush();
-  } finally {
-    lock.releaseLock();
-  }
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    if (String(r[0]).trim().toLowerCase() !== username) continue;
-    if (r[2] === false || String(r[2]).toUpperCase() === 'FALSE') return null;
-    if (!r[4] || !r[5]) return null;
-    return hashPassword_(password, String(r[4])) === String(r[5])
-      ? { username: username, full_name: String(r[1] || '') } : null;
-  }
-  return null;
 }
 
 /** Giao diện gọi khi mở lại trang để kiểm tra phiên còn hạn. */
 function checkSession(token) {
-  const s = session_(token, true);
-  return s ? { name: s.name } : null;
+  const me = auth_(token, { soft: true, allowMustChange: true });
+  return me || null;
 }
 
-function session_(token, soft) {
+function getMe(token) { return auth_(token, { allowMustChange: true }); }
+
+/**
+ * Xác thực phiên và nạp quyền MỚI NHẤT từ sheet USERS ở mỗi lần gọi,
+ * nên quản trị viên khoá tài khoản / đổi quyền là có hiệu lực ngay.
+ */
+function auth_(token, opt) {
+  opt = opt || {};
   const raw = /^[a-f0-9]{64}$/.test(String(token || '')) ? CacheService.getScriptCache().get('sess_' + token) : null;
-  if (!raw) {
-    if (soft) return null;
+  let s = null;
+  try { s = raw ? JSON.parse(raw) : null; } catch (e) { s = null; }
+  const u = s && s.v !== undefined ? findUser_(s.u) : null;
+  if (!u || !u.active || u.token_ver !== Number(s.v)) {
+    if (opt.soft) return null;
     throw new Error('SESSION_EXPIRED');
   }
-  return JSON.parse(raw);
+  if (u.must_change && !opt.allowMustChange) throw new Error('MUST_CHANGE_PASSWORD');
+  return me_(u);
+}
+
+function changeMyPassword(token, oldPassword, newPassword) {
+  const me = auth_(token, { allowMustChange: true });
+  oldPassword = String(oldPassword || '');
+  newPassword = String(newPassword || '');
+  checkPasswordRule_(newPassword);
+  if (newPassword === oldPassword) throw new Error('Mật khẩu mới phải khác mật khẩu hiện tại.');
+  if (newPassword === DEFAULT_ADMIN.password) throw new Error('Mật khẩu mới không được dùng mật khẩu mặc định.');
+  let u2;
+  withLock_(function () {
+    const ctx = readUsers_();
+    const u = ctx.list.filter(function (x) { return x.username === me.username; })[0];
+    if (!u) throw new Error('SESSION_EXPIRED');
+    if (hashPassword_(oldPassword, u.salt) !== u.password_hash) throw new Error('Mật khẩu hiện tại không đúng.');
+    newPasswordFields_(u, newPassword);
+    u.must_change = false;
+    u.token_ver = u.token_ver + 1;
+    writeUser_(ctx.sh, u._row, u);
+    u2 = u;
+  });
+  logout(token);
+  audit_(me.username, 'DOI_MAT_KHAU', me.username, '');
+  return { token: newSession_(u2), me: me_(u2) };
+}
+
+/* ---------- Quản lý tài khoản (chỉ ADMIN) ---------- */
+
+function requireAdmin_(token) {
+  const me = auth_(token);
+  if (me.role !== 'ADMIN') throw new Error('Chỉ quản trị viên (ADMIN) được thực hiện thao tác này.');
+  return me;
+}
+
+function normPerms_(input) {
+  const p = {};
+  PERM_KEYS.forEach(function (k) { p[k] = !!(input && toBool_(input[k])); });
+  return p;
+}
+
+function userLite_(u) {
+  const perms = {};
+  PERM_KEYS.forEach(function (k) { perms[k] = !!u[k]; });
+  return { username: u.username, full_name: u.full_name, role: u.role, active: u.active, must_change: u.must_change, perms: perms };
+}
+
+function listUsers(token) {
+  requireAdmin_(token);
+  return readUsers_().list.map(userLite_);
+}
+
+function createUser(token, d) {
+  const admin = requireAdmin_(token);
+  d = d || {};
+  const username = String(d.username || '').trim().toLowerCase();
+  if (!/^[a-z0-9._-]{3,32}$/.test(username)) throw new Error('Tên đăng nhập gồm 3-32 ký tự: chữ thường không dấu, số, dấu . _ -');
+  const password = String(d.password || '');
+  checkPasswordRule_(password);
+  const role = ROLES.indexOf(d.role) >= 0 ? d.role : 'USER';
+  const perms = normPerms_(d.perms);
+  withLock_(function () {
+    const ctx = readUsers_();
+    if (ctx.list.some(function (x) { return x.username === username; })) throw new Error('Tên đăng nhập "' + username + '" đã tồn tại.');
+    const u = { username: username, full_name: String(d.full_name || '').trim().slice(0, 100), role: role, active: true, must_change: true, token_ver: 1 };
+    PERM_KEYS.forEach(function (k) { u[k] = role === 'ADMIN' ? true : perms[k]; });
+    newPasswordFields_(u, password);
+    appendUser_(ctx.sh, u);
+  });
+  audit_(admin.username, 'TAO_USER', username, 'role=' + role + '; ' + permText_(perms));
+  return true;
+}
+
+function updateUser(token, username, patch) {
+  const admin = requireAdmin_(token);
+  username = String(username || '').trim().toLowerCase();
+  patch = patch || {};
+  const self = username === admin.username;
+  const changed = [];
+  withLock_(function () {
+    const ctx = readUsers_();
+    const u = ctx.list.filter(function (x) { return x.username === username; })[0];
+    if (!u) throw new Error('Không tìm thấy tài khoản.');
+    if (patch.full_name !== undefined) { u.full_name = String(patch.full_name || '').trim().slice(0, 100); changed.push('full_name'); }
+    if (patch.role !== undefined && patch.role !== u.role) {
+      if (ROLES.indexOf(patch.role) < 0) throw new Error('Vai trò không hợp lệ.');
+      if (self) throw new Error('Không thể tự đổi vai trò của chính mình.');
+      u.role = patch.role; changed.push('role=' + u.role);
+    }
+    if (patch.active !== undefined && toBool_(patch.active) !== u.active) {
+      if (self) throw new Error('Không thể tự khoá tài khoản của chính mình.');
+      u.active = toBool_(patch.active); changed.push(u.active ? 'mo_khoa' : 'khoa');
+    }
+    if (patch.perms) {
+      PERM_KEYS.forEach(function (k) { if (k in patch.perms) u[k] = toBool_(patch.perms[k]); });
+      changed.push('quyen: ' + permText_(u));
+    }
+    if (patch.password) {
+      if (self) throw new Error('Hãy dùng chức năng "Mật khẩu" để đổi mật khẩu của chính bạn.');
+      const pw = String(patch.password);
+      checkPasswordRule_(pw);
+      newPasswordFields_(u, pw);
+      u.must_change = true;
+      u.token_ver = u.token_ver + 1;
+      changed.push('dat_lai_mat_khau');
+    }
+    if (u.role === 'ADMIN') PERM_KEYS.forEach(function (k) { u[k] = true; });
+    const admins = ctx.list.filter(function (x) { return x.username !== u.username && x.role === 'ADMIN' && x.active; }).length +
+      (u.role === 'ADMIN' && u.active ? 1 : 0);
+    if (admins < 1) throw new Error('Phải còn ít nhất một quản trị viên đang hoạt động.');
+    writeUser_(ctx.sh, u._row, u);
+  });
+  audit_(admin.username, 'SUA_USER', username, changed.join('; '));
+  return true;
+}
+
+function deleteUser(token, username) {
+  const admin = requireAdmin_(token);
+  username = String(username || '').trim().toLowerCase();
+  if (username === admin.username) throw new Error('Không thể tự xoá tài khoản của chính mình.');
+  withLock_(function () {
+    const ctx = readUsers_();
+    const u = ctx.list.filter(function (x) { return x.username === username; })[0];
+    if (!u) throw new Error('Không tìm thấy tài khoản.');
+    const others = ctx.list.filter(function (x) { return x.username !== username && x.role === 'ADMIN' && x.active; }).length;
+    if (u.role === 'ADMIN' && others < 1) throw new Error('Phải còn ít nhất một quản trị viên đang hoạt động.');
+    ctx.sh.deleteRow(u._row);
+  });
+  audit_(admin.username, 'XOA_USER', username, 'Các bản ghi OCR do tài khoản này quét vẫn được giữ nguyên');
+  return true;
+}
+
+function permText_(p) {
+  const on = PERM_KEYS.filter(function (k) { return p[k]; });
+  return on.length ? on.join(',') : 'khong_co_quyen';
+}
+
+/** Nhật ký thao tác (sheet NHAT_KY trong OCR_USERS). Lỗi ghi nhật ký không làm hỏng thao tác chính. Không gọi khi đang giữ khoá. */
+function audit_(who, action, target, detail) {
+  try {
+    withLock_(function () {
+      const sh = sheet_(usersBook_(), 'NHAT_KY', AUDIT_HEADERS);
+      const row = sh.getLastRow() + 1;
+      if (row > sh.getMaxRows()) sh.insertRowAfter(sh.getMaxRows());
+      sh.getRange(row, 1, 1, AUDIT_HEADERS.length).setNumberFormat('@').setValues([[
+        Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'),
+        cell_(who, 'string'), cell_(action, 'string'), cell_(target, 'string'), cell_(String(detail || '').slice(0, 1000), 'string')
+      ]]);
+    });
+  } catch (e) {
+    console.error('Không ghi được nhật ký: ' + e.message);
+  }
+}
+
+/* ---------- Quyền trên bản ghi OCR ---------- */
+
+function canEdit_(me, owner) {
+  return me.role === 'ADMIN' || (owner === me.username ? me.perms.perm_edit_own : me.perms.perm_edit_other);
+}
+function canDelete_(me, owner) {
+  return me.role === 'ADMIN' || (owner === me.username ? me.perms.perm_del_own : me.perms.perm_del_other);
+}
+/** Xem bản ghi của người khác: ADMIN hoặc người có quyền sửa / xoá bản ghi của người khác. Còn lại chỉ thấy bản ghi của mình. */
+function canViewAll_(me) {
+  return me.role === 'ADMIN' || me.perms.perm_edit_other || me.perms.perm_del_other;
 }
 
 /* ============================ BƯỚC 1: QUÉT ============================ */
@@ -259,7 +559,8 @@ function session_(token, soft) {
  */
 function scanDocument(token, payload) {
   const started = Date.now();
-  const user = session_(token);
+  const me = auth_(token);
+  if (!me.perms.perm_add) throw new Error('Tài khoản của bạn không có quyền thêm bản ghi.');
   payload = payload || {};
   const type = DOC_TYPES[payload.docType];
   if (!type) throw new Error('Loại tài liệu không hợp lệ.');
@@ -268,7 +569,7 @@ function scanDocument(token, payload) {
   const b64 = String(payload.base64 || '');
   if (!b64) throw new Error('Chưa có tệp để quét.');
   if (b64.length * 0.75 > LIMITS.MAX_FILE_BYTES) throw new Error('Tệp quá lớn (tối đa 14 MB). Với PDF dài, hãy tách 5-10 trang mỗi lượt.');
-  rateLimit_(user.u);
+  rateLimit_(me.username);
 
   let bytes;
   try { bytes = Utilities.base64Decode(b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
@@ -281,7 +582,7 @@ function scanDocument(token, payload) {
   let folder;
   try { folder = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]); } finally { lock.releaseLock(); }
   const file = folder.createFile(Utilities.newBlob(bytes, payload.mimeType, name));
-  file.setDescription('Quét bởi ' + user.u);
+  file.setDescription('Quét bởi ' + me.username);
 
   const data = callGemini_(type, payload.mimeType, b64);
   return { data: data, fileId: file.getId(), fileUrl: file.getUrl(), ms: Date.now() - started };
@@ -364,46 +665,74 @@ function callGemini_(type, mimeType, b64) {
   }
 }
 
-/* ============================ BƯỚC 2: LƯU ============================ */
+/* ============================ BƯỚC 2: LƯU & QUẢN LÝ BẢN GHI ============================ */
 
-/** Ghi bản ghi đã được người dùng kiểm tra vào Google Sheets (ghi đè theo khoá để chống trùng). */
-function saveRecord(token, docType, data, fileId) {
-  const user = session_(token);
-  const type = DOC_TYPES[docType];
-  if (!type) throw new Error('Loại tài liệu không hợp lệ.');
-  if (!/^[A-Za-z0-9_-]{20,80}$/.test(String(fileId || ''))) throw new Error('Thiếu tệp gốc đối soát. Hãy quét lại.');
+function typeCols_(type) { return SYS_COLS.concat(type.fields); }
+function typeHeaders_(type) { return typeCols_(type).map(function (c) { return c.k; }); }
+function colFormat_(c) { return c.type === 'date' ? 'yyyy-mm-dd hh:mm:ss' : (c.type === 'number' ? '#,##0.###' : '@'); }
+
+/** Làm sạch dữ liệu người dùng gửi lên và kiểm tra trường bắt buộc. */
+function buildRecord_(type, data) {
   data = data || {};
-
   const record = {};
-  type.fields.forEach(function (f) {
-    record[f.k] = clean_(data[f.k], f.type);
-  });
+  type.fields.forEach(function (f) { record[f.k] = clean_(data[f.k], f.type); });
   const missing = type.fields.filter(function (f) {
     return type.required.indexOf(f.k) >= 0 && (record[f.k] === null || record[f.k] === '');
   });
-  if (missing.length) {
-    throw new Error('Thiếu trường bắt buộc: ' + missing.map(function (f) { return f.label; }).join(', '));
-  }
+  if (missing.length) throw new Error('Thiếu trường bắt buộc: ' + missing.map(function (f) { return f.label; }).join(', '));
+  return record;
+}
+
+function parsePeriod_(period) {
+  const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(String(period || ''));
+  if (!m) throw new Error('Tháng không hợp lệ (định dạng yyyy-MM).');
+  return { y: m[1], m: m[2] };
+}
+
+function checkType_(docType) {
+  const type = DOC_TYPES[docType];
+  if (!type) throw new Error('Loại tài liệu không hợp lệ.');
+  return type;
+}
+
+function checkFileId_(fileId) {
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(String(fileId || ''))) throw new Error('Mã bản ghi không hợp lệ.');
+  return String(fileId);
+}
+
+/** Tìm dòng theo raw_file_id (duy nhất cho mỗi bản ghi). Trả 0 nếu không thấy. */
+function locateRow_(sh, headers, fileId) {
+  const last = sh.getLastRow();
+  if (last < 2) return 0;
+  const ids = sh.getRange(2, headers.indexOf('raw_file_id') + 1, last - 1, 1).getDisplayValues();
+  for (let i = 0; i < ids.length; i++) if (ids[i][0] === fileId) return i + 2;
+  return 0;
+}
+
+/** Ghi bản ghi MỚI đã được người dùng kiểm tra vào Google Sheets (ghi đè theo khoá nghiệp vụ để chống trùng). */
+function saveRecord(token, docType, data, fileId) {
+  const me = auth_(token);
+  if (!me.perms.perm_add) throw new Error('Tài khoản của bạn không có quyền thêm bản ghi.');
+  const type = checkType_(docType);
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(String(fileId || ''))) throw new Error('Thiếu tệp gốc đối soát. Hãy quét lại.');
+  const record = buildRecord_(type, data);
 
   record.scan_timestamp = new Date();
   record.document_type = docType;
   record.raw_file_url = 'https://drive.google.com/file/d/' + fileId + '/view';
   record.raw_file_id = fileId;
-  record.scanned_by = user.u;
+  record.scanned_by = me.username;
 
-  const cols = SYS_COLS.concat(type.fields);
-  const headers = cols.map(function (c) { return c.k; });
-  const formats = cols.map(function (c) {
-    return c.type === 'date' ? 'yyyy-mm-dd hh:mm:ss' : (c.type === 'number' ? '#,##0.###' : '@');
-  });
+  const cols = typeCols_(type);
+  const headers = typeHeaders_(type);
+  const formats = cols.map(colFormat_);
   const values = cols.map(function (c) { return cell_(record[c.k], c.type); });
   const keyName = type.uniqueKey || 'raw_file_id';
   const keyVal = String(record[keyName]);
+  const ownerIdx = headers.indexOf('scanned_by');
 
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
   let row = 0, updated = false, book;
-  try {
+  withLock_(function () {
     book = monthBook_(record.scan_timestamp);
     const sh = sheet_(book, docType, headers);
     const last = sh.getLastRow();
@@ -413,16 +742,161 @@ function saveRecord(token, docType, data, fileId) {
         if (keys[i][0] === keyVal) { row = i + 2; updated = true; break; }
       }
     }
-    if (!row) {
+    if (updated) {
+      // Trùng khoá nghiệp vụ: ghi đè bản ghi cũ, nên phải có quyền sửa bản ghi đó; người sở hữu giữ nguyên
+      const owner = String(sh.getRange(row, ownerIdx + 1).getDisplayValue());
+      if (!canEdit_(me, owner)) {
+        throw new Error('Đã có bản ghi trùng (' + keyName + ' = ' + keyVal + ') do ' + (owner || 'người khác') +
+          ' quét. Bạn không có quyền ghi đè bản ghi này.');
+      }
+      values[ownerIdx] = owner;
+    } else {
       row = last + 1;
       if (row > sh.getMaxRows()) sh.insertRowAfter(sh.getMaxRows());
     }
     sh.getRange(row, 1, 1, headers.length).setNumberFormats([formats]).setValues([values]);
     SpreadsheetApp.flush();
-  } finally {
-    lock.releaseLock();
-  }
+  });
+  audit_(me.username, updated ? 'GHI_DE' : 'THEM', docType, keyName + '=' + keyVal + '; ' + book.getName() + ' dòng ' + row);
   return { book: book.getName(), sheet: docType, row: row, updated: updated };
+}
+
+/** Danh sách bản ghi của một loại tài liệu trong một tháng ("yyyy-MM"). Mới nhất ở trên, tối đa 1000 dòng. */
+function listRecords(token, docType, period) {
+  const me = auth_(token);
+  const type = checkType_(docType);
+  const p = parsePeriod_(period);
+  const viewAll = canViewAll_(me);
+  const out = { rows: [], viewAll: viewAll, truncated: false, total: 0 };
+  const book = findMonthBook_(p.y, p.m);
+  const sh = book ? book.getSheetByName(docType) : null;
+  if (!sh || sh.getLastRow() < 2) return out;
+
+  const cols = typeCols_(type), headers = typeHeaders_(type);
+  const cur = sh.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
+  if (cur.join('|') !== headers.join('|')) throw new Error('Dòng tiêu đề sheet ' + docType + ' đã bị sửa, không khớp cấu trúc.');
+  const raw = sh.getRange(2, 1, sh.getLastRow() - 1, headers.length).getValues();
+  const rows = [];
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const r = raw[i];
+    const o = {};
+    cols.forEach(function (c, j) {
+      let v = r[j];
+      if (v instanceof Date) v = Utilities.formatDate(v, TZ, 'yyyy-MM-dd HH:mm:ss');
+      else if (c.type === 'items') {
+        try { v = v === '' ? null : JSON.parse(unesc_(String(v))); } catch (e) { v = null; }
+      } else if (c.type === 'number') v = v === '' ? null : Number(v);
+      else v = unesc_(String(v === null || v === undefined ? '' : v));
+      o[c.k] = v;
+    });
+    if (!o.raw_file_id) continue;
+    if (!viewAll && o.scanned_by !== me.username) continue;
+    out.total++;
+    if (rows.length >= 1000) { out.truncated = true; continue; }
+    o._edit = canEdit_(me, o.scanned_by);
+    o._del = canDelete_(me, o.scanned_by);
+    rows.push(o);
+  }
+  out.rows = rows;
+  return out;
+}
+
+/**
+ * Trả tệp gốc (ảnh / PDF) của một bản ghi để xem lại trên giao diện, kể cả với người dùng bên ngoài
+ * không có quyền vào Drive. Chỉ xem được tệp của bản ghi mà chính người đó được phép xem.
+ */
+function getRawFile(token, docType, period, fileId) {
+  const me = auth_(token);
+  const type = checkType_(docType);
+  const p = parsePeriod_(period);
+  fileId = checkFileId_(fileId);
+  const headers = typeHeaders_(type);
+  const book = findMonthBook_(p.y, p.m);
+  const sh = book ? book.getSheetByName(docType) : null;
+  const row = sh ? locateRow_(sh, headers, fileId) : 0;
+  if (!row) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
+  const owner = String(sh.getRange(row, headers.indexOf('scanned_by') + 1).getDisplayValue());
+  if (!canViewAll_(me) && owner !== me.username) throw new Error('Bạn không có quyền xem tệp của bản ghi này.');
+  let file;
+  try { file = DriveApp.getFileById(fileId); } catch (e) { throw new Error('Không tìm thấy tệp gốc trên Drive (có thể đã bị xoá).'); }
+  if (file.isTrashed()) throw new Error('Tệp gốc đã bị chuyển vào thùng rác trên Drive.');
+  const blob = file.getBlob();
+  const mime = blob.getContentType();
+  if (!MIME_EXT[mime]) throw new Error('Định dạng tệp gốc không được hỗ trợ xem.');
+  const bytes = blob.getBytes();
+  if (bytes.length > LIMITS.MAX_FILE_BYTES) throw new Error('Tệp quá lớn để xem trên giao diện. Hãy mở trực tiếp trên Drive.');
+  return { mimeType: mime, name: file.getName(), base64: Utilities.base64Encode(bytes) };
+}
+
+/** Sửa một bản ghi đã lưu. Cần quyền sửa của chính mình / của người khác tuỳ chủ sở hữu. */
+function updateRecord(token, docType, period, fileId, data) {
+  const me = auth_(token);
+  const type = checkType_(docType);
+  const p = parsePeriod_(period);
+  fileId = checkFileId_(fileId);
+  const record = buildRecord_(type, data);
+  const headers = typeHeaders_(type);
+  const start = SYS_COLS.length + 1;
+  const values = type.fields.map(function (f) { return cell_(record[f.k], f.type); });
+  const formats = type.fields.map(colFormat_);
+
+  let keyDesc = '';
+  withLock_(function () {
+    const book = findMonthBook_(p.y, p.m);
+    if (!book) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
+    const sh = sheet_(book, docType, headers);
+    const row = locateRow_(sh, headers, fileId);
+    if (!row) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
+    const owner = String(sh.getRange(row, headers.indexOf('scanned_by') + 1).getDisplayValue());
+    if (!canEdit_(me, owner)) {
+      throw new Error(owner === me.username ? 'Bạn không có quyền sửa bản ghi của chính mình.' : 'Bạn không có quyền sửa bản ghi của người khác.');
+    }
+    const keyName = type.uniqueKey;
+    if (keyName && record[keyName] !== null) {
+      const kv = String(record[keyName]);
+      const last = sh.getLastRow();
+      const keys = sh.getRange(2, headers.indexOf(keyName) + 1, last - 1, 1).getDisplayValues();
+      for (let i = 0; i < keys.length; i++) {
+        if (i + 2 !== row && keys[i][0] === kv) throw new Error('Đã có bản ghi khác trong tháng này trùng ' + keyName + ' = ' + kv + '.');
+      }
+      keyDesc = keyName + '=' + kv;
+    }
+    sh.getRange(row, start, 1, type.fields.length).setNumberFormats([formats]).setValues([values]);
+    SpreadsheetApp.flush();
+    keyDesc += (keyDesc ? '; ' : '') + book.getName() + ' dòng ' + row + '; chủ sở hữu ' + owner;
+  });
+  audit_(me.username, 'SUA', docType, keyDesc);
+  return true;
+}
+
+/** Xoá dòng dữ liệu của bản ghi. Tệp ảnh gốc trên Drive được giữ lại để đối soát. */
+function deleteRecord(token, docType, period, fileId) {
+  const me = auth_(token);
+  const type = checkType_(docType);
+  const p = parsePeriod_(period);
+  fileId = checkFileId_(fileId);
+  const headers = typeHeaders_(type);
+
+  let desc = '';
+  withLock_(function () {
+    const book = findMonthBook_(p.y, p.m);
+    if (!book) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
+    const sh = sheet_(book, docType, headers);
+    const row = locateRow_(sh, headers, fileId);
+    if (!row) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
+    const owner = String(sh.getRange(row, headers.indexOf('scanned_by') + 1).getDisplayValue());
+    if (!canDelete_(me, owner)) {
+      throw new Error(owner === me.username ? 'Bạn không có quyền xoá bản ghi của chính mình.' : 'Bạn không có quyền xoá bản ghi của người khác.');
+    }
+    const keyName = type.uniqueKey || 'raw_file_id';
+    desc = keyName + '=' + sh.getRange(row, headers.indexOf(keyName) + 1).getDisplayValue() +
+      '; ' + book.getName() + '; chủ sở hữu ' + owner + '; tệp gốc ' + fileId;
+    if (sh.getMaxRows() - sh.getFrozenRows() <= 1) sh.getRange(row, 1, 1, headers.length).clearContent();
+    else sh.deleteRow(row);
+    SpreadsheetApp.flush();
+  });
+  audit_(me.username, 'XOA', docType, desc);
+  return true;
 }
 
 const SYS_COLS = [
@@ -529,6 +1003,26 @@ function monthBook_(date) {
   });
 }
 
+/** Như monthBook_ nhưng KHÔNG tạo mới: trả null nếu tháng đó chưa có dữ liệu. Dùng cho thao tác chỉ đọc / sửa / xoá. */
+function findMonthBook_(y, m) {
+  let folder = DriveApp.getFolderById(prop_('DRIVE_FOLDER_ID', DEFAULTS.DRIVE_FOLDER_ID));
+  const path = [DIRS.DATA, y, m];
+  for (let i = 0; i < path.length; i++) {
+    let next = null;
+    const it = folder.getFoldersByName(path[i]);
+    while (it.hasNext() && !next) { const c = it.next(); if (!c.isTrashed()) next = c; }
+    if (!next) return null;
+    folder = next;
+  }
+  const name = DIRS.BOOK_PREFIX + y + '_' + m;
+  const files = folder.getFilesByName(name);
+  while (files.hasNext()) {
+    const f = files.next();
+    if (!f.isTrashed() && f.getMimeType() === 'application/vnd.google-apps.spreadsheet') return SpreadsheetApp.openById(f.getId());
+  }
+  return null;
+}
+
 /** File tài khoản đăng nhập, nằm ngay trong thư mục gốc. */
 function usersBook_() {
   return book_(pathFolder_([]), DIRS.USERS_BOOK, function (ss) { sheet_(ss, 'USERS', USER_HEADERS); });
@@ -601,14 +1095,16 @@ function setup() {
     const raw = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]);
     const data = monthBook_(now);
     const users = usersBook_();
+    migrateUsers_(users);
     console.log('Thư mục gốc: ' + pathFolder_([]).getName() +
       '\nThư mục ảnh năm nay: ' + raw.getName() +
       '\nFile dữ liệu tháng này: ' + data.getUrl() +
       '\nFile tài khoản: ' + users.getUrl() +
       '\nModel Gemini: ' + prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL) +
-      '\nBước tiếp: mở file tài khoản, sheet USERS, nhập username và new_password.');
+      '\nBước tiếp: đăng nhập admin / khoatv@123 (hệ thống bắt buộc đổi mật khẩu ngay), rồi tạo tài khoản ở tab Tài khoản.');
   } finally {
     lock.releaseLock();
   }
+  ensureAdmin_();
   return true;
 }

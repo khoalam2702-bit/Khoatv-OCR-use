@@ -91,6 +91,30 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
 .modal-b{padding:0;background:#000}
 .modal-b video{width:100%;max-height:62vh;display:block}
 .modal-f{display:flex;gap:8px;justify-content:space-between;padding:10px 12px;border-top:1px solid var(--line)}
+.btn-danger{background:var(--red-bg);border-color:var(--red-bd);color:var(--red)}
+.tabs{display:flex;gap:6px;max-width:1100px;margin:0 auto;padding:10px 12px 0;overflow-x:auto}
+.tab{padding:7px 16px;border-radius:8px;border:1px solid var(--line);background:var(--btn);color:var(--tx2);font:700 13.5px inherit;font-family:inherit;cursor:pointer;white-space:nowrap;min-height:36px}
+.tab.active{background:var(--acc-bg);border-color:var(--acc-bd);color:var(--acc)}
+.wrap.wide{max-width:1100px}
+.toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px}
+.toolbar > div{min-width:150px;flex:1}
+.toolbar > .fit{flex:0 0 auto;min-width:0}
+.modal-b.pad{padding:12px;background:var(--panel);max-height:68vh;overflow:auto;color:var(--tx)}
+.modal.wide{max-width:780px}
+.modal-f .grp{display:flex;gap:8px}
+.chk{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:14px;cursor:pointer}
+.chk input{width:18px;height:18px;flex:none}
+.chk input:disabled + span{opacity:.6}
+.b-gray{color:var(--tx3);background:transparent;border-color:var(--line)}
+.b-red{color:var(--red);background:var(--red-bg);border-color:var(--red-bd)}
+.tbl.rec{min-width:640px}
+.tbl.rec td{padding:7px 8px}
+.tbl.rec td.ell{max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbl.rec td.n{text-align:right;font-variant-numeric:tabular-nums}
+.tbl tr.row-click{cursor:pointer}
+.tbl tr.row-click:hover td{background:var(--hover)}
+.muted{color:var(--tx3);font-size:13px}
+.empty{padding:22px;text-align:center;color:var(--tx3)}
 .login{max-width:380px;margin:9vh auto 0;padding:0 14px}
 .login h1{font-size:20px;color:var(--tx1);margin:14px 0 4px}
 .login p{color:var(--tx3);margin:0 0 16px;font-size:13.5px}
@@ -126,11 +150,19 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     <div class="logo">OCR</div>
     <div class="title">Quét tài liệu</div>
     <span class="who" id="who"></span>
+    <span class="badge hidden" id="whoRole" style="color:var(--amber);background:var(--amber-bg);border-color:var(--amber-bd)">ADMIN</span>
+    <button class="btn btn-ghost btn-xs" id="btnPw" type="button" title="Đổi mật khẩu">Mật khẩu</button>
     <button class="btn btn-ghost btn-xs" id="btnTheme" type="button" title="Đổi giao diện sáng/tối">Sáng/Tối</button>
     <button class="btn btn-xs" id="btnLogout" type="button">Thoát</button>
   </div>
 
-  <div class="wrap">
+  <div class="tabs" id="tabs">
+    <button class="tab" type="button" data-page="scan" id="tabScan">Quét tài liệu</button>
+    <button class="tab" type="button" data-page="rec" id="tabRec">Bản ghi đã lưu</button>
+    <button class="tab hidden" type="button" data-page="users" id="tabUsers">Tài khoản</button>
+  </div>
+
+  <div class="wrap" id="pgScan">
     <div class="card">
       <div class="card-h"><span class="step">1</span><span class="card-t">Chọn loại tài liệu</span></div>
       <div class="card-b"><div class="types" id="types"></div></div>
@@ -160,11 +192,50 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     </div>
   </div>
 
-  <div class="bar"><div>
+  <div class="wrap wide hidden" id="pgRec">
+    <div class="card"><div class="card-b">
+      <div class="toolbar">
+        <div><label class="lbl" for="recType">Loại tài liệu</label><select class="inp" id="recType"></select></div>
+        <div><label class="lbl" for="recMonth">Tháng</label><input class="inp" id="recMonth" type="month"></div>
+        <div class="fit"><button class="btn btn-primary" id="btnRecLoad" type="button">Tải danh sách</button></div>
+      </div>
+      <div class="muted" id="recInfo"></div>
+    </div></div>
+    <div id="recBox"></div>
+  </div>
+
+  <div class="wrap wide hidden" id="pgUsers">
+    <div class="card"><div class="card-b">
+      <div class="toolbar">
+        <div><div class="muted">Chỉ ADMIN tạo và phân quyền tài khoản. Quyền áp dụng cho bản ghi OCR đã quét; ADMIN luôn có toàn quyền. Mọi thao tác được ghi vào sheet NHAT_KY.</div></div>
+        <div class="fit"><button class="btn btn-primary" id="btnUserNew" type="button">+ Tạo tài khoản</button></div>
+      </div>
+    </div></div>
+    <div id="userBox"></div>
+  </div>
+
+  <div class="bar" id="bar"><div>
     <button class="btn" id="btnReset" type="button">Làm lại</button>
     <button class="btn btn-primary" id="btnScan" type="button" style="flex:1" disabled>Bắt đầu quét</button>
     <button class="btn btn-primary hidden" id="btnSave" type="button" style="flex:1">Lưu dữ liệu</button>
   </div></div>
+</div>
+
+<!-- ============ ĐỔI MẬT KHẨU ============ -->
+<div class="overlay hidden" id="pwOverlay" style="z-index:70">
+  <form class="modal" id="frmPw" style="max-width:420px" autocomplete="off">
+    <div class="modal-h">Đổi mật khẩu</div>
+    <div class="modal-b pad">
+      <div class="note hidden" id="pwForced">Bạn phải đổi mật khẩu trước khi sử dụng hệ thống.</div>
+      <div style="margin-bottom:10px"><label class="lbl" for="pwOld">Mật khẩu hiện tại</label><input class="inp" id="pwOld" type="password" autocomplete="current-password" required></div>
+      <div style="margin-bottom:10px"><label class="lbl" for="pwNew">Mật khẩu mới (tối thiểu 8 ký tự)</label><input class="inp" id="pwNew" type="password" autocomplete="new-password" minlength="8" required></div>
+      <div><label class="lbl" for="pwNew2">Nhập lại mật khẩu mới</label><input class="inp" id="pwNew2" type="password" autocomplete="new-password" minlength="8" required></div>
+    </div>
+    <div class="modal-f">
+      <button class="btn" id="pwCancel" type="button">Huỷ</button>
+      <button class="btn btn-primary" id="pwOk" type="submit">Đổi mật khẩu</button>
+    </div>
+  </form>
 </div>
 
 <!-- ============ CAMERA ============ -->
@@ -184,8 +255,16 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
 (function () {
   'use strict';
   var MAX_EDGE = 2000, JPEG_Q = 0.92;
+  var PERMS = [
+    ['perm_add', 'Thêm bản ghi (quét và lưu)', 'Thêm'],
+    ['perm_edit_own', 'Sửa bản ghi của chính mình', 'Sửa của mình'],
+    ['perm_edit_other', 'Sửa bản ghi của người khác', 'Sửa của người khác'],
+    ['perm_del_own', 'Xoá bản ghi của chính mình', 'Xoá của mình'],
+    ['perm_del_other', 'Xoá bản ghi của người khác', 'Xoá của người khác']
+  ];
   var $ = function (id) { return document.getElementById(id); };
-  var S = { token: null, cfg: null, type: null, file: null, scan: null, busy: false, stream: null, facing: 'environment' };
+  var S = { token: null, me: null, cfg: null, type: null, file: null, scan: null, busy: false, stream: null,
+            facing: 'environment', page: 'scan' };
 
   /* ---------- tiện ích ---------- */
   function el(tag, attrs, kids) {
@@ -193,7 +272,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     Object.keys(attrs || {}).forEach(function (k) {
       if (k === 'text') n.textContent = attrs[k];
       else if (k === 'on') Object.keys(attrs.on).forEach(function (ev) { n.addEventListener(ev, attrs.on[ev]); });
-      else if (attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+      else if (attrs[k] !== null && attrs[k] !== undefined && attrs[k] !== false) n.setAttribute(k, attrs[k] === true ? '' : attrs[k]);
     });
     (kids || []).forEach(function (c) { n.appendChild(c); });
     return n;
@@ -213,6 +292,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
       var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(function (e) {
         var m = (e && e.message) || String(e);
         if (m.indexOf('SESSION_EXPIRED') >= 0) { signOut(true); reject(new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')); }
+        else if (m.indexOf('MUST_CHANGE_PASSWORD') >= 0) { openPw(true); reject(new Error('Bạn phải đổi mật khẩu trước khi tiếp tục.')); }
         else reject(new Error(m.replace(/^Error:\s*/, '')));
       });
       r[fn].apply(r, args || []);
@@ -225,17 +305,65 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     if (on) btn.appendChild(el('span', { 'class': 'spin' }));
     btn.appendChild(document.createTextNode((on ? ' ' : '') + label));
   }
-
-  /* ---------- đăng nhập ---------- */
-  function showLogin() { $('viewApp').classList.add('hidden'); $('viewLogin').classList.remove('hidden'); }
-  function showApp(name) {
-    $('who').textContent = name || '';
-    $('viewLogin').classList.add('hidden'); $('viewApp').classList.remove('hidden');
+  function askConfirm(msg, okLabel) {
+    return new Promise(function (resolve) {
+      var ov = el('div', { 'class': 'overlay', style: 'z-index:90', role: 'dialog', 'aria-modal': 'true' });
+      function done(v) { ov.remove(); resolve(v); }
+      ov.appendChild(el('div', { 'class': 'modal', style: 'max-width:380px' }, [
+        el('div', { 'class': 'modal-h', text: 'Xác nhận' }),
+        el('div', { 'class': 'modal-b pad', text: msg }),
+        el('div', { 'class': 'modal-f' }, [
+          el('button', { type: 'button', 'class': 'btn', text: 'Huỷ', on: { click: function () { done(false); } } }),
+          el('button', { type: 'button', 'class': 'btn btn-danger', text: okLabel || 'Đồng ý', on: { click: function () { done(true); } } })
+        ])
+      ]));
+      document.body.appendChild(ov);
+    });
   }
+  function openModal(title, bodyNode, footNode, wide) {
+    var ov = el('div', { 'class': 'overlay', style: 'z-index:60', role: 'dialog', 'aria-modal': 'true' });
+    var m = el('div', { 'class': 'modal' + (wide ? ' wide' : '') }, [
+      el('div', { 'class': 'modal-h', text: title }),
+      el('div', { 'class': 'modal-b pad' }, [bodyNode]),
+      footNode
+    ]);
+    ov.appendChild(m); document.body.appendChild(ov);
+    return { close: function () { ov.remove(); } };
+  }
+  function isAdmin() { return !!S.me && S.me.role === 'ADMIN'; }
+  function can(k) { return !!S.me && (S.me.role === 'ADMIN' || !!S.me.perms[k]); }
+
+  /* ---------- đăng nhập / điều hướng ---------- */
+  function showLogin() { $('viewApp').classList.add('hidden'); $('viewLogin').classList.remove('hidden'); }
+  function showApp(me) {
+    S.me = me;
+    $('who').textContent = me.name || '';
+    $('whoRole').classList.toggle('hidden', me.role !== 'ADMIN');
+    $('tabScan').classList.toggle('hidden', !can('perm_add'));
+    $('tabUsers').classList.toggle('hidden', !isAdmin());
+    $('viewLogin').classList.add('hidden'); $('viewApp').classList.remove('hidden');
+    if (me.must_change) { go(null); openPw(true); } else enter();
+  }
+  function enter() { go(can('perm_add') ? 'scan' : 'rec'); }
+  function go(page) {
+    S.page = page;
+    [['scan', 'pgScan', 'tabScan'], ['rec', 'pgRec', 'tabRec'], ['users', 'pgUsers', 'tabUsers']].forEach(function (x) {
+      $(x[1]).classList.toggle('hidden', x[0] !== page);
+      $(x[2]).classList.toggle('active', x[0] === page);
+    });
+    $('bar').classList.toggle('hidden', page !== 'scan');
+    if (page === 'rec') loadRecords();
+    if (page === 'users') loadUsers();
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
+    b.addEventListener('click', function () { if (!S.busy) go(b.getAttribute('data-page')); });
+  });
   function signOut(silent) {
     if (S.token && !silent) google.script.run.logout(S.token);
-    S.token = null; store('ocr_token', null);
-    stopCam(); resetAll(); showLogin();
+    S.token = null; S.me = null; store('ocr_token', null);
+    stopCam(); $('pwOverlay').classList.add('hidden');
+    Array.prototype.forEach.call(document.querySelectorAll('.overlay:not(#pwOverlay):not(#camOverlay)'), function (o) { o.remove(); });
+    resetAll(); showLogin();
   }
   $('frmLogin').addEventListener('submit', function (e) {
     e.preventDefault();
@@ -245,7 +373,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     rpc('login', [$('lgUser').value, $('lgPass').value]).then(function (r) {
       S.token = r.token; store('ocr_token', r.token);
       $('lgPass').value = '';
-      showApp(r.name);
+      showApp(r.me);
     }).catch(function (err) { toast(err.message, 'err'); })
       .then(function () { setBusy(btn, false, 'Đăng nhập'); });
   });
@@ -254,6 +382,32 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     var cur = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
     document.documentElement.setAttribute('data-theme', cur);
     try { localStorage.setItem('ocr_theme', cur); } catch (e) {}
+  });
+
+  /* ---------- đổi mật khẩu ---------- */
+  function openPw(forced) {
+    $('pwForced').classList.toggle('hidden', !forced);
+    $('pwCancel').classList.toggle('hidden', !!forced);
+    ['pwOld', 'pwNew', 'pwNew2'].forEach(function (id) { $(id).value = ''; });
+    $('pwOverlay').classList.remove('hidden');
+    $('pwOld').focus();
+  }
+  $('btnPw').addEventListener('click', function () { openPw(false); });
+  $('pwCancel').addEventListener('click', function () { $('pwOverlay').classList.add('hidden'); });
+  $('frmPw').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (S.busy) return;
+    if ($('pwNew').value !== $('pwNew2').value) { toast('Hai mật khẩu mới không khớp.', 'err'); return; }
+    var btn = $('pwOk');
+    setBusy(btn, true, 'Đang đổi');
+    rpc('changeMyPassword', [S.token, $('pwOld').value, $('pwNew').value]).then(function (r) {
+      var wasForced = S.me && S.me.must_change;
+      S.token = r.token; store('ocr_token', r.token); S.me = r.me;
+      $('pwOverlay').classList.add('hidden');
+      toast('Đã đổi mật khẩu', 'ok');
+      if (wasForced) showApp(r.me);
+    }).catch(function (err) { toast(err.message, 'err'); })
+      .then(function () { setBusy(btn, false, 'Đổi mật khẩu'); });
   });
 
   /* ---------- bước 1: loại tài liệu ---------- */
@@ -265,8 +419,9 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
         'aria-pressed': S.type && S.type.code === t.code ? 'true' : 'false',
         on: { click: function () {
           if (S.busy) return;
-          if (S.scan && !confirm('Đổi loại tài liệu sẽ bỏ kết quả đang kiểm tra. Tiếp tục?')) return;
-          S.type = t; clearResult(); renderTypes(); refresh();
+          var go2 = function () { S.type = t; clearResult(); renderTypes(); refresh(); };
+          if (S.scan) askConfirm('Đổi loại tài liệu sẽ bỏ kết quả đang kiểm tra. Tiếp tục?', 'Tiếp tục').then(function (ok) { if (ok) go2(); });
+          else go2();
         } }
       }));
     });
@@ -348,7 +503,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     stopCam(); setFile(file);
   });
 
-  /* ---------- bước 3: quét, hiển thị, sửa ---------- */
+  /* ---------- form dữ liệu (dùng chung cho quét và sửa bản ghi) ---------- */
   function fmtNum(v) { return v === null || v === undefined ? '' : String(v); }
   function isLong(f) { return f.type === 'long' || /dia_chi|noi_|que_quan/.test(f.k); }
   function markReq(inp, required) {
@@ -385,12 +540,12 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
       el('button', { type: 'button', 'class': 'btn btn-xs', style: 'margin-top:6px', text: '+ Thêm dòng', on: { click: function () { addRow(null); } } })
     ]);
   }
-  function renderForm(data) {
-    var form = $('form'); form.textContent = '';
-    S.type.fields.forEach(function (f) {
-      if (f.type === 'items') { form.appendChild(itemsTable(f, data[f.k])); return; }
-      var required = S.type.required.indexOf(f.k) >= 0;
-      var id = 'f_' + f.k, inp;
+  function renderForm(box, type, data, pfx) {
+    box.textContent = '';
+    type.fields.forEach(function (f) {
+      if (f.type === 'items') { box.appendChild(itemsTable(f, data[f.k])); return; }
+      var required = type.required.indexOf(f.k) >= 0;
+      var id = pfx + f.k, inp;
       if (isLong(f)) inp = el('textarea', { 'class': 'inp', id: id, 'data-k': f.k, rows: 2 });
       else inp = el('input', {
         'class': 'inp', id: id, 'data-k': f.k,
@@ -401,24 +556,29 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
       markReq(inp, required);
       var lbl = el('label', { 'class': 'lbl', 'for': id, text: f.label + ' ' });
       if (required) lbl.appendChild(el('span', { 'class': 'req', text: '*' }));
-      form.appendChild(el('div', { 'class': isLong(f) ? 'full' : '' }, [lbl, inp]));
+      box.appendChild(el('div', { 'class': isLong(f) ? 'full' : '' }, [lbl, inp]));
     });
   }
-  function collect() {
+  function collect(box, type) {
     var out = {};
-    S.type.fields.forEach(function (f) {
+    type.fields.forEach(function (f) {
       if (f.type === 'items') {
-        out[f.k] = Array.prototype.map.call(document.querySelectorAll('table[data-items="' + f.k + '"] tbody tr'), function (tr) {
+        out[f.k] = Array.prototype.map.call(box.querySelectorAll('table[data-items="' + f.k + '"] tbody tr'), function (tr) {
           var row = {};
           Array.prototype.forEach.call(tr.querySelectorAll('[data-col]'), function (i) { row[i.getAttribute('data-col')] = i.value.trim(); });
           return row;
         });
       } else {
-        out[f.k] = document.querySelector('[data-k="' + f.k + '"]').value.trim();
+        out[f.k] = box.querySelector('[data-k="' + f.k + '"]').value.trim();
       }
     });
     return out;
   }
+  function lockForm(box) {
+    Array.prototype.forEach.call(box.querySelectorAll('input,textarea,button'), function (n) { n.disabled = true; });
+  }
+
+  /* ---------- bước 3: quét, hiển thị, sửa ---------- */
   function clearResult() {
     S.scan = null;
     $('cardResult').classList.add('hidden');
@@ -444,7 +604,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     rpc('scanDocument', [S.token, { docType: S.type.code, mimeType: S.file.mimeType, base64: S.file.base64 }])
       .then(function (r) {
         S.scan = { fileId: r.fileId, saved: false };
-        renderForm(r.data || {});
+        renderForm($('form'), S.type, r.data || {}, 'f_');
         $('resMeta').textContent = (r.ms / 1000).toFixed(1) + ' giây';
         $('cardResult').classList.remove('hidden');
         S.busy = false; refresh();
@@ -457,7 +617,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
     if (S.busy || !S.scan || S.scan.saved) return;
     var btn = $('btnSave');
     setBusy(btn, true, 'Đang lưu');
-    rpc('saveRecord', [S.token, S.type.code, collect(), S.scan.fileId])
+    rpc('saveRecord', [S.token, S.type.code, collect($('form'), S.type), S.scan.fileId])
       .then(function (r) {
         S.scan.saved = true;
         var n = $('resNote');
@@ -471,17 +631,244 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
 
   $('btnReset').addEventListener('click', function () {
     if (S.busy) return;
-    if (S.scan && !S.scan.saved && !confirm('Bỏ kết quả chưa lưu?')) return;
-    var keep = S.type; resetAll(); S.type = keep; renderTypes(); refresh();
+    var doReset = function () { var keep = S.type; resetAll(); S.type = keep; renderTypes(); refresh(); };
+    if (S.scan && !S.scan.saved) askConfirm('Bỏ kết quả chưa lưu?', 'Bỏ kết quả').then(function (ok) { if (ok) doReset(); });
+    else doReset();
   });
+
+  /* ---------- bản ghi đã lưu ---------- */
+  var REC = { type: null, period: null };
+  function curMonth() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  }
+  function initRecControls() {
+    var sel = $('recType');
+    if (sel.options.length) return;
+    S.cfg.types.forEach(function (t) { sel.appendChild(el('option', { value: t.code, text: t.label })); });
+    $('recMonth').value = curMonth();
+  }
+  function typeByCode(code) {
+    return S.cfg.types.filter(function (t) { return t.code === code; })[0];
+  }
+  function cellText(v) {
+    if (v === null || v === undefined || v === '') return '';
+    if (typeof v === 'number') return v.toLocaleString('vi-VN');
+    return String(v);
+  }
+  function loadRecords() {
+    initRecControls();
+    var code = $('recType').value, period = $('recMonth').value;
+    if (!/^\d{4}-\d{2}$/.test(period)) { toast('Hãy chọn tháng.', 'err'); return Promise.resolve(); }
+    $('recInfo').textContent = 'Đang tải...';
+    return rpc('listRecords', [S.token, code, period]).then(function (r) {
+      REC.type = typeByCode(code); REC.period = period;
+      renderRecords(r);
+    }).catch(function (err) { $('recInfo').textContent = ''; $('recBox').textContent = ''; toast(err.message, 'err'); });
+  }
+  function renderRecords(r) {
+    var type = REC.type, box = $('recBox'); box.textContent = '';
+    var info = r.total + ' bản ghi';
+    if (!r.viewAll) info += ' (chỉ hiển thị bản ghi do bạn quét)';
+    if (r.truncated) info += '. Chỉ hiện 1000 bản ghi mới nhất';
+    $('recInfo').textContent = info;
+    if (!r.rows.length) { box.appendChild(el('div', { 'class': 'card' }, [el('div', { 'class': 'empty', text: 'Chưa có bản ghi nào trong tháng này.' })])); return; }
+    var cols = [{ k: 'scan_timestamp', label: 'Thời gian quét' }, { k: 'scanned_by', label: 'Người quét' }]
+      .concat(type.fields.filter(function (f) { return f.type !== 'items'; }).slice(0, 4));
+    var head = el('tr', {}, cols.map(function (c) { return el('th', { text: c.label }); }).concat([el('th', { text: 'Quyền' })]));
+    var tbody = el('tbody');
+    r.rows.forEach(function (rec) {
+      var tr = el('tr', { 'class': 'row-click', tabindex: '0', on: {
+        click: function () { openRecord(rec); },
+        keydown: function (e) { if (e.key === 'Enter') openRecord(rec); }
+      } });
+      cols.forEach(function (c) {
+        tr.appendChild(el('td', { 'class': 'ell' + (typeof rec[c.k] === 'number' ? ' n' : ''), text: cellText(rec[c.k]) }));
+      });
+      var perm = rec._edit && rec._del ? 'Sửa, xoá' : (rec._edit ? 'Sửa' : (rec._del ? 'Xoá' : 'Chỉ xem'));
+      tr.appendChild(el('td', {}, [el('span', { 'class': 'badge ' + (rec._edit || rec._del ? 'b-green' : 'b-gray'), text: perm })]));
+      tbody.appendChild(tr);
+    });
+    box.appendChild(el('div', { 'class': 'tbl-wrap' }, [el('table', { 'class': 'tbl rec' }, [el('thead', {}, [head]), tbody])]));
+  }
+  $('btnRecLoad').addEventListener('click', function () { loadRecords(); });
+  $('recType').addEventListener('change', function () { loadRecords(); });
+  $('recMonth').addEventListener('change', function () { loadRecords(); });
+
+  function openRecord(rec) {
+    var type = REC.type, period = REC.period;
+    var form = el('div', { 'class': 'grid' });
+    renderForm(form, type, rec, 'e_');
+    if (!rec._edit) lockForm(form);
+    var parts = [el('div', { 'class': 'muted', style: 'margin-bottom:10px',
+      text: 'Quét bởi ' + (rec.scanned_by || '?') + ' lúc ' + (rec.scan_timestamp || '?') + '. ' +
+        (rec._edit ? '' : 'Bạn chỉ có quyền xem bản ghi này. ') })];
+    var viewer = el('div', { style: 'margin-bottom:12px' });
+    var bView = el('button', { type: 'button', 'class': 'btn', text: 'Xem ảnh / PDF đã upload', style: 'margin-bottom:10px' });
+    var blobUrl = null;
+    bView.addEventListener('click', function () {
+      if (S.busy) return;
+      if (blobUrl) { viewer.textContent = ''; URL.revokeObjectURL(blobUrl); blobUrl = null; bView.textContent = 'Xem ảnh / PDF đã upload'; return; }
+      setBusy(bView, true, 'Đang tải tệp');
+      rpc('getRawFile', [S.token, type.code, period, rec.raw_file_id]).then(function (f) {
+        var bin = atob(f.base64), arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        blobUrl = URL.createObjectURL(new Blob([arr], { type: f.mimeType }));
+        viewer.textContent = '';
+        if (f.mimeType === 'application/pdf') {
+          viewer.appendChild(el('iframe', { src: blobUrl, title: 'PDF đã upload', style: 'width:100%;height:60vh;border:1px solid var(--line);border-radius:8px;background:#fff' }));
+        } else {
+          viewer.appendChild(el('img', { src: blobUrl, alt: 'Ảnh đã upload', style: 'max-width:100%;border-radius:8px;display:block;margin:0 auto' }));
+        }
+        viewer.appendChild(el('a', { href: blobUrl, download: f.name, target: '_blank', rel: 'noopener', text: 'Tải tệp về máy',
+          style: 'display:inline-block;margin-top:6px;color:var(--acc)' }));
+        S.busy = false; bView.disabled = false; bView.textContent = 'Ẩn tệp';
+      }).catch(function (err) { setBusy(bView, false, 'Xem ảnh / PDF đã upload'); toast(err.message, 'err'); });
+    });
+    parts.push(bView); parts.push(viewer);
+    var body = el('div', {}, parts.concat([form]));
+    var m;
+    var bClose = el('button', { type: 'button', 'class': 'btn', text: 'Đóng', on: { click: function () { m.close(); } } });
+    var bSave = el('button', { type: 'button', 'class': 'btn btn-primary', text: 'Lưu thay đổi' });
+    var bDel = el('button', { type: 'button', 'class': 'btn btn-danger', text: 'Xoá bản ghi' });
+    var left = el('div', { 'class': 'grp' }, rec._del ? [bDel] : []);
+    var right = el('div', { 'class': 'grp' }, [bClose].concat(rec._edit ? [bSave] : []));
+    m = openModal(rec._edit ? 'Sửa bản ghi' : 'Xem bản ghi', body, el('div', { 'class': 'modal-f' }, [left, right]), true);
+    var rawClose = m.close; m.close = function () { if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; } rawClose(); };
+    bSave.addEventListener('click', function () {
+      if (S.busy) return;
+      setBusy(bSave, true, 'Đang lưu');
+      rpc('updateRecord', [S.token, type.code, period, rec.raw_file_id, collect(form, type)]).then(function () {
+        S.busy = false; m.close(); toast('Đã cập nhật bản ghi', 'ok'); loadRecords();
+      }).catch(function (err) { setBusy(bSave, false, 'Lưu thay đổi'); toast(err.message, 'err'); });
+    });
+    bDel.addEventListener('click', function () {
+      if (S.busy) return;
+      askConfirm('Xoá bản ghi này khỏi Google Sheets? Tệp ảnh gốc trên Drive vẫn được giữ lại. Không thể hoàn tác.', 'Xoá').then(function (ok) {
+        if (!ok) return;
+        setBusy(bDel, true, 'Đang xoá');
+        rpc('deleteRecord', [S.token, type.code, period, rec.raw_file_id]).then(function () {
+          S.busy = false; m.close(); toast('Đã xoá bản ghi', 'ok'); loadRecords();
+        }).catch(function (err) { setBusy(bDel, false, 'Xoá bản ghi'); toast(err.message, 'err'); });
+      });
+    });
+  }
+
+  /* ---------- quản lý tài khoản (ADMIN) ---------- */
+  function permSummary(u) {
+    if (u.role === 'ADMIN') return 'Toàn quyền';
+    var on = PERMS.filter(function (p) { return u.perms[p[0]]; }).map(function (p) { return p[2]; });
+    return on.length ? on.join(' · ') : 'Chỉ xem bản ghi của mình';
+  }
+  function loadUsers() {
+    var box = $('userBox'); box.textContent = '';
+    return rpc('listUsers', [S.token]).then(function (list) {
+      var head = el('tr', {}, ['Tên đăng nhập', 'Họ tên', 'Vai trò', 'Trạng thái', 'Quyền'].map(function (h) { return el('th', { text: h }); }));
+      var tbody = el('tbody');
+      list.forEach(function (u) {
+        var tr = el('tr', { 'class': 'row-click', tabindex: '0', on: {
+          click: function () { openUser(u); },
+          keydown: function (e) { if (e.key === 'Enter') openUser(u); }
+        } });
+        tr.appendChild(el('td', { text: u.username }));
+        tr.appendChild(el('td', { 'class': 'ell', text: u.full_name }));
+        tr.appendChild(el('td', {}, [el('span', { 'class': 'badge ' + (u.role === 'ADMIN' ? 'b-amber' : 'b-blue'), text: u.role })]));
+        var st = !u.active ? ['Đã khoá', 'b-red'] : (u.must_change ? ['Chờ đổi mật khẩu', 'b-amber'] : ['Hoạt động', 'b-green']);
+        tr.appendChild(el('td', {}, [el('span', { 'class': 'badge ' + st[1], text: st[0] })]));
+        tr.appendChild(el('td', { text: permSummary(u) }));
+        tbody.appendChild(tr);
+      });
+      box.appendChild(el('div', { 'class': 'tbl-wrap' }, [el('table', { 'class': 'tbl rec', style: 'min-width:700px' }, [el('thead', {}, [head]), tbody])]));
+    }).catch(function (err) { toast(err.message, 'err'); });
+  }
+  $('btnUserNew').addEventListener('click', function () { openUser(null); });
+
+  function openUser(u) {
+    var isNew = !u, self = !!u && S.me && u.username === S.me.username;
+    var fUser = el('input', { 'class': 'inp', id: 'u_name', autocapitalize: 'none', spellcheck: 'false', autocomplete: 'off', maxlength: '32' });
+    var fFull = el('input', { 'class': 'inp', id: 'u_full', maxlength: '100', autocomplete: 'off' });
+    var fRole = el('select', { 'class': 'inp', id: 'u_role' }, [el('option', { value: 'USER', text: 'USER (người dùng)' }), el('option', { value: 'ADMIN', text: 'ADMIN (quản trị)' })]);
+    var fPass = el('input', { 'class': 'inp', id: 'u_pass', type: 'password', autocomplete: 'new-password' });
+    var fActive = el('input', { type: 'checkbox', id: 'u_active' });
+    fUser.value = u ? u.username : ''; fUser.disabled = !isNew;
+    fFull.value = u ? u.full_name : '';
+    fRole.value = u ? u.role : 'USER'; fRole.disabled = self;
+    fActive.checked = u ? u.active : true; fActive.disabled = self || isNew;
+    var checks = {};
+    var permBox = el('div', {}, PERMS.map(function (p) {
+      var c = el('input', { type: 'checkbox', 'data-perm': p[0] });
+      c.checked = u ? !!u.perms[p[0]] : (p[0] === 'perm_add' || p[0] === 'perm_edit_own');
+      checks[p[0]] = c;
+      return el('label', { 'class': 'chk' }, [c, el('span', { text: p[1] })]);
+    }));
+    function syncRole() {
+      var adm = fRole.value === 'ADMIN';
+      PERMS.forEach(function (p) { if (adm) checks[p[0]].checked = true; checks[p[0]].disabled = adm; });
+    }
+    fRole.addEventListener('change', syncRole);
+    syncRole();
+
+    var rows = [
+      el('div', { 'class': 'grid' }, [
+        el('div', {}, [el('label', { 'class': 'lbl', 'for': 'u_name', text: 'Tên đăng nhập *' }), fUser]),
+        el('div', {}, [el('label', { 'class': 'lbl', 'for': 'u_full', text: 'Họ tên' }), fFull]),
+        el('div', {}, [el('label', { 'class': 'lbl', 'for': 'u_role', text: 'Vai trò' }), fRole]),
+        el('div', {}, self ? [el('span', { 'class': 'muted', text: 'Dùng nút "Mật khẩu" trên thanh trên cùng để đổi mật khẩu của chính bạn.' })] : [
+          el('label', { 'class': 'lbl', 'for': 'u_pass', text: isNew ? 'Mật khẩu ban đầu * (tối thiểu 8 ký tự)' : 'Đặt lại mật khẩu (bỏ trống nếu không đổi)' }), fPass
+        ])
+      ]),
+      el('div', { style: 'margin-top:12px' }, [
+        el('span', { 'class': 'lbl', text: 'Phân quyền trên bản ghi OCR' }),
+        permBox,
+        el('div', { 'class': 'muted', text: 'ADMIN luôn có toàn quyền. Người dùng chỉ thấy bản ghi của mình, trừ khi được cấp quyền sửa hoặc xoá bản ghi của người khác.' })
+      ]),
+      isNew ? el('div', { 'class': 'muted', style: 'margin-top:8px', text: 'Người dùng sẽ bị yêu cầu đổi mật khẩu ở lần đăng nhập đầu tiên.' }) :
+        el('label', { 'class': 'chk', style: 'margin-top:8px' }, [fActive, el('span', { text: 'Tài khoản đang hoạt động (bỏ tick để khoá)' })])
+    ];
+    var m;
+    var bClose = el('button', { type: 'button', 'class': 'btn', text: 'Đóng', on: { click: function () { m.close(); } } });
+    var bSave = el('button', { type: 'button', 'class': 'btn btn-primary', text: isNew ? 'Tạo tài khoản' : 'Lưu thay đổi' });
+    var bDel = el('button', { type: 'button', 'class': 'btn btn-danger', text: 'Xoá tài khoản' });
+    var left = el('div', { 'class': 'grp' }, (!isNew && !self) ? [bDel] : []);
+    m = openModal(isNew ? 'Tạo tài khoản' : 'Sửa tài khoản ' + u.username, el('div', {}, rows),
+      el('div', { 'class': 'modal-f' }, [left, el('div', { 'class': 'grp' }, [bClose, bSave])]), true);
+
+    function perms() {
+      var o = {}; PERMS.forEach(function (p) { o[p[0]] = checks[p[0]].checked; }); return o;
+    }
+    bSave.addEventListener('click', function () {
+      if (S.busy) return;
+      var label = isNew ? 'Tạo tài khoản' : 'Lưu thay đổi';
+      var call;
+      if (isNew) {
+        call = rpc('createUser', [S.token, { username: fUser.value, full_name: fFull.value, password: fPass.value, role: fRole.value, perms: perms() }]);
+      } else {
+        var patch = { full_name: fFull.value, role: fRole.value, active: fActive.checked, perms: perms() };
+        if (!self && fPass.value) patch.password = fPass.value;
+        call = rpc('updateUser', [S.token, u.username, patch]);
+      }
+      setBusy(bSave, true, 'Đang lưu');
+      call.then(function () { S.busy = false; m.close(); toast(isNew ? 'Đã tạo tài khoản' : 'Đã lưu thay đổi', 'ok'); loadUsers(); })
+        .catch(function (err) { setBusy(bSave, false, label); toast(err.message, 'err'); });
+    });
+    bDel.addEventListener('click', function () {
+      if (S.busy) return;
+      askConfirm('Xoá tài khoản "' + u.username + '"? Các bản ghi OCR do tài khoản này quét vẫn được giữ lại. Không thể hoàn tác.', 'Xoá').then(function (ok) {
+        if (!ok) return;
+        setBusy(bDel, true, 'Đang xoá');
+        rpc('deleteUser', [S.token, u.username]).then(function () { S.busy = false; m.close(); toast('Đã xoá tài khoản', 'ok'); loadUsers(); })
+          .catch(function (err) { setBusy(bDel, false, 'Xoá tài khoản'); toast(err.message, 'err'); });
+      });
+    });
+  }
 
   /* ---------- khởi động ---------- */
   rpc('getAppConfig').then(function (cfg) {
     S.cfg = cfg; renderTypes(); refresh();
     var tk = load('ocr_token');
     if (!tk) { showLogin(); return; }
-    return rpc('checkSession', [tk]).then(function (s) {
-      if (s) { S.token = tk; showApp(s.name); } else { store('ocr_token', null); showLogin(); }
+    return rpc('checkSession', [tk]).then(function (me) {
+      if (me) { S.token = tk; showApp(me); } else { store('ocr_token', null); showLogin(); }
     });
   }).catch(function (err) { showLogin(); toast(err.message, 'err'); });
 })();

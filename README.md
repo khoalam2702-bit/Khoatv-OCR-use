@@ -4,7 +4,7 @@ Web App quét và bóc tách 12 loại tài liệu (CCCD, hộ chiếu, GPLX, gi
 
 ## Luồng xử lý
 
-1. Người dùng đăng nhập bằng tài khoản khai báo trong file `OCR_USERS`.
+1. Người dùng đăng nhập bằng tài khoản do ADMIN tạo (lưu trong file `OCR_USERS`).
 2. Chọn loại tài liệu, chụp ảnh / tải ảnh / tải PDF. Ảnh được thu về tối đa 2000px và nén JPEG chất lượng 0.92 ngay trên trình duyệt.
 3. `scanDocument`: lưu tệp gốc vào `ANH_GOC/<năm>`, gọi Gemini với JSON Schema, trả kết quả về màn hình.
 4. Người dùng **kiểm tra và sửa** kết quả (AI có thể đọc sai).
@@ -23,7 +23,7 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 │   └── 2026/
 │       └── 11/
 │           └── OCR_2026_11       file Google Sheets của tháng, 12 sheet theo loại tài liệu
-└── OCR_USERS                     file Google Sheets, sheet USERS chứa tài khoản đăng nhập
+└── OCR_USERS                     file Google Sheets: sheet USERS (tài khoản, phân quyền), NHAT_KY (nhật ký thao tác)
 ```
 
 - Năm và tháng tính theo thời điểm bấm lưu, múi giờ Việt Nam.
@@ -59,10 +59,26 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
    npx clasp push -f
    ```
 4. Trong trình soạn thảo, chạy hàm `setup` một lần: cấp quyền, tạo thư mục ảnh năm nay, file dữ liệu tháng này và file `OCR_USERS`. Link các file hiện trong nhật ký thực thi.
-5. Tạo người dùng: mở file `OCR_USERS`, sheet `USERS`, mỗi người 1 dòng, điền `username`, `full_name` và gõ mật khẩu (từ 8 ký tự) vào cột `new_password`. Ở lần đăng nhập kế tiếp hệ thống băm mật khẩu, lưu vào `salt` / `password_hash` và xoá ô `new_password`.
-   - Đổi mật khẩu: gõ mật khẩu mới vào `new_password`.
-   - Khoá tài khoản: gõ `FALSE` vào cột `active`.
-6. Deploy > New deployment > Web app: **Execute as: Me**, **Who has access: Anyone**. Ghi lại Deployment ID.
+5. Đăng nhập lần đầu bằng tài khoản mặc định `admin` / `khoatv@123`. Hệ thống **bắt buộc đổi mật khẩu ngay** trước khi dùng bất kỳ chức năng nào. Kho mã này là **public** nên mật khẩu mặc định ai cũng đọc được: hãy đăng nhập và đổi ngay sau khi triển khai (hoặc chuyển repo sang private).
+6. Vào tab **Tài khoản** (chỉ ADMIN thấy) để tạo người dùng. Người dùng mới phải đổi mật khẩu ở lần đăng nhập đầu tiên.
+
+## Phân quyền
+
+Chỉ ADMIN được tạo / sửa / khoá / xoá tài khoản, đặt lại mật khẩu và tick quyền riêng cho từng người. ADMIN luôn có toàn quyền. Quyền áp dụng cho **bản ghi OCR đã quét**:
+
+| Quyền | Ý nghĩa |
+|---|---|
+| `perm_add` | Quét và lưu bản ghi mới |
+| `perm_edit_own` / `perm_del_own` | Sửa / xoá bản ghi do chính mình quét |
+| `perm_edit_other` / `perm_del_other` | Sửa / xoá bản ghi do người khác quét |
+
+- Người dùng chỉ thấy bản ghi của mình, trừ khi được cấp quyền sửa hoặc xoá bản ghi của người khác (khi đó thấy tất cả).
+- Tab **Bản ghi đã lưu**: lọc theo loại tài liệu và tháng, mở từng bản ghi để xem, sửa, xoá và **xem lại ảnh / PDF đã upload** (xem ngay trên giao diện, không cần quyền vào Drive).
+- Quyền được kiểm tra lại ở mỗi lần gọi, nên khoá tài khoản hoặc đổi quyền có hiệu lực ngay. Đặt lại mật khẩu vô hiệu hoá các phiên đang mở.
+- Xoá bản ghi chỉ xoá dòng trong Google Sheets; tệp gốc trên Drive được giữ lại để đối soát. Lưu trùng khoá nghiệp vụ (ví dụ số CCCD) là ghi đè nên cần quyền sửa bản ghi đó; chủ sở hữu giữ nguyên.
+- Luôn còn ít nhất một ADMIN hoạt động; ADMIN không thể tự khoá, tự hạ quyền hay tự xoá.
+- Sheet `NHAT_KY` ghi mọi thao tác (thêm, ghi đè, sửa, xoá, quản lý tài khoản), không ghi mật khẩu.
+- Nâng cấp từ bản cũ: sheet `USERS` 6 cột được tự chuyển sang cấu trúc mới ở lần đăng nhập đầu; người cũ thành USER với quyền thêm và sửa của mình.
 
 ## GitHub Actions
 
@@ -80,9 +96,9 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 
 ## Bảo mật
 
-- **Thư mục gốc phải để riêng tư.** Ai có quyền trên thư mục đều xem được ảnh giấy tờ, dữ liệu, và (nếu có quyền sửa) đặt lại được mật khẩu trong `OCR_USERS`; chỉ chia sẻ cho người quản trị.
+- **Thư mục gốc phải để riêng tư.** Ai có quyền trên thư mục đều xem được ảnh giấy tờ, dữ liệu, và (nếu có quyền sửa) sửa được quyền và mật khẩu trong `OCR_USERS`; chỉ chia sẻ cho người quản trị.
 - Khoá Gemini chỉ nằm trong Script Properties; trình duyệt không bao giờ nhận được.
-- Mật khẩu lưu dạng băm SHA-256 có salt, lặp 1000 vòng. Mật khẩu gõ ở cột `new_password` nằm dạng rõ cho đến lần đăng nhập kế tiếp.
+- Mật khẩu lưu dạng băm SHA-256 có salt, lặp 1000 vòng; mật khẩu không bao giờ nằm dạng rõ trong sheet.
 - Phiên đăng nhập 6 giờ; khoá 15 phút sau 5 lần nhập sai.
 - Giá trị bắt đầu bằng `= + - @` được ép thành văn bản để không bị Sheets chạy như công thức.
 - Hàm backend kết thúc bằng `_` không gọi được từ trình duyệt.
