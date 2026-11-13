@@ -47,11 +47,13 @@ const ITEM_FIELDS = [
   { k: 'ten_hang', label: 'Tên hàng / vật tư', type: 'string' },
   { k: 'don_vi', label: 'ĐVT', type: 'string' },
   { k: 'so_luong', label: 'Số lượng', type: 'number' },
-  { k: 'don_gia', label: 'Đơn giá', type: 'number' },
-  { k: 'thanh_tien', label: 'Thành tiền', type: 'number' }
+  { k: 'don_gia', label: 'Đơn giá', type: 'number', money: true },
+  { k: 'thanh_tien', label: 'Thành tiền', type: 'number', money: true }
 ];
 
 function f_(k, label, type) { return { k: k, label: label, type: type || 'string' }; }
+/** Trường tiền: giao diện hiển thị dạng 1.234.567 (dấu chấm ngăn cách hàng nghìn). */
+function m_(k, label) { return { k: k, label: label, type: 'number', money: true }; }
 
 /**
  * Cấu hình 12 loại tài liệu.
@@ -103,22 +105,22 @@ const DOC_TYPES = {
     label: 'Đơn hàng bán', uniqueKey: 'ma_don_hang', required: ['ma_don_hang', 'thanh_toan'],
     hint: 'Đơn hàng bán. Liệt kê đủ từng dòng hàng. thanh_toan là số tiền khách phải trả cuối cùng.',
     fields: [f_('ma_don_hang', 'Mã đơn hàng'), f_('ngay_tao', 'Ngày đặt'), f_('ten_khach_hang', 'Khách hàng'), f_('so_dien_thoai', 'Số điện thoại'),
-      f_('dia_chi_giao', 'Địa chỉ giao'), f_('danh_sach_hang_hoa', 'Danh sách hàng hoá', 'items'), f_('tong_tien_hang', 'Tổng tiền hàng', 'number'),
-      f_('giam_gia', 'Giảm giá', 'number'), f_('thanh_toan', 'Thanh toán', 'number')]
+      f_('dia_chi_giao', 'Địa chỉ giao'), f_('danh_sach_hang_hoa', 'Danh sách hàng hoá', 'items'), m_('tong_tien_hang', 'Tổng tiền hàng'),
+      m_('giam_gia', 'Giảm giá'), m_('thanh_toan', 'Thanh toán')]
   },
   GIAO_HANG: {
     label: 'Phiếu giao hàng', uniqueKey: 'ma_van_don', required: ['ma_van_don', 'nguoi_nhan'],
     hint: 'Phiếu giao hàng / vận đơn của hãng vận chuyển.',
     fields: [f_('ma_van_don', 'Mã vận đơn'), f_('don_vi_van_chuyen', 'Đơn vị vận chuyển'), f_('nguoi_gui', 'Người gửi'), f_('nguoi_nhan', 'Người nhận'),
-      f_('sdt_nhan', 'SĐT người nhận'), f_('dia_chi_nhan', 'Địa chỉ nhận'), f_('tien_cod', 'Tiền thu hộ COD', 'number'),
-      f_('cuoc_phi', 'Cước phí', 'number'), f_('ghi_chu_hang_hoa', 'Ghi chú hàng hoá', 'long')]
+      f_('sdt_nhan', 'SĐT người nhận'), f_('dia_chi_nhan', 'Địa chỉ nhận'), m_('tien_cod', 'Tiền thu hộ COD'),
+      m_('cuoc_phi', 'Cước phí'), f_('ghi_chu_hang_hoa', 'Ghi chú hàng hoá', 'long')]
   },
   NHAP_KHO: {
     label: 'Phiếu nhập kho', uniqueKey: 'so_phieu_nhap', required: ['so_phieu_nhap'],
     hint: 'Phiếu nhập kho. Liệt kê đủ từng dòng vật tư.',
     fields: [f_('so_phieu_nhap', 'Số phiếu nhập'), f_('ngay_nhap', 'Ngày nhập'), f_('nha_cung_cap', 'Nhà cung cấp'), f_('kho_nhap', 'Kho nhập'),
       f_('nguoi_giao', 'Người giao'), f_('nguoi_nhan', 'Người nhận'), f_('chi_tiet_vat_tu', 'Chi tiết vật tư', 'items'),
-      f_('tong_gia_tri', 'Tổng giá trị', 'number')]
+      m_('tong_gia_tri', 'Tổng giá trị')]
   },
   XUAT_KHO: {
     label: 'Phiếu xuất kho', uniqueKey: 'so_phieu_xuat', required: ['so_phieu_xuat'],
@@ -133,7 +135,7 @@ const DOC_TYPES = {
       'don_gia là giá tiền trên mỗi đơn vị và so_tien là thành tiền CHỈ khi ảnh / phiếu có ghi, nếu không có thì trả null, không tự tính; ' +
       'trang_thai là Gross, Net, Stable nếu màn hình có hiển thị. ' +
       'Nếu có chữ số bị chói hoặc đứt nét không chắc chắn, mô tả rõ trong ghi_chu_can.',
-    fields: [f_('khoi_luong', 'Khối lượng (số kg)', 'number'), f_('don_vi', 'Đơn vị'), f_('don_gia', 'Đơn giá', 'number'), f_('so_tien', 'Số tiền', 'number'),
+    fields: [f_('khoi_luong', 'Khối lượng (số kg)', 'number'), f_('don_vi', 'Đơn vị'), m_('don_gia', 'Đơn giá'), m_('so_tien', 'Số tiền'),
       f_('trang_thai', 'Trạng thái'), f_('ghi_chu_can', 'Ghi chú cân', 'long')]
   },
   BIEN_SO_XE: {

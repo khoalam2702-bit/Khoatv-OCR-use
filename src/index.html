@@ -585,6 +585,34 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
 
   /* ---------- form dữ liệu (dùng chung cho quét và sửa bản ghi) ---------- */
   function fmtNum(v) { return v === null || v === undefined ? '' : String(v); }
+  /* Tiền: hiển thị 1.234.567 (chấm ngăn nghìn, phẩy thập phân); giá trị lưu là số thuần */
+  function fmtMoney(v) {
+    if (v === null || v === undefined || v === '') return '';
+    var s = String(v);
+    var neg = s.charAt(0) === '-', parts = s.replace(/[^0-9.]/g, '').split('.');
+    var i = parts[0].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    return (neg ? '-' : '') + i + (parts.length > 1 ? ',' + parts.slice(1).join('') : '');
+  }
+  function parseMoney(s) {
+    var x = String(s || '').trim().replace(/\./g, '').replace(',', '.');
+    return x;
+  }
+  function numOf(inp) { return inp.getAttribute('data-money') ? Number(parseMoney(inp.value)) : Number(inp.value); }
+  function valOf(inp) { return inp.getAttribute('data-money') ? parseMoney(inp.value) : inp.value.trim(); }
+  function moneyInput(inp, initial) {
+    inp.setAttribute('data-money', '1'); inp.type = 'text'; inp.setAttribute('inputmode', 'decimal'); inp.removeAttribute('step');
+    inp.value = fmtMoney(initial);
+    inp.addEventListener('input', function () {
+      var pos = inp.selectionStart, before = inp.value.slice(0, pos).replace(/[^0-9,\-]/g, '').length;
+      var raw = inp.value.replace(/[^0-9,\-]/g, '');
+      var f = fmtMoney(raw.replace(',', '.'));
+      if (raw.slice(-1) === ',' && f.indexOf(',') < 0) f += ',';
+      inp.value = f;
+      var n = 0, k = 0;
+      while (k < f.length && n < before) { if (/[0-9,\-]/.test(f.charAt(k))) n++; k++; }
+      try { inp.setSelectionRange(k, k); } catch (e) {}
+    });
+  }
   function isLong(f) { return f.type === 'long' || /dia_chi|noi_|que_quan/.test(f.k); }
   function markReq(inp, required) {
     if (!required) return;
@@ -602,7 +630,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
           type: c.type === 'number' ? 'number' : 'text', step: c.type === 'number' ? 'any' : null,
           inputmode: c.type === 'number' ? 'decimal' : null
         });
-        inp.value = fmtNum(row ? row[c.k] : null);
+        if (c.money) moneyInput(inp, row ? row[c.k] : null); else inp.value = fmtNum(row ? row[c.k] : null);
         tr.appendChild(el('td', { 'class': c.type === 'number' ? 'num' : '' }, [inp]));
       });
       tr.appendChild(el('td', { 'class': 'x' }, [el('button', {
@@ -632,7 +660,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
         type: f.type === 'number' ? 'number' : 'text', step: f.type === 'number' ? 'any' : null,
         inputmode: f.type === 'number' ? 'decimal' : null
       });
-      inp.value = fmtNum(data[f.k]);
+      if (f.money) moneyInput(inp, data[f.k]); else inp.value = fmtNum(data[f.k]);
       markReq(inp, required);
       var lbl = el('label', { 'class': 'lbl', 'for': id, text: f.label + ' ' });
       if (required) lbl.appendChild(el('span', { 'class': 'req', text: '*' }));
@@ -653,12 +681,12 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     // Cân điện tử: số tiền = số kg × đơn giá, trừ khi người dùng đã tự nhập số tiền
     var q = box.querySelector('[data-k="khoi_luong"]'), g = box.querySelector('[data-k="don_gia"]'), s = box.querySelector('[data-k="so_tien"]');
     if (q && g && s) {
-      var manual = s.value !== '' && !(Number(q.value) * Number(g.value) === Number(s.value));
-      s.addEventListener('input', function () { manual = s.value !== '' && !(Number(q.value) * Number(g.value) === Number(s.value)); if (s.value === '') manual = false; });
+      var manual = s.value !== '' && !(numOf(q) * numOf(g) === numOf(s));
+      s.addEventListener('input', function () { manual = s.value !== '' && !(numOf(q) * numOf(g) === numOf(s)); if (s.value === '') manual = false; });
       var calc = function () {
         if (manual) return;
-        var a = Number(q.value), b = Number(g.value);
-        if (q.value !== '' && g.value !== '' && isFinite(a) && isFinite(b)) s.value = String(Math.round(a * b * 100) / 100);
+        var a = numOf(q), b = numOf(g);
+        if (q.value !== '' && g.value !== '' && isFinite(a) && isFinite(b)) s.value = fmtMoney(Math.round(a * b * 100) / 100);
       };
       q.addEventListener('input', calc); g.addEventListener('input', calc);
       s.title = 'Tự tính = khối lượng × đơn giá; có thể sửa tay';
@@ -670,11 +698,11 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
       if (f.type === 'items') {
         out[f.k] = Array.prototype.map.call(box.querySelectorAll('table[data-items="' + f.k + '"] tbody tr'), function (tr) {
           var row = {};
-          Array.prototype.forEach.call(tr.querySelectorAll('[data-col]'), function (i) { row[i.getAttribute('data-col')] = i.value.trim(); });
+          Array.prototype.forEach.call(tr.querySelectorAll('[data-col]'), function (i) { row[i.getAttribute('data-col')] = valOf(i); });
           return row;
         });
       } else {
-        out[f.k] = box.querySelector('[data-k="' + f.k + '"]').value.trim();
+        out[f.k] = valOf(box.querySelector('[data-k="' + f.k + '"]'));
       }
     });
     return out;
@@ -775,7 +803,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
   function itemsText(v) {
     if (!Array.isArray(v) || !v.length) return '';
     return v.map(function (r) {
-      return [r.ten_hang, r.don_vi, r.so_luong === null ? '' : 'SL ' + r.so_luong, r.don_gia === null ? '' : 'ĐG ' + r.don_gia, r.thanh_tien === null ? '' : 'TT ' + r.thanh_tien]
+      return [r.ten_hang, r.don_vi, r.so_luong === null ? '' : 'SL ' + r.so_luong, r.don_gia === null ? '' : 'ĐG ' + fmtMoney(r.don_gia), r.thanh_tien === null ? '' : 'TT ' + fmtMoney(r.thanh_tien)]
         .filter(function (x) { return x !== '' && x !== null && x !== undefined; }).join(' ');
     }).join('; ');
   }

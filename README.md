@@ -76,6 +76,10 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 - **Xuất Excel** tạo ngay trên trình duyệt: đúng các bản ghi đang lọc, không kèm ảnh / PDF; loại có bảng chi tiết (nhập kho, đơn hàng...) có thêm một sheet chi tiết.
 - Màn quét: chọn loại tài liệu là hiện sẵn các trường (để trống), quét xong mới điền thông tin vào.
 
+## Định dạng tiền
+
+Các ô tiền (đơn giá, số tiền, thành tiền, tổng tiền hàng, giảm giá, thanh toán, tiền COD, cước phí, tổng giá trị, kể cả các dòng chi tiết) hiển thị dạng `1.234.567` ngay khi gõ (chấm ngăn hàng nghìn, phẩy cho số lẻ). Dữ liệu lưu vào Sheets vẫn là số thuần. Khối lượng, số lượng, diện tích không định dạng kiểu tiền.
+
 ## Cân điện tử
 
 Các trường: `khoi_luong` (số kg), `don_vi`, `don_gia`, `so_tien`, `trang_thai`, `ghi_chu_can`. Khi nhập khối lượng và đơn giá, `so_tien` tự tính = khối lượng × đơn giá, vẫn sửa tay được. AI chỉ điền đơn giá / số tiền nếu ảnh hoặc phiếu có ghi, không tự tính. Sheet `CAN_DIEN_TU` của các tháng đã có sẽ tự được chèn thêm 2 cột mới, dữ liệu cũ giữ nguyên.
