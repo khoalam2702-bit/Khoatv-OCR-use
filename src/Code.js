@@ -106,7 +106,7 @@ const DOC_TYPES = {
   },
   DON_HANG: {
     label: 'Đơn hàng bán', uniqueKey: 'ma_don_hang', required: ['ma_don_hang', 'thanh_toan'],
-    hint: 'Đơn hàng bán. Liệt kê đủ từng dòng hàng. thanh_toan là số tiền khách phải trả cuối cùng.',
+    hint: 'Đơn hàng bán. Liệt kê đủ từng dòng hàng; ma_hang là mã hàng của dòng đó (null nếu không ghi). thanh_toan là số tiền khách phải trả cuối cùng.',
     fields: [f_('ma_don_hang', 'Mã đơn hàng'), f_('ngay_tao', 'Ngày đặt'), f_('ten_khach_hang', 'Khách hàng'), f_('so_dien_thoai', 'Số điện thoại'),
       f_('dia_chi_giao', 'Địa chỉ giao'), f_('danh_sach_hang_hoa', 'Danh sách hàng hoá', 'items'), m_('tong_tien_hang', 'Tổng tiền hàng'),
       m_('giam_gia', 'Giảm giá'), m_('thanh_toan', 'Thanh toán')]
