@@ -95,6 +95,8 @@ Có thêm cột `ten_tinh_thanh` (ngay sau `ma_tinh_thanh`). Tên tỉnh/thành 
 ## Quên / đặt lại mật khẩu
 
 - **Người dùng quên mật khẩu:** liên hệ ADMIN. ADMIN vào tab Tài khoản, mở tài khoản đó, bấm **Cấp mật khẩu tạm**. Hệ thống sinh mật khẩu ngẫu nhiên 10 ký tự (hiện một lần để sao chép), vô hiệu mật khẩu cũ, đăng xuất các phiên đang mở và bắt người dùng đổi mật khẩu khi đăng nhập. (Vẫn có thể gõ mật khẩu cụ thể ở ô "Đặt lại mật khẩu".)
+- **Tự đặt lại qua email:** ADMIN khai báo **Email** trong tài khoản (tab Tài khoản). Ở màn đăng nhập, người dùng bấm **Quên mật khẩu?**, nhập tên đăng nhập, nhận **mã 6 số** qua email, rồi nhập mã + mật khẩu mới. Mã hiệu lực 15 phút, dùng một lần, sai 5 lần là huỷ, tối đa 3 mã mỗi giờ cho mỗi tài khoản. Phản hồi luôn giống nhau dù tài khoản có tồn tại hay có email hay không. Đặt lại xong thì đăng xuất mọi phiên cũ và gỡ khoá đăng nhập tạm. Tài khoản chưa có email thì liên hệ ADMIN như trên.
+  - Thư gửi bằng `MailApp` từ tài khoản Google chủ dự án (Gmail thường ~100 thư/ngày, Workspace ~1500). Lần đầu sau khi có bản này, chủ dự án phải **cấp lại quyền** (thêm phạm vi gửi email `script.send_mail`): mở trình soạn thảo Apps Script, chạy thử một hàm bất kỳ (ví dụ `getAppConfig`), bấm Cho phép, rồi Deploy bản mới.
 - **Người dùng muốn đổi mật khẩu:** nút **Mật khẩu** trên thanh trên cùng.
 - **ADMIN quên mật khẩu của chính mình** (không còn ADMIN nào đăng nhập được): chỉ chủ dự án Apps Script làm được.
   1. Project Settings > Script properties > thêm `ALLOW_ADMIN_RESET` = tên đăng nhập ADMIN cần cấp lại (ví dụ `admin`).

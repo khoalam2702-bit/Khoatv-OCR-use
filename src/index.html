@@ -161,7 +161,23 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     <div class="row"><label class="lbl" for="lgPass">Mật khẩu</label>
       <input class="inp" id="lgPass" type="password" autocomplete="current-password" required></div>
     <button class="btn btn-primary btn-lg" id="btnLogin" type="submit">Đăng nhập</button>
-    <p style="margin:12px 0 0;font-size:12.5px">Quên mật khẩu? Liên hệ quản trị viên để được cấp mật khẩu tạm.</p>
+    <p style="margin:12px 0 0;font-size:12.5px"><a href="#" id="lnkForgot" style="color:var(--acc)">Quên mật khẩu?</a> Nhận mã xác nhận qua email đã khai báo, hoặc liên hệ quản trị viên.</p>
+  </form>
+  <form id="frmForgot" class="hidden" autocomplete="off">
+    <div class="row"><label class="lbl" for="fgUser">Tên đăng nhập</label>
+      <input class="inp" id="fgUser" autocapitalize="none" spellcheck="false" required></div>
+    <button class="btn btn-lg" id="btnFgSend" type="button">Gửi mã về email</button>
+    <div id="fgStep2" class="hidden" style="margin-top:14px">
+      <div class="note" id="fgMsg"></div>
+      <div class="row"><label class="lbl" for="fgCode">Mã xác nhận (6 số)</label>
+        <input class="inp" id="fgCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+      <div class="row"><label class="lbl" for="fgPass">Mật khẩu mới (tối thiểu 8 ký tự)</label>
+        <input class="inp" id="fgPass" type="password" autocomplete="new-password"></div>
+      <div class="row"><label class="lbl" for="fgPass2">Nhập lại mật khẩu mới</label>
+        <input class="inp" id="fgPass2" type="password" autocomplete="new-password"></div>
+      <button class="btn btn-primary btn-lg" id="btnFgDone" type="submit">Đặt lại mật khẩu</button>
+    </div>
+    <p style="margin:12px 0 0;font-size:12.5px"><a href="#" id="lnkBack" style="color:var(--acc)">← Quay lại đăng nhập</a></p>
   </form>
 </div>
 
@@ -412,6 +428,35 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
       showApp(r.me);
     }).catch(function (err) { toast(err.message, 'err'); })
       .then(function () { setBusy(btn, false, 'Đăng nhập'); });
+  });
+  /* ---------- quên mật khẩu (mã xác nhận gửi qua email khai báo trong tài khoản) ---------- */
+  function forgotMode(on) {
+    $('frmLogin').classList.toggle('hidden', on); $('frmForgot').classList.toggle('hidden', !on);
+    if (on) { $('fgUser').value = $('lgUser').value; $('fgStep2').classList.add('hidden'); $('fgCode').value = ''; $('fgPass').value = ''; $('fgPass2').value = ''; }
+  }
+  $('lnkForgot').addEventListener('click', function (e) { e.preventDefault(); forgotMode(true); });
+  $('lnkBack').addEventListener('click', function (e) { e.preventDefault(); forgotMode(false); });
+  $('btnFgSend').addEventListener('click', function () {
+    if (S.busy) return;
+    var btn = $('btnFgSend');
+    if (!$('fgUser').value.trim()) { toast('Nhập tên đăng nhập.', 'err'); return; }
+    setBusy(btn, true, 'Đang gửi');
+    rpc('requestPasswordReset', [$('fgUser').value]).then(function (r) {
+      $('fgMsg').textContent = r.message; $('fgStep2').classList.remove('hidden'); $('fgCode').focus();
+    }).catch(function (err) { toast(err.message, 'err'); })
+      .then(function () { setBusy(btn, false, 'Gửi lại mã'); });
+  });
+  $('frmForgot').addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (S.busy || $('fgStep2').classList.contains('hidden')) return;
+    if ($('fgPass').value !== $('fgPass2').value) { toast('Hai mật khẩu mới không khớp.', 'err'); return; }
+    var btn = $('btnFgDone');
+    setBusy(btn, true, 'Đang đặt lại');
+    rpc('resetPasswordWithCode', [$('fgUser').value, $('fgCode').value, $('fgPass').value]).then(function () {
+      $('lgUser').value = $('fgUser').value; $('lgPass').value = '';
+      forgotMode(false); toast('Đã đặt lại mật khẩu. Hãy đăng nhập bằng mật khẩu mới.', 'ok');
+    }).catch(function (err) { toast(err.message, 'err'); })
+      .then(function () { setBusy(btn, false, 'Đặt lại mật khẩu'); });
   });
   $('btnLogout').addEventListener('click', function () { signOut(false); });
   $('btnTheme').addEventListener('click', function () {
@@ -1118,7 +1163,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
   function loadUsers() {
     var box = $('userBox'); box.textContent = '';
     return rpc('listUsers', [S.token]).then(function (list) {
-      var head = el('tr', {}, ['Tên đăng nhập', 'Họ tên', 'Vai trò', 'Trạng thái', 'Quyền'].map(function (h) { return el('th', { text: h }); }));
+      var head = el('tr', {}, ['Tên đăng nhập', 'Họ tên', 'Email', 'Vai trò', 'Trạng thái', 'Quyền'].map(function (h) { return el('th', { text: h }); }));
       var tbody = el('tbody');
       list.forEach(function (u) {
         var tr = el('tr', { 'class': 'row-click', tabindex: '0', on: {
@@ -1127,6 +1172,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
         } });
         tr.appendChild(el('td', { text: u.username }));
         tr.appendChild(el('td', { 'class': 'ell', text: u.full_name }));
+        tr.appendChild(el('td', { 'class': 'ell', text: u.email || '' }));
         tr.appendChild(el('td', {}, [el('span', { 'class': 'badge ' + (u.role === 'ADMIN' ? 'b-amber' : 'b-blue'), text: u.role })]));
         var st = !u.active ? ['Đã khoá', 'b-red'] : (u.must_change ? ['Chờ đổi mật khẩu', 'b-amber'] : ['Hoạt động', 'b-green']);
         tr.appendChild(el('td', {}, [el('span', { 'class': 'badge ' + st[1], text: st[0] })]));
@@ -1159,6 +1205,8 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     var fActive = el('input', { type: 'checkbox', id: 'u_active' });
     fUser.value = u ? u.username : ''; fUser.disabled = !isNew;
     fFull.value = u ? u.full_name : '';
+    var fEmail = el('input', { 'class': 'inp', id: 'u_email', type: 'email', maxlength: '100', autocomplete: 'off', autocapitalize: 'none', spellcheck: 'false' });
+    fEmail.value = u ? (u.email || '') : '';
     fRole.value = u ? u.role : 'USER'; fRole.disabled = self;
     fActive.checked = u ? u.active : true; fActive.disabled = self || isNew;
     var checks = {};
@@ -1179,6 +1227,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
       el('div', { 'class': 'grid' }, [
         el('div', {}, [el('label', { 'class': 'lbl', 'for': 'u_name', text: 'Tên đăng nhập *' }), fUser]),
         el('div', {}, [el('label', { 'class': 'lbl', 'for': 'u_full', text: 'Họ tên' }), fFull]),
+        el('div', {}, [el('label', { 'class': 'lbl', 'for': 'u_email', text: 'Email (nhận mã khi quên mật khẩu)' }), fEmail]),
         el('div', {}, [el('label', { 'class': 'lbl', 'for': 'u_role', text: 'Vai trò' }), fRole]),
         el('div', {}, self ? [el('span', { 'class': 'muted', text: 'Dùng nút "Mật khẩu" trên thanh trên cùng để đổi mật khẩu của chính bạn.' })] : [
           el('label', { 'class': 'lbl', 'for': 'u_pass', text: isNew ? 'Mật khẩu ban đầu * (tối thiểu 8 ký tự)' : 'Đặt lại mật khẩu (bỏ trống nếu không đổi)' }), fPass
@@ -1220,9 +1269,9 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
       var label = isNew ? 'Tạo tài khoản' : 'Lưu thay đổi';
       var call;
       if (isNew) {
-        call = rpc('createUser', [S.token, { username: fUser.value, full_name: fFull.value, password: fPass.value, role: fRole.value, perms: perms() }]);
+        call = rpc('createUser', [S.token, { username: fUser.value, full_name: fFull.value, email: fEmail.value, password: fPass.value, role: fRole.value, perms: perms() }]);
       } else {
-        var patch = { full_name: fFull.value, role: fRole.value, active: fActive.checked, perms: perms() };
+        var patch = { full_name: fFull.value, email: fEmail.value, role: fRole.value, active: fActive.checked, perms: perms() };
         if (!self && fPass.value) patch.password = fPass.value;
         call = rpc('updateUser', [S.token, u.username, patch]);
       }

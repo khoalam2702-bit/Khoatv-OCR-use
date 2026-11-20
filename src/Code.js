@@ -207,7 +207,7 @@ const OLD_USER_HEADERS = ['username', 'full_name', 'active', 'new_password', 'sa
 const USER_HEADERS = [
   'username', 'full_name', 'role', 'active',
   'perm_add', 'perm_edit_own', 'perm_edit_other', 'perm_del_own', 'perm_del_other',
-  'must_change', 'salt', 'password_hash', 'token_ver'
+  'must_change', 'salt', 'password_hash', 'token_ver', 'email'
 ];
 const AUDIT_HEADERS = ['time', 'user', 'action', 'target', 'detail'];
 const ROLES = ['ADMIN', 'USER'];
@@ -237,6 +237,7 @@ function rowToUser_(r) {
   u.salt = String(u.salt || '');
   u.password_hash = String(u.password_hash || '');
   u.token_ver = Number(u.token_ver) || 1;
+  u.email = String(u.email || '').trim().toLowerCase();
   return u;
 }
 
@@ -468,7 +469,15 @@ function normPerms_(input) {
 function userLite_(u) {
   const perms = {};
   PERM_KEYS.forEach(function (k) { perms[k] = !!u[k]; });
-  return { username: u.username, full_name: u.full_name, role: u.role, active: u.active, must_change: u.must_change, perms: perms };
+  return { username: u.username, full_name: u.full_name, email: u.email || '', role: u.role, active: u.active, must_change: u.must_change, perms: perms };
+}
+
+/** Email khai báo cho tài khoản (dùng để gửi mã đặt lại mật khẩu). Để trống = không dùng được chức năng quên mật khẩu. */
+function normEmail_(v) {
+  const e = String(v === undefined || v === null ? '' : v).trim().toLowerCase();
+  if (!e) return '';
+  if (e.length > 100 || !/^[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}$/.test(e)) throw new Error('Email không hợp lệ.');
+  return e;
 }
 
 function listUsers(token) {
@@ -485,15 +494,16 @@ function createUser(token, d) {
   checkPasswordRule_(password);
   const role = ROLES.indexOf(d.role) >= 0 ? d.role : 'USER';
   const perms = normPerms_(d.perms);
+  const email = normEmail_(d.email);
   withLock_(function () {
     const ctx = readUsers_();
     if (ctx.list.some(function (x) { return x.username === username; })) throw new Error('Tên đăng nhập "' + username + '" đã tồn tại.');
-    const u = { username: username, full_name: String(d.full_name || '').trim().slice(0, 100), role: role, active: true, must_change: true, token_ver: 1 };
+    const u = { username: username, full_name: String(d.full_name || '').trim().slice(0, 100), email: email, role: role, active: true, must_change: true, token_ver: 1 };
     PERM_KEYS.forEach(function (k) { u[k] = role === 'ADMIN' ? true : perms[k]; });
     newPasswordFields_(u, password);
     appendUser_(ctx.sh, u);
   });
-  audit_(admin.username, 'TAO_USER', username, 'role=' + role + '; ' + permText_(perms));
+  audit_(admin.username, 'TAO_USER', username, 'role=' + role + '; ' + permText_(perms) + (email ? '; co_email' : ''));
   return true;
 }
 
@@ -517,6 +527,7 @@ function updateUser(token, username, patch) {
       if (self) throw new Error('Không thể tự khoá tài khoản của chính mình.');
       u.active = toBool_(patch.active); changed.push(u.active ? 'mo_khoa' : 'khoa');
     }
+    if (patch.email !== undefined) { u.email = normEmail_(patch.email); changed.push(u.email ? 'cap_nhat_email' : 'xoa_email'); }
     if (patch.perms) {
       PERM_KEYS.forEach(function (k) { if (k in patch.perms) u[k] = toBool_(patch.perms[k]); });
       changed.push('quyen: ' + permText_(u));
@@ -566,6 +577,96 @@ function resetUserPassword(token, username) {
   });
   audit_(admin.username, 'CAP_LAI_MAT_KHAU', username, 'Cấp mật khẩu tạm, bắt buộc đổi khi đăng nhập');
   return { username: username, password: pw };
+}
+
+/* ---------- Quên mật khẩu: gửi mã xác nhận 6 số về email đã khai báo trong tài khoản ----------
+ * Phản hồi luôn giống nhau dù tài khoản có tồn tại / có email hay không (không lộ danh sách tài khoản).
+ * Mã có hiệu lực 15 phút, sai quá 5 lần là huỷ mã; mỗi tài khoản xin tối đa 3 mã mỗi giờ. Thư gửi từ tài khoản Google chủ dự án (MailApp).
+ */
+const RESET = { CODE_SECONDS: 900, MAX_TRIES: 5, MAX_REQ_PER_HOUR: 3 };
+
+function maskEmail_(e) {
+  const m = /^(.)(.*)@(.*)$/.exec(e);
+  return m ? m[1] + '***@' + m[3] : '';
+}
+
+function requestPasswordReset(username) {
+  username = String(username || '').trim().toLowerCase();
+  const generic = { sent: true, message: 'Nếu tài khoản có khai báo email, mã xác nhận đã được gửi. Kiểm tra cả thư mục Spam. Mã có hiệu lực 15 phút.' };
+  if (!username || username.length > 64) throw new Error('Vui lòng nhập tên đăng nhập.');
+  const cache = CacheService.getScriptCache();
+  const reqKey = 'rstq_' + hash_(username) + '_' + Math.floor(Date.now() / 3600000);
+  const n = Number(cache.get(reqKey) || 0);
+  if (n >= RESET.MAX_REQ_PER_HOUR) throw new Error('Đã xin mã quá nhiều lần. Vui lòng thử lại sau 1 giờ hoặc liên hệ quản trị viên.');
+  cache.put(reqKey, String(n + 1), 3600);
+
+  ensureAdmin_();
+  const u = findUser_(username);
+  if (!u || !u.active || !u.email) {
+    audit_('system', 'QUEN_MK_KHONG_GUI', username, !u ? 'khong_ton_tai' : (!u.active ? 'bi_khoa' : 'chua_co_email'));
+    return generic;
+  }
+  if (MailApp.getRemainingDailyQuota() < 1) {
+    audit_('system', 'QUEN_MK_HET_HAN_NGACH', username, '');
+    throw new Error('Hệ thống đã hết hạn mức gửi email trong ngày. Vui lòng liên hệ quản trị viên.');
+  }
+  const code = randomCode_();
+  const salt = Utilities.getUuid();
+  cache.put('rst_' + hash_(username), JSON.stringify({ s: salt, h: hashPassword_(code, salt), t: 0 }), RESET.CODE_SECONDS);
+  MailApp.sendEmail({
+    to: u.email,
+    subject: 'Mã đặt lại mật khẩu OCR: ' + code,
+    body: 'Xin chào ' + (u.full_name || u.username) + ',\n\n' +
+      'Mã xác nhận đặt lại mật khẩu cho tài khoản "' + u.username + '" là: ' + code + '\n' +
+      'Mã có hiệu lực trong 15 phút và chỉ dùng được cho tài khoản này.\n\n' +
+      'Nếu bạn không yêu cầu, hãy bỏ qua thư này; mật khẩu hiện tại không bị thay đổi.',
+    name: 'OCR tài liệu'
+  });
+  audit_('system', 'QUEN_MK_GUI_MA', username, 'Gui ma toi ' + maskEmail_(u.email));
+  return generic;
+}
+
+function randomCode_() {
+  const d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + ':' + Utilities.getUuid() + ':' + Date.now(), Utilities.Charset.UTF_8);
+  let n = 0;
+  for (let i = 0; i < 6; i++) n = n * 256 + (((d[i] % 256) + 256) % 256);
+  return ('000000' + (n % 1000000)).slice(-6);
+}
+
+function resetPasswordWithCode(username, code, newPassword) {
+  username = String(username || '').trim().toLowerCase();
+  code = String(code || '').replace(/\s+/g, '');
+  newPassword = String(newPassword || '');
+  const bad = new Error('Mã không đúng hoặc đã hết hạn. Hãy xin mã mới.');
+  if (!username || !/^\d{6}$/.test(code)) throw bad;
+  checkPasswordRule_(newPassword);
+  if (newPassword === DEFAULT_ADMIN.password) throw new Error('Mật khẩu mới không được dùng mật khẩu mặc định.');
+  const cache = CacheService.getScriptCache();
+  const key = 'rst_' + hash_(username);
+  let rec = null;
+  try { rec = JSON.parse(cache.get(key) || 'null'); } catch (e) { rec = null; }
+  if (!rec) throw bad;
+  if (hashPassword_(code, rec.s) !== rec.h) {
+    rec.t = (rec.t || 0) + 1;
+    if (rec.t >= RESET.MAX_TRIES) cache.remove(key); else cache.put(key, JSON.stringify(rec), RESET.CODE_SECONDS);
+    throw bad;
+  }
+  let done = false;
+  withLock_(function () {
+    const ctx = readUsers_();
+    const u = ctx.list.filter(function (x) { return x.username === username; })[0];
+    if (!u || !u.active) return;
+    newPasswordFields_(u, newPassword);
+    u.must_change = false;
+    u.token_ver = (Number(u.token_ver) || 0) + 1; // đăng xuất mọi phiên cũ
+    writeUser_(ctx.sh, u._row, u);
+    done = true;
+  });
+  cache.remove(key);
+  cache.remove('fail_' + hash_(username)); // gỡ khoá đăng nhập do nhập sai trước đó
+  if (!done) throw bad;
+  audit_(username, 'DAT_LAI_MK_QUA_EMAIL', username, '');
+  return true;
 }
 
 /**
@@ -1134,7 +1235,7 @@ function sheet_(ss, name, headers) {
       if (!isSub) throw new Error('Dòng tiêu đề sheet ' + name + ' đã bị sửa, không khớp cấu trúc. Vui lòng khôi phục.');
       for (let i = 0; i < headers.length; i++) {
         if (cur[i] !== headers[i]) {
-          sh.insertColumnBefore(i + 1);
+          if (i < cur.length) sh.insertColumnBefore(i + 1); // cột mới ở cuối thì chỉ cần ghi tiêu đề
           sh.getRange(1, i + 1).setValue(headers[i]).setFontWeight('bold');
           cur.splice(i, 0, headers[i]);
         }
