@@ -92,6 +92,15 @@ Các trường: `khoi_luong` (số kg), `don_vi`, `don_gia`, `so_tien`, `trang_t
 
 Có thêm cột `ten_tinh_thanh` (ngay sau `ma_tinh_thanh`). Tên tỉnh/thành do hệ thống tự tra theo 2 số đầu của biển (bảng `PLATE_PROVINCES` trong `Code.js`), không để AI đoán; sửa mã tỉnh trên form thì tên tỉnh đổi theo. Tên theo mã biển kiểm soát vốn có (chưa gộp tỉnh 2025); mã không có trong bảng thì để trống và nhập tay được. Sheet `BIEN_SO_XE` các tháng cũ tự được chèn thêm cột.
 
+## Quên / đặt lại mật khẩu
+
+- **Người dùng quên mật khẩu:** liên hệ ADMIN. ADMIN vào tab Tài khoản, mở tài khoản đó, bấm **Cấp mật khẩu tạm**. Hệ thống sinh mật khẩu ngẫu nhiên 10 ký tự (hiện một lần để sao chép), vô hiệu mật khẩu cũ, đăng xuất các phiên đang mở và bắt người dùng đổi mật khẩu khi đăng nhập. (Vẫn có thể gõ mật khẩu cụ thể ở ô "Đặt lại mật khẩu".)
+- **Người dùng muốn đổi mật khẩu:** nút **Mật khẩu** trên thanh trên cùng.
+- **ADMIN quên mật khẩu của chính mình** (không còn ADMIN nào đăng nhập được): chỉ chủ dự án Apps Script làm được.
+  1. Project Settings > Script properties > thêm `ALLOW_ADMIN_RESET` = tên đăng nhập ADMIN cần cấp lại (ví dụ `admin`).
+  2. Trong trình soạn thảo chọn hàm `resetAdminPassword` rồi Run.
+  3. Xem mật khẩu tạm trong Execution log, đăng nhập và đổi mật khẩu. Thuộc tính tự bị xoá sau khi chạy; không đặt thuộc tính thì hàm không làm gì.
+
 ## Phân quyền
 
 Chỉ ADMIN được tạo / sửa / khoá / xoá tài khoản, đặt lại mật khẩu và tick quyền riêng cho từng người. ADMIN luôn có toàn quyền. Quyền áp dụng cho **bản ghi OCR đã quét**:

@@ -540,6 +540,61 @@ function updateUser(token, username, patch) {
   return true;
 }
 
+/** Mật khẩu tạm ngẫu nhiên 10 ký tự (bỏ các ký tự dễ nhầm 0/O, 1/l/I). */
+function tempPassword_() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  let d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, Utilities.getUuid() + ':' + Utilities.getUuid() + ':' + Date.now(), Utilities.Charset.UTF_8);
+  let out = '';
+  for (let i = 0; i < 10; i++) out += alphabet.charAt(((d[i] % 256) + 256) % 256 % alphabet.length);
+  return out;
+}
+
+/** ADMIN cấp lại mật khẩu cho tài khoản khác: sinh mật khẩu tạm, bắt đổi ở lần đăng nhập kế tiếp, đăng xuất mọi phiên cũ. */
+function resetUserPassword(token, username) {
+  const admin = requireAdmin_(token);
+  username = String(username || '').trim().toLowerCase();
+  if (username === admin.username) throw new Error('Hãy dùng chức năng "Mật khẩu" để đổi mật khẩu của chính bạn.');
+  const pw = tempPassword_();
+  withLock_(function () {
+    const ctx = readUsers_();
+    const u = ctx.list.filter(function (x) { return x.username === username; })[0];
+    if (!u) throw new Error('Không tìm thấy tài khoản.');
+    newPasswordFields_(u, pw);
+    u.must_change = true;
+    u.token_ver = (Number(u.token_ver) || 0) + 1;
+    writeUser_(ctx.sh, u._row, u);
+  });
+  audit_(admin.username, 'CAP_LAI_MAT_KHAU', username, 'Cấp mật khẩu tạm, bắt buộc đổi khi đăng nhập');
+  return { username: username, password: pw };
+}
+
+/**
+ * KHÔI PHỤC khi quản trị viên quên mật khẩu (không còn ADMIN nào đăng nhập được). Chỉ chủ dự án Apps Script làm được:
+ *   1. Project Settings > Script properties > thêm ALLOW_ADMIN_RESET = tên đăng nhập ADMIN cần cấp lại (ví dụ admin).
+ *   2. Mở trình soạn thảo, chọn hàm resetAdminPassword rồi Run.
+ *   3. Xem mật khẩu tạm trong Execution log. Thuộc tính tự bị xoá sau khi chạy; đăng nhập xong sẽ bị bắt đổi mật khẩu.
+ * Không đặt thuộc tính thì hàm không làm gì, kể cả khi bị gọi từ trang web.
+ */
+function resetAdminPassword() {
+  const props = PropertiesService.getScriptProperties();
+  const name = String(props.getProperty('ALLOW_ADMIN_RESET') || '').trim().toLowerCase();
+  if (!name) throw new Error('Chưa bật khôi phục: thêm Script property ALLOW_ADMIN_RESET = tên đăng nhập ADMIN rồi chạy lại.');
+  props.deleteProperty('ALLOW_ADMIN_RESET');
+  const pw = tempPassword_();
+  withLock_(function () {
+    const ctx = readUsers_();
+    const u = ctx.list.filter(function (x) { return x.username === name; })[0];
+    if (!u || u.role !== 'ADMIN') throw new Error('"' + name + '" không phải tài khoản ADMIN.');
+    newPasswordFields_(u, pw);
+    u.active = true; u.must_change = true;
+    u.token_ver = (Number(u.token_ver) || 0) + 1;
+    writeUser_(ctx.sh, u._row, u);
+  });
+  audit_('system', 'KHOI_PHUC_ADMIN', name, 'Cấp mật khẩu tạm qua trình soạn thảo Apps Script');
+  Logger.log('Tài khoản: ' + name + ' | Mật khẩu tạm: ' + pw + ' (bắt buộc đổi khi đăng nhập)');
+  return 'Xong. Xem mật khẩu tạm trong Execution log.';
+}
+
 function deleteUser(token, username) {
   const admin = requireAdmin_(token);
   username = String(username || '').trim().toLowerCase();

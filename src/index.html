@@ -161,6 +161,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     <div class="row"><label class="lbl" for="lgPass">Mật khẩu</label>
       <input class="inp" id="lgPass" type="password" autocomplete="current-password" required></div>
     <button class="btn btn-primary btn-lg" id="btnLogin" type="submit">Đăng nhập</button>
+    <p style="margin:12px 0 0;font-size:12.5px">Quên mật khẩu? Liên hệ quản trị viên để được cấp mật khẩu tạm.</p>
   </form>
 </div>
 
@@ -1137,6 +1138,18 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
   }
   $('btnUserNew').addEventListener('click', function () { openUser(null); });
 
+  function showSecret(username, pw) {
+    var mm;
+    var box = el('input', { 'class': 'inp', readonly: 'readonly', value: pw, style: 'font:700 18px monospace;letter-spacing:1px;text-align:center', 'aria-label': 'Mật khẩu tạm' });
+    var bCopy = el('button', { type: 'button', 'class': 'btn', text: 'Sao chép', on: { click: function () {
+      box.select();
+      try { navigator.clipboard.writeText(pw).then(function () { toast('Đã sao chép', 'ok'); }, function () { document.execCommand('copy'); }); } catch (e) { try { document.execCommand('copy'); } catch (e2) {} }
+    } } });
+    mm = openModal('Mật khẩu tạm của ' + username, el('div', {}, [
+      el('div', { 'class': 'note', text: 'Mật khẩu chỉ hiện một lần này, đóng cửa sổ là không xem lại được. Gửi cho người dùng; họ sẽ bị yêu cầu đổi mật khẩu ngay khi đăng nhập.' }),
+      el('div', { style: 'margin-top:10px' }, [box])
+    ]), el('div', { 'class': 'modal-f' }, [el('div', { 'class': 'grp' }, [bCopy]), el('div', { 'class': 'grp' }, [el('button', { type: 'button', 'class': 'btn btn-primary', text: 'Đã ghi lại, đóng', on: { click: function () { mm.close(); } } })])]), false);
+  }
   function openUser(u) {
     var isNew = !u, self = !!u && S.me && u.username === S.me.username;
     var fUser = el('input', { 'class': 'inp', id: 'u_name', autocapitalize: 'none', spellcheck: 'false', autocomplete: 'off', maxlength: '32' });
@@ -1180,6 +1193,18 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
         el('label', { 'class': 'chk', style: 'margin-top:8px' }, [fActive, el('span', { text: 'Tài khoản đang hoạt động (bỏ tick để khoá)' })])
     ];
     var m;
+    if (!isNew && !self) {
+      rows.splice(1, 0, el('div', { style: 'margin-top:10px' }, [el('button', { type: 'button', 'class': 'btn', text: 'Cấp mật khẩu tạm (quên mật khẩu)', on: { click: function () {
+        if (S.busy) return;
+        askConfirm('Cấp mật khẩu tạm cho "' + u.username + '"? Mật khẩu cũ bị vô hiệu, các phiên đang đăng nhập bị đăng xuất, người dùng phải đổi mật khẩu khi đăng nhập.', 'Cấp mật khẩu').then(function (ok) {
+          if (!ok) return;
+          S.busy = true;
+          rpc('resetUserPassword', [S.token, u.username]).then(function (r) {
+            S.busy = false; showSecret(r.username, r.password); loadUsers();
+          }).catch(function (err) { S.busy = false; toast(err.message, 'err'); });
+        });
+      } } })]));
+    }
     var bClose = el('button', { type: 'button', 'class': 'btn', text: 'Đóng', on: { click: function () { m.close(); } } });
     var bSave = el('button', { type: 'button', 'class': 'btn btn-primary', text: isNew ? 'Tạo tài khoản' : 'Lưu thay đổi' });
     var bDel = el('button', { type: 'button', 'class': 'btn btn-danger', text: 'Xoá tài khoản' });
