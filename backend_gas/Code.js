@@ -188,6 +188,67 @@ function doGet() {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
 }
 
+/* ============================ CỔNG API (doPost) ============================
+ * Dùng cho Extension và Web Admin Next.js. Mọi thao tác ghi vẫn nằm trong các hàm bên dưới, nên luật chống trùng,
+ * khoá, phân quyền và nhật ký chỉ có MỘT nơi duy nhất.
+ *
+ * Gửi: POST, Content-Type: text/plain (để trình duyệt không gửi preflight CORS), thân là JSON:
+ *   { "action": "listRecords", "args": ["<token>", "CCCD", "2026-11-01", "2026-11-21"], "client": "EXTENSION" }
+ * Nhận: { "ok": true, "data": ... }  hoặc  { "ok": false, "error": "thông báo" }
+ * Phiên đăng nhập dùng lại đúng token của login() (6 giờ, phân quyền kiểm tra lại mỗi lần gọi).
+ * Chỉ các hàm có tên trong API_ACTIONS mới gọi được; hàm nội bộ (kết thúc bằng "_") không bao giờ gọi được.
+ */
+const API_ACTIONS = {
+  // không cần token
+  getAppConfig: { fn: function () { return getAppConfig(); } },
+  login: { fn: function (a) { return login(a[0], a[1]); } },
+  requestPasswordReset: { fn: function (a) { return requestPasswordReset(a[0]); } },
+  resetPasswordWithCode: { fn: function (a) { return resetPasswordWithCode(a[0], a[1], a[2]); } },
+  // phiên đăng nhập
+  logout: { fn: function (a) { return logout(a[0]); } },
+  checkSession: { fn: function (a) { return checkSession(a[0]); } },
+  getMe: { fn: function (a) { return getMe(a[0]); } },
+  changeMyPassword: { fn: function (a) { return changeMyPassword(a[0], a[1], a[2]); } },
+  // bản ghi OCR
+  scanDocument: { fn: function (a) { return scanDocument(a[0], a[1]); } },
+  saveRecord: { fn: function (a, client) { return saveRecord(a[0], a[1], a[2], a[3], { source: client }); } },
+  listRecords: { fn: function (a) { return listRecords(a[0], a[1], a[2], a[3]); } },
+  getRawFile: { fn: function (a) { return getRawFile(a[0], a[1], a[2], a[3]); } },
+  updateRecord: { fn: function (a) { return updateRecord(a[0], a[1], a[2], a[3], a[4]); } },
+  deleteRecord: { fn: function (a) { return deleteRecord(a[0], a[1], a[2], a[3]); } },
+  updateSyncStatus: { fn: function (a) { return updateSyncStatus(a[0], a[1], a[2], a[3], a[4]); } },
+  logExport: { fn: function (a) { return logExport(a[0], a[1], a[2], a[3], a[4]); } },
+  // quản lý tài khoản (chỉ ADMIN, kiểm tra trong từng hàm)
+  listUsers: { fn: function (a) { return listUsers(a[0]); } },
+  createUser: { fn: function (a) { return createUser(a[0], a[1]); } },
+  updateUser: { fn: function (a) { return updateUser(a[0], a[1], a[2]); } },
+  resetUserPassword: { fn: function (a) { return resetUserPassword(a[0], a[1]); } },
+  deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } }
+};
+
+function apiJson_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  try {
+    const raw = e && e.postData && e.postData.contents ? e.postData.contents : '';
+    if (!raw) return apiJson_({ ok: false, error: 'Thiếu nội dung yêu cầu.' });
+    let body;
+    try { body = JSON.parse(raw); } catch (err) { return apiJson_({ ok: false, error: 'Nội dung yêu cầu không phải JSON.' }); }
+    const action = String((body && body.action) || '');
+    const def = Object.prototype.hasOwnProperty.call(API_ACTIONS, action) ? API_ACTIONS[action] : null;
+    if (!def) return apiJson_({ ok: false, error: 'Hành động không hợp lệ.' });
+    const args = Array.isArray(body.args) ? body.args : [];
+    const client = SOURCES.indexOf(body.client) >= 0 ? body.client : 'WEB_APP';
+    const result = def.fn(args, client);
+    return apiJson_({ ok: true, data: result === undefined ? null : result });
+  } catch (err) {
+    // Lỗi nghiệp vụ (throw new Error) trả về nguyên thông báo; SESSION_EXPIRED / MUST_CHANGE_PASSWORD là mã để client xử lý
+    return apiJson_({ ok: false, error: String(err && err.message ? err.message : err) });
+  }
+}
+
 /** Cấu hình cho giao diện (không chứa bí mật). */
 function getAppConfig() {
   const types = Object.keys(DOC_TYPES).map(function (code) {
@@ -929,7 +990,7 @@ function locateRow_(sh, headers, fileId) {
 }
 
 /** Ghi bản ghi MỚI đã được người dùng kiểm tra vào Google Sheets (ghi đè theo khoá nghiệp vụ để chống trùng). */
-function saveRecord(token, docType, data, fileIds) {
+function saveRecord(token, docType, data, fileIds, meta) {
   const me = auth_(token);
   if (!me.perms.perm_add) throw new Error('Tài khoản của bạn không có quyền thêm bản ghi.');
   const type = checkType_(docType);
@@ -953,6 +1014,9 @@ function saveRecord(token, docType, data, fileIds) {
   record.raw_file_url = ids.map(function (id) { return 'https://drive.google.com/file/d/' + id + '/view'; }).join('\n');
   record.raw_file_id = fileId;
   record.scanned_by = me.username;
+  // meta.source do cổng doPost gán (WEB_APP / EXTENSION); gọi từ giao diện GAS cũ qua google.script.run không có meta -> WEB_APP
+  record.source = meta && SOURCES.indexOf(meta.source) >= 0 ? meta.source : 'WEB_APP';
+  record.fbo_sync_status = 'PENDING';
 
   const cols = typeCols_(type);
   const headers = typeHeaders_(type);
@@ -961,6 +1025,8 @@ function saveRecord(token, docType, data, fileIds) {
   const keyName = type.uniqueKey || 'raw_file_id';
   const keyVal = String(record[keyName]);
   const ownerIdx = headers.indexOf('scanned_by');
+  const sourceIdx = headers.indexOf('source');
+  const statusIdx = headers.indexOf('fbo_sync_status');
 
   let row = 0, updated = false, book;
   withLock_(function () {
@@ -981,6 +1047,11 @@ function saveRecord(token, docType, data, fileIds) {
           ' quét. Bạn không có quyền ghi đè bản ghi này.');
       }
       values[ownerIdx] = owner;
+      // Ghi đè: giữ nguồn và trạng thái đồng bộ FBO đã có (chỉ thay khi ô cũ trống)
+      const oldSource = String(sh.getRange(row, sourceIdx + 1).getDisplayValue());
+      const oldStatus = String(sh.getRange(row, statusIdx + 1).getDisplayValue());
+      if (oldSource) values[sourceIdx] = oldSource;
+      if (oldStatus) values[statusIdx] = oldStatus;
     } else {
       row = last + 1;
       if (row > sh.getMaxRows()) sh.insertRowAfter(sh.getMaxRows());
@@ -1041,7 +1112,7 @@ function listRecords(token, docType, from, to) {
     const cur = sh.getRange(1, 1, 1, width).getDisplayValues()[0].map(String);
     const pos = {};
     cur.forEach(function (h, i) { if (h !== '') pos[h] = i; });
-    if (headers.some(function (h) { return SYS_COLS.some(function (c) { return c.k === h; }) && pos[h] === undefined; })) {
+    if (headers.some(function (h) { return SYS_COLS.some(function (c) { return c.k === h && !c.opt; }) && pos[h] === undefined; })) {
       throw new Error('Dòng tiêu đề sheet ' + docType + ' (' + mo.y + '-' + mo.m + ') đã bị sửa, không khớp cấu trúc.');
     }
     const raw = sh.getRange(2, 1, sh.getLastRow() - 1, width).getValues();
@@ -1200,10 +1271,46 @@ function deleteRecord(token, docType, period, fileId) {
   return true;
 }
 
+/**
+ * Cập nhật trạng thái đồng bộ sang FBO của một bản ghi (PENDING / FILLED / ERROR).
+ * Extension gọi sau khi bơm dữ liệu vào form FBO. Cho phép chủ sở hữu bản ghi hoặc người có quyền sửa bản ghi đó.
+ */
+function updateSyncStatus(token, docType, period, fileId, status) {
+  const me = auth_(token);
+  const type = checkType_(docType);
+  const p = parsePeriod_(period);
+  fileId = checkFileId_(fileId);
+  status = String(status || '').toUpperCase();
+  if (SYNC_STATUSES.indexOf(status) < 0) throw new Error('Trạng thái đồng bộ không hợp lệ (PENDING, FILLED hoặc ERROR).');
+  const headers = typeHeaders_(type);
+
+  let desc = '';
+  withLock_(function () {
+    const book = findMonthBook_(p.y, p.m);
+    if (!book) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
+    const sh = sheet_(book, docType, headers);
+    const row = locateRow_(sh, headers, fileId);
+    if (!row) throw new Error('Không tìm thấy bản ghi (có thể đã bị xoá).');
+    const owner = String(sh.getRange(row, headers.indexOf('scanned_by') + 1).getDisplayValue());
+    if (owner !== me.username && !canEdit_(me, owner)) throw new Error('Bạn không có quyền cập nhật bản ghi của người khác.');
+    sh.getRange(row, headers.indexOf('fbo_sync_status') + 1).setNumberFormat('@').setValue(status);
+    SpreadsheetApp.flush();
+    desc = book.getName() + ' dòng ' + row + '; tệp gốc ' + fileId + '; trạng thái ' + status;
+  });
+  audit_(me.username, 'FBO_SYNC', docType, desc);
+  return true;
+}
+
 const SYS_COLS = [
   { k: 'scan_timestamp', type: 'date' }, { k: 'document_type', type: 'string' }, { k: 'raw_file_url', type: 'string' },
-  { k: 'raw_file_id', type: 'string' }, { k: 'scanned_by', type: 'string' }
+  { k: 'raw_file_id', type: 'string' }, { k: 'scanned_by', type: 'string' },
+  // Hai cột thêm ở Phase 1 (nguồn quét và trạng thái đồng bộ sang FBO). opt: sheet cũ chưa có cột này vẫn đọc được,
+  // cột được chèn tự động ở lần ghi kế tiếp vào sheet đó (xem sheet_).
+  { k: 'source', type: 'string', opt: true }, { k: 'fbo_sync_status', type: 'string', opt: true }
 ];
+
+const SOURCES = ['WEB_APP', 'EXTENSION'];
+const SYNC_STATUSES = ['PENDING', 'FILLED', 'ERROR'];
 
 /** Chuyển giá trị thành nội dung ô. Chuỗi bắt đầu bằng = + - @ được ép thành văn bản để không bị hiểu là công thức. */
 function cell_(v, type) {

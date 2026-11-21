@@ -28,7 +28,7 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 
 - Năm và tháng tính theo thời điểm bấm lưu, múi giờ Việt Nam.
 - Trong file tháng, tên sheet = mã loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `SO_DO`, `DON_HANG`, `GIAO_HANG`, `NHAP_KHO`, `XUAT_KHO`, `CAN_DIEN_TU`, `BIEN_SO_XE`.
-- 5 cột hệ thống đầu mỗi sheet: `scan_timestamp`, `document_type`, `raw_file_url`, `raw_file_id`, `scanned_by`; sau đó là các trường bóc tách.
+- 7 cột hệ thống đầu mỗi sheet: `scan_timestamp`, `document_type`, `raw_file_url`, `raw_file_id`, `scanned_by`, `source` (`WEB_APP` hoặc `EXTENSION`), `fbo_sync_status` (`PENDING`, `FILLED`, `ERROR`); sau đó là các trường bóc tách. Sheet của các tháng cũ tự được chèn 2 cột mới ở lần ghi kế tiếp, dữ liệu cũ để trống 2 cột này (hiểu là `WEB_APP` / `PENDING`).
 - Cột chữ được định dạng văn bản nên giữ được số 0 đầu (số CCCD, số điện thoại). Cột tiền, khối lượng là số.
 - Chi tiết hàng hoá / vật tư lưu dạng JSON trong 1 ô.
 - **Không đổi tên thư mục, tên file, tên sheet và không sửa dòng tiêu đề.** Đổi tên thư mục/file thì hệ thống tạo cái mới; sửa tiêu đề thì hệ thống báo lỗi để tránh ghi lệch cột.
@@ -40,6 +40,33 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 | DON_HANG / GIAO_HANG | `ma_don_hang` / `ma_van_don` |
 | NHAP_KHO / XUAT_KHO | `so_phieu_nhap` / `so_phieu_xuat` |
 | Các loại còn lại | `raw_file_id` (bấm lưu 2 lần cùng một lượt quét không sinh 2 dòng) |
+
+## Cấu trúc monorepo
+
+```
+backend_gas/       Apps Script: Code.js (logic + cổng doPost), index.html (giao diện GAS cũ), appsscript.json
+admin_webapp/      Web Admin Next.js (NextAuth): đối soát bản ghi, quản lý tài khoản. Xem admin_webapp/README.md
+extension_chrome/  (Phase 2) Extension Manifest V3 tự điền form FBO
+.github/workflows/ deploy.yml (đẩy backend_gas lên GAS), admin-webapp.yml (kiểm tra build Next.js)
+public/, vercel.json   khung Vercel bao quanh giao diện GAS cũ (giữ nguyên)
+```
+
+Mọi thao tác **ghi** dữ liệu đều đi qua Apps Script (luật chống trùng, khoá, phân quyền và nhật ký chỉ có một nơi). Web Admin Next.js và Extension chỉ gọi cổng API bên dưới.
+
+## Cổng API (`doPost`)
+
+Dùng cho Web Admin Next.js và Extension. Gửi `POST` tới URL Web App, `Content-Type: text/plain` (tránh preflight CORS), thân JSON:
+
+```json
+{ "action": "listRecords", "args": ["<token>", "CCCD", "2026-11-01", "2026-11-21"], "client": "EXTENSION" }
+```
+
+Trả về `{ "ok": true, "data": ... }` hoặc `{ "ok": false, "error": "thông báo" }`. `error` có thể là mã `SESSION_EXPIRED` (đăng nhập lại) hoặc `MUST_CHANGE_PASSWORD`.
+
+- Đăng nhập: `login` với `args: [username, password]`, nhận `token` 6 giờ (cùng hệ thống tài khoản, phân quyền của giao diện GAS). Các hành động còn lại nhận `token` ở `args[0]`.
+- `client`: `WEB_APP` (mặc định) hoặc `EXTENSION`; được ghi vào cột `source` khi `saveRecord`.
+- Hành động có sẵn: `getAppConfig`, `login`, `logout`, `checkSession`, `getMe`, `changeMyPassword`, `requestPasswordReset`, `resetPasswordWithCode`, `scanDocument`, `saveRecord`, `listRecords`, `getRawFile`, `updateRecord`, `deleteRecord`, `updateSyncStatus` (cập nhật `fbo_sync_status`), `logExport`, `listUsers`, `createUser`, `updateUser`, `resetUserPassword`, `deleteUser`. Hàm không có trong danh sách (`API_ACTIONS` trong `Code.js`) không gọi được.
+- Sau khi sửa `Code.js` phải **tạo version mới** của deployment (hoặc để GitHub Actions làm) thì `doPost` mới có hiệu lực.
 
 ## Cài đặt (làm 1 lần)
 
@@ -156,7 +183,7 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 
 ## Hosting trên Vercel (khung bao quanh ứng dụng)
 
-- Vercel không build mã nguồn: `vercel.json` đặt `outputDirectory` là `public`, không có lệnh build. `src/` (mã Apps Script) không được phát tán.
+- Vercel không build mã nguồn: `vercel.json` đặt `outputDirectory` là `public`, không có lệnh build. `backend_gas/` (mã Apps Script) không được phát tán.
 - `public/index.html` mở ứng dụng Apps Script trong một khung toàn màn hình (iframe), nên thanh địa chỉ vẫn là `khoatv-ocr-use.vercel.app` và **không bị chuyển sang `script.google.com`**. Góc phải dưới có nút "Mở tab mới"; nếu khung tải chậm quá 8 giây sẽ hiện nút mở trực tiếp.
 - Để Apps Script cho phép nhúng, `doGet` dùng `setXFrameOptionsMode(ALLOWALL)`. Sau khi cập nhật mã phải **tạo version mới** của deployment thì Vercel mới hiển thị được.
 - Sau khi deploy Web App, điền URL vào biến `APP_URL` trong `public/index.html` rồi push (ASC-BOT tự cập nhật dòng này); Vercel tự cập nhật.
