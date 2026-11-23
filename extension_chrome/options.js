@@ -1,8 +1,8 @@
 import { GAS_URL_RE } from './lib/config.js';
 import { createGasClient } from './lib/gas.js';
-import { getSettings, setSettings } from './lib/store.js';
+import { getSettings, setSettings, getPreset } from './lib/store.js';
 import { inspectActiveTab } from './lib/fbo.js';
-import { validateMapping } from './lib/mapping.js';
+import { validateMapping, diffFromPreset } from './lib/mapping.js';
 
 const $ = (id) => document.getElementById(id);
 const say = (t, err) => { const m = $('msg'); m.hidden = !t; m.textContent = t || ''; m.className = 'msg' + (err ? '' : ' info'); };
@@ -35,8 +35,9 @@ $('save-map').onclick = async () => {
   try { obj = JSON.parse($('mapping').value || '{}'); } catch (e) { return say('JSON sai cú pháp: ' + e.message, true); }
   const err = validateMapping(obj);
   if (err) return say(err, true);
-  await setSettings({ fboMappings: obj });
-  say('Đã lưu ánh xạ cho ' + Object.keys(obj).length + ' loại.');
+  const user = diffFromPreset(await getPreset(), obj);
+  await setSettings({ fboMappingsUser: user });
+  say('Đã lưu. ' + Object.keys(user).length + ' loại được chỉnh khác mẫu, các loại còn lại dùng mẫu đi kèm extension.');
 };
 
 let last = '';
@@ -49,3 +50,9 @@ $('inspect').onclick = async () => {
   } catch (e) { say(e.message, true); }
 };
 $('copy').onclick = async () => { await navigator.clipboard.writeText(last); say('Đã sao chép.'); };
+
+$('reset-map').onclick = async () => {
+  await setSettings({ fboMappingsUser: {} });
+  $('mapping').value = JSON.stringify(await getPreset(), null, 2);
+  say('Đã khôi phục ánh xạ mặc định đi kèm extension.');
+};

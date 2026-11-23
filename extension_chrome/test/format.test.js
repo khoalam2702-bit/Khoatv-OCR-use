@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeText, parseNumber, numberToText, dmyToIso, toFormValues, fromFormValues, missingRequired } from '../lib/format.js';
-import { validateMapping, hasMapping } from '../lib/mapping.js';
+import { validateMapping, hasMapping, effectiveMappings, diffFromPreset } from '../lib/mapping.js';
 
 test('normalizeText bỏ dấu và đ', () => { assert.equal(normalizeText('  Đà  Nẵng '), 'da nang'); });
 test('parseNumber: tiền dùng dấu chấm ngăn nghìn', () => {
@@ -55,4 +55,11 @@ test('hasMapping', () => {
   assert.equal(hasMapping({ CCCD: {} }, 'CCCD'), false);
   assert.equal(hasMapping({}, 'HO_CHIEU'), false);
   assert.equal(hasMapping(undefined, 'HO_CHIEU'), false);
+});
+
+test('effectiveMappings / diffFromPreset', () => {
+  const preset = { CCCD: { a: '#1' }, GPLX: { b: '#2' } };
+  assert.deepEqual(effectiveMappings(preset, { GPLX: { b: '#9' }, HO_CHIEU: { c: '#3' } }), { CCCD: { a: '#1' }, GPLX: { b: '#9' }, HO_CHIEU: { c: '#3' } });
+  assert.deepEqual(effectiveMappings(preset, undefined), preset);
+  assert.deepEqual(diffFromPreset(preset, { CCCD: { a: '#1' }, GPLX: { b: '#9' } }), { GPLX: { b: '#9' } });
 });

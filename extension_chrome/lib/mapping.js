@@ -21,3 +21,17 @@ export function hasMapping(mappings, docType) {
   const t = mappings && mappings[docType];
   return !!t && typeof t === 'object' && Object.keys(t).length > 0;
 }
+
+/** Ánh xạ hiệu lực = mẫu đi kèm extension, loại nào người dùng tự sửa thì dùng bản của người dùng. */
+export function effectiveMappings(preset, user) {
+  return { ...(preset || {}), ...(user || {}) };
+}
+
+/** Chỉ giữ các loại khác mẫu, để loại không sửa vẫn theo mẫu khi extension cập nhật. */
+export function diffFromPreset(preset, all) {
+  const out = {};
+  for (const [type, spec] of Object.entries(all || {})) {
+    if (JSON.stringify(spec) !== JSON.stringify((preset || {})[type])) out[type] = spec;
+  }
+  return out;
+}
