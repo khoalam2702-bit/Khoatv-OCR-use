@@ -65,10 +65,15 @@ function m_(k, label) { return { k: k, label: label, type: 'number', money: true
 const DOC_TYPES = {
   CCCD: {
     label: 'Căn cước công dân', uniqueKey: 'so_cccd', required: ['so_cccd', 'ho_ten'],
-    hint: 'Thẻ căn cước / CCCD Việt Nam. Số định danh cá nhân gồm đúng 12 chữ số.',
+    hint: 'Thẻ căn cước / CCCD Việt Nam. Số định danh cá nhân gồm đúng 12 chữ số. ' +
+      'Đọc cả hai mặt nếu có. Mặt trước: số, họ tên, ngày sinh, giới tính, quốc tịch, quê quán, nơi thường trú, nơi sinh (nếu thẻ có in), ' +
+      'ngày hết hạn (mục "Có giá trị đến", nếu ghi "Không thời hạn" thì trả đúng chữ đó). ' +
+      'Mặt sau: ngày cấp (ngày, tháng, năm cấp thẻ) và nơi cấp (cơ quan cấp, ví dụ Cục Cảnh sát quản lý hành chính về trật tự xã hội). ' +
+      'loai_giay_to: loại giấy tờ theo tiêu đề in trên thẻ, ví dụ "Căn cước công dân", "Căn cước" hoặc "Chứng minh nhân dân".',
     fields: [f_('so_cccd', 'Số CCCD'), f_('ho_ten', 'Họ và tên'), f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'),
       f_('quoc_tich', 'Quốc tịch'), f_('que_quan', 'Quê quán'), f_('noi_thuong_tru', 'Nơi thường trú'),
-      f_('ngay_cap', 'Ngày cấp'), f_('ngay_het_han', 'Ngày hết hạn')]
+      f_('ngay_cap', 'Ngày cấp'), f_('ngay_het_han', 'Ngày hết hạn'),
+      f_('noi_sinh', 'Nơi sinh'), f_('noi_cap', 'Nơi cấp'), f_('loai_giay_to', 'Loại giấy tờ')]
   },
   HO_CHIEU: {
     label: 'Hộ chiếu', uniqueKey: 'so_ho_chieu', required: ['so_ho_chieu', 'ho_ten'],
