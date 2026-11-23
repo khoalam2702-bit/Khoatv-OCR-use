@@ -864,6 +864,7 @@ function scanDocument(token, payload) {
   lock.waitLock(20000);
   let folder;
   try { folder = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]); } finally { lock.releaseLock(); }
+  const t0 = Date.now();
   const fileIds = items.map(function (it, i) {
     const name = 'RAW_' + payload.docType + '_' + stamp + (items.length > 1 ? '_' + (i + 1) : '') + '.' + it.ext;
     const file = folder.createFile(Utilities.newBlob(blobs[i], it.mimeType, name));
@@ -871,9 +872,12 @@ function scanDocument(token, payload) {
     return file.getId();
   });
 
+  const t1 = Date.now();
   const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {};
+  const t2 = Date.now();
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
-  return { data: data, fileIds: fileIds, ms: Date.now() - started };
+  console.log('scan ' + payload.docType + ' drive=' + (t1 - t0) + 'ms ai=' + (t2 - t1) + 'ms total=' + (Date.now() - started) + 'ms');
+  return { data: data, fileIds: fileIds, ms: Date.now() - started, msDrive: t1 - t0, msAi: t2 - t1 };
 }
 
 function rateLimit_(username) {
@@ -924,13 +928,30 @@ function callGemini_(type, files) {
     }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type) }
   };
-  const resp = fetchRetry_('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
-    payload: JSON.stringify(body),
-    muteHttpExceptions: true
-  });
+  // Đọc giấy tờ không cần suy luận sâu: mặc định thinking mức thấp cho nhanh. GEMINI_THINKING = off để tắt, hoặc minimal/low/medium/high.
+  const think = String(prop_('GEMINI_THINKING', 'low') || '').toLowerCase();
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  const post = function (b) {
+    return fetchRetry_(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+      payload: JSON.stringify(b),
+      muteHttpExceptions: true
+    });
+  };
+  let resp;
+  if (think && think !== 'off') {
+    body.generationConfig.thinkingConfig = { thinkingLevel: think };
+    resp = post(body);
+    if (resp.getResponseCode() === 400) { // model không hỗ trợ cấu hình này: bỏ đi và gọi lại
+      console.error('Gemini từ chối thinkingConfig: ' + resp.getContentText().slice(0, 300));
+      delete body.generationConfig.thinkingConfig;
+      resp = post(body);
+    }
+  } else {
+    resp = post(body);
+  }
   const code = resp.getResponseCode();
   if (code !== 200) {
     console.error('Gemini ' + code + ': ' + resp.getContentText().slice(0, 800));

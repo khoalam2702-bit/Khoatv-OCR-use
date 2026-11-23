@@ -163,6 +163,7 @@ async function doScan() {
     state.scan = r;
     renderReview(r.data || {});
     show('review');
+    if (r.ms) msg('Quét xong trong ' + Math.round(r.ms / 1000) + ' giây (AI ' + Math.round((r.msAi || 0) / 1000) + ' giây, lưu ảnh ' + Math.round((r.msDrive || 0) / 1000) + ' giây).', 'info');
   } catch (e) { msg(e.message); }
   finally { busy(btn, false); updateScanBtn(); }
 }
