@@ -1,0 +1,5 @@
+{
+  "gasUrl": "https://script.google.com/macros/s/AKfycbyPnoWKbCcbV5EkK2z1cfs228-wMUEUm_8ntrw19QlMCXel8sp7abliL2jsNb45DipGqg/exec",
+  "configUrl": "https://khoatv-ocr-extensions.vercel.app/api/extension-config",
+  "fboOrigins": ["http://localhost", "https://erp.dongtaphoi.vn"]
+}

@@ -1,9 +1,9 @@
 import { ENABLED_TYPES, DEFAULT_LIMITS } from './lib/config.js';
 import { createGasClient, GasError } from './lib/gas.js';
-import { getSettings, getAuth, setAuth } from './lib/store.js';
+import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword } from './lib/store.js';
 import { prepareFile } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
-import { fillActiveTab } from './lib/fbo.js';
+import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,12 +25,25 @@ function busy(btn, on, label) {
   else { btn.textContent = btn.dataset.l || btn.textContent; btn.disabled = false; }
 }
 
-/** Gọi API có token; hết phiên thì quay về đăng nhập. */
-async function api(action, args) {
+/** Đăng nhập lại bằng mật khẩu đã nhớ (nếu có). Trả true nếu thành công. */
+async function tryAutoLogin() {
+  const rec = await getOcrLogin();
+  const pass = rec && rec.passEnc ? await getOcrPassword() : '';
+  if (!rec || !pass) return false;
+  try {
+    const r = await call('login', [rec.username, pass]);
+    state.auth = { token: r.token, me: r.me }; await setAuth(state.auth);
+    return true;
+  } catch { return false; }
+}
+
+/** Gọi API có token; hết phiên thì tự đăng nhập lại bằng mật khẩu đã nhớ rồi gọi lại một lần, không được thì về màn đăng nhập. */
+async function api(action, args, retried) {
   try { return await call(action, [state.auth.token, ...args]); }
   catch (e) {
     if (e instanceof GasError && e.code === 'SESSION_EXPIRED') {
-      await logout('Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.');
+      if (!retried && await tryAutoLogin()) return api(action, args, true);
+      await logout('Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.', true);
       throw new Error('Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.');
     }
     if (e instanceof GasError && e.code === 'MUST_CHANGE_PASSWORD') {
@@ -40,10 +53,19 @@ async function api(action, args) {
   }
 }
 
-async function logout(message) {
+/** keepPassword: hết phiên thì giữ mật khẩu đã nhớ; người dùng bấm Đăng xuất thì xoá mật khẩu đã nhớ (giữ tên đăng nhập). */
+async function logout(message, keepPassword) {
   try { if (state.auth) await call('logout', [state.auth.token]); } catch { /* bỏ qua */ }
   state.auth = null; await setAuth(null);
-  $('who').textContent = '';
+  if (!keepPassword) await forgetOcrPassword();
+  $('who').textContent = ''; $('btn-fbo-login').hidden = true;
+  await showLogin(message);
+}
+
+async function showLogin(message) {
+  const rec = await getOcrLogin();
+  if (rec && rec.username && !$('in-user').value) $('in-user').value = rec.username;
+  $('in-remember').checked = true;
   show('login'); msg(message || '', message ? 'info' : undefined);
 }
 
@@ -53,9 +75,12 @@ async function doLogin() {
   const btn = $('btn-login');
   busy(btn, true, 'Đang đăng nhập...');
   try {
-    const r = await call('login', [$('in-user').value, $('in-pass').value]);
+    const username = $('in-user').value.trim().toLowerCase(), password = $('in-pass').value;
+    const r = await call('login', [username, password]);
     state.auth = { token: r.token, me: r.me };
     await setAuth(state.auth);
+    // Nhớ tên đăng nhập; chỉ lưu mật khẩu khi người dùng tích ghi nhớ và tài khoản không phải đổi mật khẩu mặc định
+    await saveOcrLogin(username, password, $('in-remember').checked && !r.me.must_change);
     $('in-pass').value = '';
     await enter();
   } catch (e) { msg(e.message); }
@@ -74,7 +99,9 @@ async function loadConfig() {
 
 async function enter() {
   $('who').textContent = state.auth.me.name + ' (' + state.auth.me.username + ')';
+  $('btn-fbo-login').hidden = false;
   await loadConfig();
+  checkFboPermission();
   if (state.auth.me.must_change) msg('Tài khoản phải đổi mật khẩu mặc định ở Web Admin trước khi quét.');
   resetScan();
   show('scan');
@@ -228,10 +255,35 @@ async function doFill() {
   } finally { busy(btn, false); }
 }
 
+/* ---------- Quyền FBO và đăng nhập FBO ---------- */
+async function checkFboPermission() {
+  const { fboOrigins } = await getSettings();
+  const origins = fboOrigins.map((o) => o + '/*');
+  if (!origins.length) { $('perm-bar').hidden = true; return; }
+  $('perm-bar').hidden = await chrome.permissions.contains({ origins });
+}
+async function doFboLogin() {
+  msg('');
+  const btn = $('btn-fbo-login');
+  busy(btn, true, 'Đang điền...');
+  try {
+    const r = await loginFboActiveTab();
+    const parts = [r.submitted ? 'Đã điền và bấm Nhận.' : 'Đã điền thông tin đăng nhập.'].concat(r.notes || []);
+    msg(parts.join(' '), 'info');
+  } catch (e) { msg(e.message); }
+  finally { busy(btn, false); }
+}
+
 /* ---------- Gắn sự kiện ---------- */
+$('btn-perm').onclick = async () => {
+  const { fboOrigins } = await getSettings();
+  const ok = await chrome.permissions.request({ origins: fboOrigins.map((o) => o + '/*') });
+  if (ok) $('perm-bar').hidden = true; else msg('Chưa được cấp quyền, nút Điền vào FBO sẽ không hoạt động.');
+};
+$('btn-fbo-login').onclick = doFboLogin;
 $('btn-login').onclick = doLogin;
 $('in-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
-$('btn-logout').onclick = () => logout();
+$('btn-logout').onclick = () => logout('', false);
 $('btn-settings').onclick = () => chrome.runtime.openOptionsPage();
 $('btn-pick').onclick = () => $('in-files').click();
 $('in-files').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
@@ -253,8 +305,9 @@ document.addEventListener('paste', (e) => {
 
 /* ---------- Khởi động ---------- */
 (async function init() {
+  refreshRemoteConfig(); // cập nhật link do admin cấu hình, dùng cho lần mở sau
   const { gasUrl } = await getSettings();
-  if (!gasUrl) { show('login'); msg('Chưa cấu hình địa chỉ Apps Script. Bấm "Cài đặt" để nhập địa chỉ /exec.'); return; }
+  if (!gasUrl) { show('login'); msg('Chưa có địa chỉ Apps Script. Liên hệ quản trị viên hoặc nhập ở Cài đặt.'); return; }
   const auth = await getAuth();
   if (auth) {
     try {
@@ -262,5 +315,6 @@ document.addEventListener('paste', (e) => {
       if (me) { state.auth = { token: auth.token, me }; await enter(); return; }
     } catch (e) { msg(e.message); }
   }
-  show('login');
+  if (await tryAutoLogin()) { await enter(); return; }
+  await showLogin();
 })();

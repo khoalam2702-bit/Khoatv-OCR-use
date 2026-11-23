@@ -113,6 +113,35 @@
     return out;
   };
 
+  function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function byId(suffix) { return document.querySelector('[id$="' + suffix + '"]'); }
+  function typeInto(el, v) {
+    try { el.focus(); } catch (e) { /* bỏ qua */ }
+    setNative(el, String(v)); fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
+  }
+
+  /* Điền form đăng nhập FBO (Công ty, Tên, Đơn vị, Mật khẩu) rồi bấm "Nhận". p = { company, unit, user, password, submit } */
+  globalThis.__KHOATV_LOGIN__ = async function (p) {
+    var user = byId('txtUserName'), pass = byId('txtPassword');
+    if (!user || !pass) return { ok: false, reason: 'Tab hiện tại không phải trang đăng nhập FBO.' };
+    var ent = byId('cboEntity'), unit = byId('cboUnit'), notes = [];
+    if (ent && p.company && !setSelect(ent, p.company)) notes.push('Không tìm thấy công ty "' + p.company + '"');
+    await wait(500); // danh sách Đơn vị có thể nạp lại theo công ty
+    if (p.user) typeInto(user, p.user);
+    await wait(500);
+    if (unit && p.unit && !setSelect(unit, p.unit)) notes.push('Không tìm thấy đơn vị "' + p.unit + '"');
+    if (p.password) typeInto(pass, p.password);
+    if (p.submit === false) return { ok: true, submitted: false, notes: notes };
+    var cands = document.querySelectorAll('button, input[type=button], input[type=submit], a, span, div'), btn = null;
+    for (var i = 0; i < cands.length && !btn; i++) {
+      var e = cands[i], t = norm(e.value || (e.children.length === 0 ? e.textContent : ''));
+      if ((t === 'nhan' || t === 'dang nhap' || t === 'login') && (e.offsetWidth || e.offsetHeight)) btn = e;
+    }
+    if (btn) { btn.click(); return { ok: true, submitted: true, notes: notes }; }
+    pass.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+    return { ok: true, submitted: false, notes: notes.concat('Không thấy nút "Nhận", đã gửi phím Enter.') };
+  };
+
   function labelOf(el) {
     var t = '';
     if (el.labels && el.labels[0]) t = el.labels[0].textContent;

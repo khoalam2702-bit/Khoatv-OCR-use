@@ -10,16 +10,19 @@
   <header>
     <strong>OCR → FBO</strong>
     <span id="who"></span>
+    <button id="btn-fbo-login" class="link" title="Điền tài khoản đã lưu vào trang đăng nhập FBO ở tab hiện tại" hidden>Đăng nhập FBO</button>
     <button id="btn-settings" class="link" title="Cài đặt">Cài đặt</button>
     <button id="btn-logout" class="link" hidden>Đăng xuất</button>
   </header>
   <div id="msg" class="msg" hidden></div>
+  <div id="perm-bar" class="msg info" hidden>Cần cấp quyền để điền form FBO. <button id="btn-perm" class="primary">Cấp quyền FBO</button></div>
 
   <section id="view-login" hidden>
     <label>Tên đăng nhập<input id="in-user" autocomplete="username"></label>
     <label>Mật khẩu<input id="in-pass" type="password" autocomplete="current-password"></label>
+    <label class="chk"><input id="in-remember" type="checkbox" checked> Ghi nhớ tài khoản và mật khẩu trên máy này</label>
     <button id="btn-login" class="primary">Đăng nhập</button>
-    <p class="hint">Dùng tài khoản của Web Admin OCR.</p>
+    <p class="hint">Dùng tài khoản của Web Admin OCR. Mật khẩu (nếu ghi nhớ) được mã hoá và chỉ lưu trên trình duyệt này.</p>
   </section>
 
   <section id="view-scan" hidden>

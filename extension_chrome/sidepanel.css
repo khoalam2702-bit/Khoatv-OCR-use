@@ -28,3 +28,7 @@ button.link { border:0; background:none; color:var(--pri); padding:2px 4px; }
 .ok { color:var(--ok); font-weight:600; margin-top:10px; }
 .req::after { content:" *"; color:var(--err); }
 .warn { color:#b45309; }
+
+label.chk { display:flex; align-items:center; gap:6px; }
+label.chk input { width:auto; margin:0; }
+#perm-bar button { margin-top:6px; }

@@ -10,8 +10,8 @@ test('manifest MV3 và mọi tệp được khai báo đều tồn tại', () =>
   assert.equal(m.manifest_version, 3);
   for (const p of [m.side_panel.default_path, m.options_page, m.background.service_worker, ...Object.values(m.icons)]) assert.ok(exists(p), p);
 });
-test('quyền tối thiểu: chỉ Apps Script là host cố định, địa chỉ FBO xin lúc chạy', () => {
-  assert.deepEqual(m.host_permissions.sort(), ['https://script.google.com/*', 'https://script.googleusercontent.com/*']);
+test('quyền tối thiểu: chỉ Apps Script và Web Admin là host cố định, địa chỉ FBO xin lúc chạy', () => {
+  assert.deepEqual(m.host_permissions.sort(), ['https://khoatv-ocr-extensions.vercel.app/*', 'https://script.google.com/*', 'https://script.googleusercontent.com/*']);
   assert.ok(m.optional_host_permissions.length > 0);
   assert.ok(m.permissions.includes('sidePanel') && m.permissions.includes('scripting'));
 });

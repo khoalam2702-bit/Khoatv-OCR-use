@@ -102,3 +102,30 @@ test('append: trường rỗng không để lại tiền tố', () => {
   w.__KHOATV_FILL__({ a: { selector: '#gc', prefix: 'A: ', append: true }, b: { selector: '#gc', prefix: 'B: ', append: true } }, { a: '', b: 'x' });
   assert.equal(w.document.getElementById('gc').value, 'B: x');
 });
+
+const LOGIN = `<select id="LoginExtender_cboEntity"><option value="">--</option><option value="C1">Công ty A</option></select>
+<input id="LoginExtender_txtUserName"><select id="LoginExtender_cboUnit"><option value="">--</option><option value="U1">Đơn vị 1</option></select>
+<input type="password" id="LoginExtender_txtPassword"><button id="ok">Nhận</button><button id="no">Hủy</button>`;
+
+test('đăng nhập FBO: điền công ty, tên, đơn vị, mật khẩu và bấm Nhận', async () => {
+  const w = page(LOGIN);
+  w.document.getElementById('ok').getClientRects = () => [1]; // jsdom không có layout
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetWidth', { get() { return 10; }, configurable: true });
+  let clicked = '';
+  w.document.getElementById('ok').addEventListener('click', () => { clicked = 'ok'; });
+  w.document.getElementById('no').addEventListener('click', () => { clicked = 'no'; });
+  const r = await w.__KHOATV_LOGIN__({ company: 'Công ty A', unit: 'Đơn vị 1', user: 'khoa', password: 'S3cret!' });
+  const d = w.document;
+  assert.equal(d.getElementById('LoginExtender_cboEntity').value, 'C1');
+  assert.equal(d.getElementById('LoginExtender_txtUserName').value, 'khoa');
+  assert.equal(d.getElementById('LoginExtender_cboUnit').value, 'U1');
+  assert.equal(d.getElementById('LoginExtender_txtPassword').value, 'S3cret!');
+  assert.equal(clicked, 'ok');
+  assert.equal(r.submitted, true);
+});
+test('đăng nhập FBO: submit=false chỉ điền, trang không phải đăng nhập thì báo', async () => {
+  const w = page(LOGIN);
+  assert.equal((await w.__KHOATV_LOGIN__({ user: 'a', password: 'b', submit: false })).submitted, false);
+  const w2 = page('<input id="x">');
+  assert.equal((await w2.__KHOATV_LOGIN__({ user: 'a' })).ok, false);
+});

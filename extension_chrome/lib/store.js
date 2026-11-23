@@ -1,24 +1,84 @@
-// Cài đặt (bền) ở storage.local; phiên đăng nhập (token) ở storage.session, tự xoá khi đóng trình duyệt.
+// Cài đặt và tài khoản đã lưu, tất cả ở storage.local của extension (không đồng bộ lên tài khoản Chrome).
 import { effectiveMappings } from './mapping.js';
+import { mergeConfig, sanitizeConfig, fetchRemoteConfig, normalizeOrigin } from './appconfig.js';
+import { createVault, idbKeyProvider } from './vault.js';
 
-/** Mẫu ánh xạ FBO đi kèm extension (presets/fbo-hrm.json). */
-export async function getPreset() {
-  try { return await (await fetch(chrome.runtime.getURL('presets/fbo-hrm.json'))).json(); } catch { return {}; }
+const vault = createVault({ getKey: idbKeyProvider() });
+const memo = {};
+async function packaged(name) {
+  if (memo[name]) return memo[name];
+  try { memo[name] = await (await fetch(chrome.runtime.getURL(name))).json(); } catch { memo[name] = {}; }
+  return memo[name];
 }
 
-/** fboMappings trả về là ánh xạ hiệu lực (mẫu đi kèm + phần người dùng tự sửa), nên cài xong là dùng được ngay. */
+/** Mẫu ánh xạ FBO đi kèm extension (presets/fbo-hrm.json). */
+export const getPreset = () => packaged('presets/fbo-hrm.json');
+
+/** Cấu hình trung tâm: lấy từ Web Admin (admin nhập 1 lần ở Vercel), lưu đệm để mở panel là dùng ngay. */
+export async function refreshRemoteConfig() {
+  const shipped = sanitizeConfig(await packaged('config.json'));
+  const remote = await fetchRemoteConfig(shipped.configUrl, (...a) => fetch(...a));
+  if (remote) await chrome.storage.local.set({ remoteConfig: remote });
+  return remote;
+}
+
 export async function getSettings() {
-  const s = await chrome.storage.local.get({ gasUrl: '', adminUrl: '', fboMappingsUser: {} });
-  const preset = await getPreset();
-  return { gasUrl: s.gasUrl, adminUrl: s.adminUrl, fboMappingsUser: s.fboMappingsUser, fboMappings: effectiveMappings(preset, s.fboMappingsUser) };
+  const s = await chrome.storage.local.get({ gasUrl: '', userFboOrigins: [], fboMappingsUser: {}, remoteConfig: {} });
+  const cfg = mergeConfig({ shipped: await packaged('config.json'), remote: s.remoteConfig, user: { gasUrl: s.gasUrl, fboOrigins: s.userFboOrigins } });
+  return {
+    gasUrl: cfg.gasUrl, gasSource: cfg.source, userGasUrl: s.gasUrl,
+    fboOrigins: cfg.fboOrigins, userFboOrigins: s.userFboOrigins,
+    fboMappingsUser: s.fboMappingsUser,
+    fboMappings: effectiveMappings(await getPreset(), s.fboMappingsUser)
+  };
 }
 export async function setSettings(patch) { await chrome.storage.local.set(patch); }
 
+/* ---------- Phiên đăng nhập OCR (token 6 giờ của GAS) ---------- */
+const SESSION_MS = 5.5 * 3600 * 1000;
 export async function getAuth() {
-  const { auth } = await chrome.storage.session.get('auth');
-  return auth || null;
+  const { auth } = await chrome.storage.local.get('auth');
+  return auth && auth.exp > Date.now() ? auth : null;
 }
 export async function setAuth(auth) {
-  if (auth) await chrome.storage.session.set({ auth });
-  else await chrome.storage.session.remove('auth');
+  if (auth) await chrome.storage.local.set({ auth: { ...auth, exp: Date.now() + SESSION_MS } });
+  else await chrome.storage.local.remove('auth');
+}
+
+/* ---------- Tài khoản OCR đã nhớ ---------- */
+export async function getOcrLogin() { return (await chrome.storage.local.get('ocrLogin')).ocrLogin || null; }
+export async function saveOcrLogin(username, password, remember) {
+  const rec = { username };
+  if (remember && password) rec.passEnc = await vault.encrypt(password);
+  await chrome.storage.local.set({ ocrLogin: rec });
+}
+export async function getOcrPassword() {
+  const rec = await getOcrLogin();
+  if (!rec || !rec.passEnc) return '';
+  try { return await vault.decrypt(rec.passEnc); } catch { return ''; }
+}
+export async function forgetOcrPassword() {
+  const rec = await getOcrLogin();
+  if (rec) { delete rec.passEnc; await chrome.storage.local.set({ ocrLogin: rec }); }
+}
+
+/* ---------- Đăng nhập FBO đã lưu, theo từng địa chỉ ---------- */
+export async function getFboLogins() { return (await chrome.storage.local.get({ fboLogins: {} })).fboLogins; }
+export async function saveFboLogin(origin, { company, unit, user, password }) {
+  const o = normalizeOrigin(origin);
+  if (!o) throw new Error('Địa chỉ FBO không hợp lệ.');
+  const all = await getFboLogins();
+  const old = all[o] || {};
+  all[o] = { company: company || '', unit: unit || '', user: user || '', passEnc: password ? await vault.encrypt(password) : old.passEnc || '' };
+  await chrome.storage.local.set({ fboLogins: all });
+}
+export async function deleteFboLogin(origin) {
+  const all = await getFboLogins(); delete all[origin]; await chrome.storage.local.set({ fboLogins: all });
+}
+export async function getFboProfile(origin) {
+  const rec = (await getFboLogins())[origin];
+  if (!rec) return null;
+  let password = '';
+  try { password = rec.passEnc ? await vault.decrypt(rec.passEnc) : ''; } catch { /* khoá mất: nhập lại */ }
+  return { company: rec.company, unit: rec.unit, user: rec.user, password };
 }

@@ -68,6 +68,13 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 
 Ánh xạ mẫu được đóng gói sẵn trong extension (không cần dán); chỉnh ở Cài đặt chỉ lưu phần khác mẫu. Chưa có ánh xạ cho loại nào thì nút "Điền vào FBO" chỉ báo thiếu cấu hình, extension không tự đoán selector.
 
+### Cấu hình trung tâm và tài khoản đã lưu
+
+- **Link Apps Script chỉ admin nhập một lần:** biến `GAS_WEB_APP_URL` trên Vercel (Web Admin). Extension tự lấy qua `GET /api/extension-config` (cùng `EXTENSION_FBO_ORIGINS`, tuỳ chọn), có bản đóng gói sẵn ở `extension_chrome/config.json` làm dự phòng. Người dùng chỉ cài extension, không nhập link. Ưu tiên: tự nhập ở Cài đặt > Web Admin > `config.json`.
+- **Nhớ tài khoản OCR:** tên đăng nhập, phiên (5,5 giờ) và, nếu tích "Ghi nhớ", mật khẩu mã hoá AES-GCM (khoá không xuất được trong IndexedDB, không đồng bộ). Hết phiên thì tự đăng nhập lại; bấm Đăng xuất sẽ xoá mật khẩu đã nhớ.
+- **Đăng nhập FBO đã lưu** theo từng địa chỉ (Cài đặt, mục 3): nút "Đăng nhập FBO" ở Side Panel điền Công ty, Tên, Đơn vị, Mật khẩu và bấm Nhận ở tab hiện tại.
+- Địa chỉ FBO trong cấu hình chỉ cần cấp quyền một lần (banner "Cấp quyền FBO" ở Side Panel).
+
 Kiểm thử: `cd extension_chrome && npm ci && npm test`.
 
 ## Cổng API (`doPost`)

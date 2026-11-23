@@ -4,29 +4,44 @@
   <meta charset="utf-8">
   <title>Cài đặt - OCR → FBO</title>
   <link rel="stylesheet" href="sidepanel.css">
-  <style>body{max-width:760px;margin:0 auto;padding:16px} textarea.code{min-height:220px;font-family:ui-monospace,Consolas,monospace;font-size:12px} pre{background:#fff;border:1px solid var(--b);padding:8px;border-radius:6px;overflow:auto;max-height:320px;font-size:11px}</style>
+  <style>body{max-width:780px;margin:0 auto;padding:16px} textarea.code{min-height:220px;font-family:ui-monospace,Consolas,monospace;font-size:13px} pre{background:#fff;border:1px solid var(--b);padding:8px;border-radius:6px;overflow:auto;max-height:320px;font-size:12px} table{width:100%;border-collapse:collapse;background:#fff} td,th{border:1px solid var(--b);padding:5px 8px;text-align:left} .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}</style>
 </head>
 <body>
-  <h1 style="font-size:18px">Cài đặt extension OCR → FBO</h1>
+  <h1 style="font-size:20px">Cài đặt extension OCR → FBO</h1>
   <div id="msg" class="msg info" hidden></div>
 
   <h2>1. Địa chỉ Apps Script (Web App /exec)</h2>
-  <input id="gas" placeholder="https://script.google.com/macros/s/.../exec">
-  <div class="row"><button id="save-gas" class="primary">Lưu và kiểm tra kết nối</button></div>
+  <p class="hint">Thường <b>không cần nhập</b>: quản trị viên cấu hình một lần ở Web Admin (biến <code>GAS_WEB_APP_URL</code> trên Vercel) và extension tự lấy. Chỉ nhập ở đây khi muốn dùng địa chỉ riêng.</p>
+  <p id="gas-now" class="hint"></p>
+  <input id="gas" placeholder="Để trống = dùng địa chỉ do quản trị cấu hình">
+  <div class="row"><button id="save-gas" class="primary">Lưu và kiểm tra kết nối</button><button id="reset-gas">Dùng mặc định</button></div>
 
-  <h2>2. Quyền truy cập trang FBO</h2>
-  <p class="hint">Nhập địa chỉ gốc của FBO (ví dụ https://ten-mien-fbo.vn) rồi bấm cấp quyền. Extension chỉ điền form ở địa chỉ đã cấp.</p>
-  <input id="fbo-origin" placeholder="https://...">
-  <div class="row"><button id="grant">Cấp quyền cho địa chỉ này</button></div>
+  <h2>2. Địa chỉ FBO và quyền truy cập</h2>
+  <p class="hint">Extension chỉ điền form ở các địa chỉ đã cấp quyền. Danh sách mặc định do quản trị cấu hình; bạn có thể thêm địa chỉ riêng.</p>
+  <table id="origins"></table>
+  <div class="grid" style="margin-top:8px"><input id="fbo-origin" placeholder="Thêm địa chỉ FBO, ví dụ https://erp.congty.vn"><button id="add-origin">Thêm và cấp quyền</button></div>
+  <div class="row"><button id="grant-all">Cấp quyền tất cả địa chỉ trong danh sách</button></div>
 
-  <h2>3. Ánh xạ trường OCR → ô trên form FBO (JSON)</h2>
-  <p class="hint">Extension đã có sẵn ánh xạ mặc định (CCCD, CV, GPLX, Biển số xe), không cần dán. Chỉ sửa khi form FBO của bạn khác.</p>
-  <p class="hint">Theo từng loại: <code>{"CCCD": {"so_cccd": "#txtSoCCCD", "gioi_tinh": {"selector": "#cboGT", "map": {"Nam": "1", "Nữ": "0"}}}}</code>. Ngày dd/MM/yyyy tự đổi sang yyyy-MM-dd với ô type=date; ô chọn so khớp theo giá trị hoặc chữ hiển thị, không phân biệt dấu.</p>
+  <h2>3. Đăng nhập FBO đã lưu</h2>
+  <p class="hint">Lưu để nút "Đăng nhập FBO" ở Side Panel tự điền Công ty, Tên, Đơn vị, Mật khẩu và bấm Nhận. Mật khẩu được mã hoá (AES-GCM), khoá nằm trong trình duyệt này và không đồng bộ lên tài khoản Chrome. Dùng máy cá nhân; máy dùng chung thì không nên lưu mật khẩu.</p>
+  <div class="grid">
+    <label>Địa chỉ FBO<input id="lg-origin" list="origin-list" placeholder="https://..."></label>
+    <label>Công ty<input id="lg-company"></label>
+    <label>Tên đăng nhập<input id="lg-user" autocomplete="off"></label>
+    <label>Đơn vị<input id="lg-unit"></label>
+    <label>Mật khẩu<input id="lg-pass" type="password" autocomplete="new-password" placeholder="Để trống = giữ mật khẩu đã lưu"></label>
+  </div>
+  <datalist id="origin-list"></datalist>
+  <div class="row"><button id="save-login" class="primary">Lưu đăng nhập FBO</button></div>
+  <table id="logins" style="margin-top:8px"></table>
+
+  <h2>4. Ánh xạ trường OCR → ô trên form FBO (JSON)</h2>
+  <p class="hint">Extension đã có sẵn ánh xạ mặc định, không cần dán. Chỉ sửa khi form FBO của bạn khác. Theo từng loại: <code>{"CCCD": {"so_cccd": "#txtSoCCCD"}}</code>. Hỗ trợ <code>map</code>, <code>format</code>, <code>transform</code>, <code>prefix</code>, <code>append</code>, hoặc mảng nhiều ô đích.</p>
   <textarea id="mapping" class="code" spellcheck="false">{}</textarea>
   <div class="row"><button id="save-map" class="primary">Lưu ánh xạ</button><button id="reset-map">Khôi phục mặc định</button></div>
 
-  <h2>4. Dò ô nhập của trang FBO đang mở</h2>
-  <p class="hint">Mở form FBO ở một tab, rồi bấm nút dưới để liệt kê các ô (id, name, nhãn, selector gợi ý). Dùng kết quả này để lập ánh xạ ở mục 3 hoặc gửi cho người hỗ trợ.</p>
+  <h2>5. Dò ô nhập của trang FBO đang mở</h2>
+  <p class="hint">Mở form FBO ở một tab, rồi bấm nút dưới để liệt kê các ô (id, name, nhãn, selector gợi ý), dùng để lập ánh xạ ở mục 4.</p>
   <div class="row"><button id="inspect">Dò trang ở tab đang mở</button><button id="copy" disabled>Sao chép kết quả</button></div>
   <pre id="out" hidden></pre>
   <script type="module" src="options.js"></script>
