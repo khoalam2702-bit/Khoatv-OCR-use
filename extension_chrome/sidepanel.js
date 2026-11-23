@@ -308,9 +308,9 @@ document.addEventListener('paste', (e) => {
 
 /* ---------- Khởi động ---------- */
 (async function init() {
-  refreshRemoteConfig(); // cập nhật link do admin cấu hình, dùng cho lần mở sau
+  await refreshRemoteConfig(); // link Apps Script nằm ở Web Admin (Vercel); lấy mới mỗi lần mở, lỗi mạng thì dùng bản đã lưu
   const { gasUrl } = await getSettings();
-  if (!gasUrl) { show('login'); msg('Chưa có địa chỉ Apps Script. Liên hệ quản trị viên để cấu hình ở Web Admin.'); return; }
+  if (!gasUrl) { show('login'); msg('Chưa lấy được địa chỉ máy chủ OCR từ Web Admin. Kiểm tra mạng, hoặc liên hệ quản trị viên (biến GAS_WEB_APP_URL trên Vercel).'); return; }
   const auth = await getAuth();
   if (auth) {
     try {
