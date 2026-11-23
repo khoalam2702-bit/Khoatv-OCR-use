@@ -1,0 +1,25 @@
+name: Extension check
+
+on:
+  push:
+    paths: ['extension_chrome/**', '.github/workflows/extension.yml']
+  pull_request:
+    paths: ['extension_chrome/**', '.github/workflows/extension.yml']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension_chrome
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension_chrome/package-lock.json
+      - run: npm ci
+      - name: Kiểm tra cú pháp
+        run: for f in background.js sidepanel.js options.js lib/*.js content/*.js; do node --check "$f"; done
+      - run: npm test
