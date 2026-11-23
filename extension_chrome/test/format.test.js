@@ -38,7 +38,7 @@ test('validateMapping', () => {
 
 test('preset FBO HRM nhân viên hợp lệ', async () => {
   const fs = await import('node:fs');
-  const preset = JSON.parse(fs.readFileSync(new URL('../presets/fbo-hrm-employee.json', import.meta.url), 'utf8'));
+  const preset = JSON.parse(fs.readFileSync(new URL('../presets/fbo-hrm.json', import.meta.url), 'utf8'));
   assert.equal(validateMapping(preset, () => true), '');
   assert.ok(Array.isArray(preset.CCCD.ho_ten) && preset.CCCD.ho_ten.length === 2);
 });

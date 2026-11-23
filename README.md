@@ -64,7 +64,7 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 2. Cấp quyền cho địa chỉ FBO (xin lúc chạy, không cố định trong manifest).
 3. Khai ánh xạ `trường OCR → selector` (JSON) cho từng loại; có nút "Dò trang" để liệt kê ô nhập của form FBO đang mở.
 
-Ánh xạ mẫu: `extension_chrome/presets/fbo-hrm-employee.json` (form "Thông tin nhân viên" của FBO HRM, loại CCCD). Một trường OCR có thể điền nhiều ô (mảng), `transform` tách họ tên (`name_head`/`name_last`), `format: "date"` chỉ điền khi đúng dd/MM/yyyy.
+Ánh xạ mẫu: `extension_chrome/presets/fbo-hrm.json` (FBO HRM: CCCD vào form Thông tin nhân viên, CV_UNGVIEN vào form Cập nhật hồ sơ ứng viên). Một trường OCR có thể điền nhiều ô (mảng), `transform` tách họ tên (`name_head`/`name_last`), `format: "date"` chỉ điền khi đúng dd/MM/yyyy, `prefix` + `append` dồn nhiều trường vào một ô (Ghi chú).
 
 Chưa có ánh xạ cho loại nào thì nút "Điền vào FBO" chỉ báo thiếu cấu hình, extension không tự đoán selector.
 

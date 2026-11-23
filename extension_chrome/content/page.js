@@ -4,6 +4,7 @@
  * mapping: { "<mã trường OCR>": "<css selector>" | { selector, map?, format?, transform? } | [ nhiều mục như trên ] }
  *   map:    { "Nam": "1", "Nữ": "0" }  đổi giá trị OCR sang giá trị ô chọn
  *   format: "iso" ép ngày dd/MM/yyyy thành yyyy-MM-dd (ô type=date tự nhận); "date" chỉ điền khi giá trị đúng dd/MM/yyyy
+ *   prefix + append: dồn nhiều trường OCR vào một ô (vd Ghi chú): "Kỹ năng: ...; Kinh nghiệm: ...", tự cắt theo maxlength của ô
  *   transform: "name_head" (họ + tên đệm) | "name_last" (tên): tách họ tên vào 2 ô
  */
 (function () {
@@ -63,7 +64,7 @@
     return v;
   }
 
-  function setOne(selector, value, spec) {
+  function setOne(selector, value, spec, touched) {
     var el = document.querySelector(selector);
     if (!el) return 'notFound';
     var v = transform(value, spec.transform);
@@ -77,6 +78,12 @@
       fire(el, 'input'); fire(el, 'change'); return 'ok';
     }
     if (el.type === 'date' || spec.format === 'iso') v = dmyToIso(v);
+    v = String(v);
+    if (spec.prefix) v = spec.prefix + v;
+    // append: nhiều trường OCR dồn vào cùng một ô (ví dụ Ghi chú), cách nhau bằng "; "
+    if (spec.append && touched.has(el) && el.value) v = el.value + '; ' + v;
+    touched.add(el);
+    if (el.maxLength > 0 && v.length > el.maxLength) v = v.slice(0, el.maxLength);
     try { el.focus(); } catch (e) { /* bỏ qua */ }
     setNative(el, String(v));
     fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
@@ -86,6 +93,7 @@
 
   globalThis.__KHOATV_FILL__ = function (mapping, data) {
     var out = { filled: [], notFound: [], empty: [] };
+    var touched = new Set();
     Object.keys(mapping || {}).forEach(function (k) {
       var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
       var val = data ? data[k] : null;
@@ -95,7 +103,7 @@
         if (typeof spec === 'string') spec = { selector: spec };
         if (!spec || !spec.selector) return;
         var r;
-        try { r = setOne(spec.selector, val, spec); } catch (e) { r = 'notFound'; }
+        try { r = setOne(spec.selector, val, spec, touched); } catch (e) { r = 'notFound'; }
         if (r === 'ok') ok++; else if (r === 'empty') skip++; else miss++;
       });
       if (miss) out.notFound.push(k);

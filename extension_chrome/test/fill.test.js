@@ -88,3 +88,17 @@ test('format date: giá trị không phải ngày thì bỏ qua; map tra không 
   assert.equal(w.document.getElementById('qt').value, 'VN');
   assert.deepEqual(plain(r.empty), ['het']); assert.deepEqual(plain(r.filled), ['qt']);
 });
+
+test('append + prefix dồn nhiều trường vào một ô và cắt theo maxlength', () => {
+  const w = page('<input id="gc" maxlength="40">');
+  const m = { a: { selector: '#gc', prefix: 'Vị trí: ', append: true }, b: { selector: '#gc', prefix: 'Kỹ năng: ', append: true } };
+  const r = w.__KHOATV_FILL__(m, { a: 'Kế toán', b: 'Excel, SQL, Power BI, tiếng Anh giao tiếp' });
+  assert.equal(w.document.getElementById('gc').value, 'Vị trí: Kế toán; Kỹ năng: Excel, SQL, Po');
+  assert.equal(w.document.getElementById('gc').value.length, 40);
+  assert.deepEqual(plain(r.filled), ['a', 'b']);
+});
+test('append: trường rỗng không để lại tiền tố', () => {
+  const w = page('<input id="gc">');
+  w.__KHOATV_FILL__({ a: { selector: '#gc', prefix: 'A: ', append: true }, b: { selector: '#gc', prefix: 'B: ', append: true } }, { a: '', b: 'x' });
+  assert.equal(w.document.getElementById('gc').value, 'B: x');
+});
