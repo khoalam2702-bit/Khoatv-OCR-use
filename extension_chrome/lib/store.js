@@ -24,9 +24,9 @@ export async function refreshRemoteConfig() {
 
 export async function getSettings() {
   const s = await chrome.storage.local.get({ gasUrl: '', userFboOrigins: [], fboMappingsUser: {}, remoteConfig: {} });
-  const cfg = mergeConfig({ shipped: await packaged('config.json'), remote: s.remoteConfig, user: { gasUrl: s.gasUrl, fboOrigins: s.userFboOrigins } });
+  const cfg = mergeConfig({ shipped: await packaged('config.json'), remote: s.remoteConfig, user: { fboOrigins: s.userFboOrigins } });
   return {
-    gasUrl: cfg.gasUrl, gasSource: cfg.source, userGasUrl: s.gasUrl,
+    gasUrl: cfg.gasUrl, gasSource: cfg.source,
     fboOrigins: cfg.fboOrigins, userFboOrigins: s.userFboOrigins,
     fboMappingsUser: s.fboMappingsUser,
     fboMappings: effectiveMappings(await getPreset(), s.fboMappingsUser)

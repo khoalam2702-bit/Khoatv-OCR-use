@@ -259,8 +259,11 @@ async function doFill() {
 async function checkFboPermission() {
   const { fboOrigins } = await getSettings();
   const origins = fboOrigins.map((o) => o + '/*');
-  if (!origins.length) { $('perm-bar').hidden = true; return; }
-  $('perm-bar').hidden = await chrome.permissions.contains({ origins });
+  const bar = $('perm-bar');
+  bar.dataset.empty = origins.length ? '' : '1';
+  $('perm-text').textContent = origins.length ? 'Cần cấp quyền để điền form FBO. ' : 'Chưa có địa chỉ FBO. Thêm địa chỉ ở Cài đặt để điền form. ';
+  $('btn-perm').textContent = origins.length ? 'Cấp quyền FBO' : 'Mở Cài đặt';
+  bar.hidden = origins.length ? await chrome.permissions.contains({ origins }) : false;
 }
 async function doFboLogin() {
   msg('');
@@ -277,6 +280,7 @@ async function doFboLogin() {
 /* ---------- Gắn sự kiện ---------- */
 $('btn-perm').onclick = async () => {
   const { fboOrigins } = await getSettings();
+  if (!fboOrigins.length) { chrome.runtime.openOptionsPage(); return; }
   const ok = await chrome.permissions.request({ origins: fboOrigins.map((o) => o + '/*') });
   if (ok) $('perm-bar').hidden = true; else msg('Chưa được cấp quyền, nút Điền vào FBO sẽ không hoạt động.');
 };
@@ -307,7 +311,7 @@ document.addEventListener('paste', (e) => {
 (async function init() {
   refreshRemoteConfig(); // cập nhật link do admin cấu hình, dùng cho lần mở sau
   const { gasUrl } = await getSettings();
-  if (!gasUrl) { show('login'); msg('Chưa có địa chỉ Apps Script. Liên hệ quản trị viên hoặc nhập ở Cài đặt.'); return; }
+  if (!gasUrl) { show('login'); msg('Chưa có địa chỉ Apps Script. Liên hệ quản trị viên để cấu hình ở Web Admin.'); return; }
   const auth = await getAuth();
   if (auth) {
     try {

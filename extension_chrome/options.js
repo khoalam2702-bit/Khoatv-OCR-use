@@ -1,21 +1,16 @@
-import { GAS_URL_RE } from './lib/config.js';
-import { createGasClient } from './lib/gas.js';
-import { getSettings, setSettings, getPreset, getFboLogins, saveFboLogin, deleteFboLogin, refreshRemoteConfig } from './lib/store.js';
+import { getSettings, setSettings, getPreset, getFboLogins, saveFboLogin, deleteFboLogin } from './lib/store.js';
 import { inspectActiveTab } from './lib/fbo.js';
 import { validateMapping, diffFromPreset } from './lib/mapping.js';
 import { normalizeOrigin } from './lib/appconfig.js';
 
 const $ = (id) => document.getElementById(id);
 const say = (t, err) => { const m = $('msg'); m.hidden = !t; m.textContent = t || ''; m.className = 'msg' + (err ? '' : ' info'); window.scrollTo(0, 0); };
-const SRC = { user: 'bạn tự nhập', remote: 'do quản trị cấu hình ở Web Admin', shipped: 'đóng gói sẵn trong extension', none: 'chưa có' };
 
 function cell(tr, text) { const td = document.createElement('td'); td.textContent = text; tr.appendChild(td); return td; }
 function btn(text, fn) { const b = document.createElement('button'); b.type = 'button'; b.className = 'link'; b.textContent = text; b.onclick = fn; return b; }
 
 async function render() {
   const s = await getSettings();
-  $('gas-now').textContent = 'Đang dùng: ' + (s.gasUrl || '(chưa có)') + ' (' + SRC[s.gasSource] + ')';
-  $('gas').value = s.userGasUrl;
 
   const t = $('origins'); t.textContent = '';
   for (const o of s.fboOrigins) {
@@ -43,23 +38,6 @@ async function render() {
 }
 
 render();
-
-$('save-gas').onclick = async () => {
-  const url = $('gas').value.trim();
-  if (!GAS_URL_RE.test(url)) return say('Địa chỉ phải có dạng https://script.google.com/macros/s/.../exec', true);
-  await setSettings({ gasUrl: url });
-  try {
-    const cfg = await createGasClient({ getUrl: async () => url })('getAppConfig', []);
-    say('Kết nối được. Backend có ' + cfg.types.length + ' loại tài liệu.');
-  } catch (e) { say('Đã lưu nhưng chưa kết nối được: ' + e.message, true); }
-  render();
-};
-$('reset-gas').onclick = async () => {
-  await setSettings({ gasUrl: '' });
-  await refreshRemoteConfig();
-  say('Đã dùng địa chỉ mặc định do quản trị cấu hình.');
-  render();
-};
 
 async function grant(origins) {
   const ok = await chrome.permissions.request({ origins: origins.map((o) => o + '/*') });
