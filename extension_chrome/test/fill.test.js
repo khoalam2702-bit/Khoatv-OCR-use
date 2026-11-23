@@ -68,3 +68,23 @@ test('dò ô nhập: có nhãn, selector gợi ý, bỏ qua nút/hidden', () => 
   assert.ok(!r.controls.some((c) => c.id === 'h'));
   assert.ok(r.controls.find((c) => c.id === 'gt').options.includes('1|Nam'));
 });
+
+test('một trường OCR điền nhiều ô: tách họ tên (name_head / name_last)', () => {
+  const w = page('<input id="ho"><input id="ten">');
+  const r = w.__KHOATV_FILL__({ ho_ten: [{ selector: '#ho', transform: 'name_head' }, { selector: '#ten', transform: 'name_last' }] }, { ho_ten: 'Nguyễn Văn An' });
+  assert.equal(w.document.getElementById('ho').value, 'Nguyễn Văn');
+  assert.equal(w.document.getElementById('ten').value, 'An');
+  assert.deepEqual(plain(r.filled), ['ho_ten']);
+});
+test('tên một từ: ô họ để trống, ô tên có giá trị', () => {
+  const w = page('<input id="ho"><input id="ten">');
+  w.__KHOATV_FILL__({ ho_ten: [{ selector: '#ho', transform: 'name_head' }, { selector: '#ten', transform: 'name_last' }] }, { ho_ten: 'An' });
+  assert.equal(w.document.getElementById('ho').value, ''); assert.equal(w.document.getElementById('ten').value, 'An');
+});
+test('format date: giá trị không phải ngày thì bỏ qua; map tra không phân biệt dấu/hoa thường', () => {
+  const w = page('<input id="d"><input id="qt">');
+  const r = w.__KHOATV_FILL__({ het: { selector: '#d', format: 'date' }, qt: { selector: '#qt', map: { 'Việt Nam': 'VN' } } }, { het: 'Không thời hạn', qt: 'VIET NAM' });
+  assert.equal(w.document.getElementById('d').value, '');
+  assert.equal(w.document.getElementById('qt').value, 'VN');
+  assert.deepEqual(plain(r.empty), ['het']); assert.deepEqual(plain(r.filled), ['qt']);
+});

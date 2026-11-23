@@ -1,9 +1,10 @@
 /* Chạy trong trang FBO (tiêm bằng chrome.scripting, mọi frame). Định nghĩa hai hàm toàn cục, không tự chạy gì.
  *  __KHOATV_FILL__(mapping, data)  -> { filled: [k], notFound: [k], empty: [k] }
  *  __KHOATV_INSPECT__()            -> danh sách ô nhập của trang (để lập ánh xạ trường)
- * mapping: { "<mã trường OCR>": "<css selector>" | { selector, map?, format? } }
+ * mapping: { "<mã trường OCR>": "<css selector>" | { selector, map?, format?, transform? } | [ nhiều mục như trên ] }
  *   map:    { "Nam": "1", "Nữ": "0" }  đổi giá trị OCR sang giá trị ô chọn
- *   format: "iso" ép ngày dd/MM/yyyy thành yyyy-MM-dd (ô type=date tự nhận, không cần khai)
+ *   format: "iso" ép ngày dd/MM/yyyy thành yyyy-MM-dd (ô type=date tự nhận); "date" chỉ điền khi giá trị đúng dd/MM/yyyy
+ *   transform: "name_head" (họ + tên đệm) | "name_last" (tên): tách họ tên vào 2 ô
  */
 (function () {
   function norm(s) {
@@ -44,11 +45,31 @@
     return false;
   }
 
+  var DATE_RE = /^\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\s*$/;
+
+  function mapValue(map, v) {
+    if (!map) return v;
+    if (Object.prototype.hasOwnProperty.call(map, v)) return map[v];
+    var nv = norm(v), keys = Object.keys(map);
+    for (var i = 0; i < keys.length; i++) if (norm(keys[i]) === nv) return map[keys[i]];
+    return v;
+  }
+
+  /* transform: name_head = họ và tên đệm (bỏ từ cuối), name_last = tên (từ cuối) */
+  function transform(v, t) {
+    var parts = String(v).trim().split(/\s+/);
+    if (t === 'name_last') return parts[parts.length - 1];
+    if (t === 'name_head') return parts.length > 1 ? parts.slice(0, -1).join(' ') : '';
+    return v;
+  }
+
   function setOne(selector, value, spec) {
     var el = document.querySelector(selector);
     if (!el) return 'notFound';
-    var v = value;
-    if (spec.map && Object.prototype.hasOwnProperty.call(spec.map, v)) v = spec.map[v];
+    var v = transform(value, spec.transform);
+    if (v === '') return 'empty';
+    if (spec.format === 'date' && !DATE_RE.test(v)) return 'empty'; // vd "Không thời hạn": bỏ qua, không điền
+    v = mapValue(spec.map, v);
     if (el.tagName === 'SELECT') return setSelect(el, v) ? 'ok' : 'notFound';
     if (el.type === 'radio') return setRadio(selector, v) ? 'ok' : 'notFound';
     if (el.type === 'checkbox') {
@@ -66,13 +87,20 @@
   globalThis.__KHOATV_FILL__ = function (mapping, data) {
     var out = { filled: [], notFound: [], empty: [] };
     Object.keys(mapping || {}).forEach(function (k) {
-      var spec = typeof mapping[k] === 'string' ? { selector: mapping[k] } : mapping[k];
-      if (!spec || !spec.selector) return;
+      var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
       var val = data ? data[k] : null;
       if (val === null || val === undefined || val === '') { out.empty.push(k); return; }
-      var r;
-      try { r = setOne(spec.selector, val, spec); } catch (e) { r = 'notFound'; }
-      (r === 'ok' ? out.filled : out.notFound).push(k);
+      var ok = 0, miss = 0, skip = 0;
+      specs.forEach(function (spec) {
+        if (typeof spec === 'string') spec = { selector: spec };
+        if (!spec || !spec.selector) return;
+        var r;
+        try { r = setOne(spec.selector, val, spec); } catch (e) { r = 'notFound'; }
+        if (r === 'ok') ok++; else if (r === 'empty') skip++; else miss++;
+      });
+      if (miss) out.notFound.push(k);
+      else if (ok) out.filled.push(k);
+      else if (skip) out.empty.push(k);
     });
     return out;
   };

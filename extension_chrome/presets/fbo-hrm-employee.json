@@ -1,0 +1,16 @@
+{
+  "CCCD": {
+    "so_cccd": "[id$=\"_dirExtender_form_cmnd_so\"]",
+    "ho_ten": [
+      { "selector": "[id$=\"_dirExtender_form_ho_nv\"]", "transform": "name_head" },
+      { "selector": "[id$=\"_dirExtender_form_ten_nv\"]", "transform": "name_last" }
+    ],
+    "ngay_sinh": { "selector": "[id$=\"_dirExtender_form_ngay_sinh\"]", "format": "date" },
+    "gioi_tinh": { "selector": "[id$=\"_dirExtender_form_gioi_tinh\"]", "map": { "Nam": "1", "Nữ": "2" } },
+    "quoc_tich": { "selector": "[id$=\"_dirExtender_form_quoc_tich\"]", "map": { "Việt Nam": "VN" } },
+    "que_quan": "[id$=\"_dirExtender_form_que_quan\"]",
+    "noi_thuong_tru": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
+    "ngay_cap": { "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hl\"]", "format": "date" },
+    "ngay_het_han": { "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hh\"]", "format": "date" }
+  }
+}

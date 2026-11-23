@@ -31,5 +31,14 @@ test('validateMapping', () => {
   assert.equal(validateMapping({ CCCD: { so_cccd: '#a', gt: { selector: '#b', map: {} } } }, ok), '');
   assert.match(validateMapping([], ok), /đối tượng/);
   assert.match(validateMapping({ CCCD: { x: {} } }, ok), /thiếu selector/);
+  assert.equal(validateMapping({ CCCD: { ho_ten: [{ selector: '#a', transform: 'name_head' }, '#b'] } }, ok), '');
+  assert.match(validateMapping({ CCCD: { ho_ten: [{ selector: '#a' }, {}] } }, ok), /thiếu selector/);
   assert.match(validateMapping({ CCCD: { x: '#a' } }, bad), /không hợp lệ/);
+});
+
+test('preset FBO HRM nhân viên hợp lệ', async () => {
+  const fs = await import('node:fs');
+  const preset = JSON.parse(fs.readFileSync(new URL('../presets/fbo-hrm-employee.json', import.meta.url), 'utf8'));
+  assert.equal(validateMapping(preset, () => true), '');
+  assert.ok(Array.isArray(preset.CCCD.ho_ten) && preset.CCCD.ho_ten.length === 2);
 });
