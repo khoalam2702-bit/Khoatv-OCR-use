@@ -1,0 +1,28 @@
+name: Admin Webapp check
+
+on:
+  push:
+    paths: ['admin_webapp/**', '.github/workflows/admin-webapp.yml']
+  pull_request:
+    paths: ['admin_webapp/**']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin_webapp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: admin_webapp/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+        env:
+          GAS_WEB_APP_URL: https://script.google.com/macros/s/placeholder/exec
+          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_SECRET: ci-placeholder

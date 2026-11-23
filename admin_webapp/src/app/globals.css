@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50; }
+  .btn-primary { @apply border-blue-600 bg-blue-600 text-white hover:bg-blue-700; }
+  .btn-danger { @apply border-red-600 bg-red-600 text-white hover:bg-red-700; }
+  .input { @apply w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500; }
+  .label { @apply mb-1 block text-xs font-medium text-slate-600; }
+}
+body { @apply bg-slate-50 text-slate-900; }

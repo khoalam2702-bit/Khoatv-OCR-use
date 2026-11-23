@@ -23,7 +23,10 @@ jobs:
           node-version: 20
 
       - name: Kiểm tra cú pháp backend
-        run: node --check src/Code.js
+        run: node --check backend_gas/Code.js
+
+      - name: Kiểm tra cổng doPost
+        run: node tests/dopost.test.js && node tests/migrate.test.js
 
       - name: Kiểm tra secret xác thực
         id: auth
