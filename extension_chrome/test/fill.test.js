@@ -129,3 +129,17 @@ test('đăng nhập FBO: submit=false chỉ điền, trang không phải đăng 
   const w2 = page('<input id="x">');
   assert.equal((await w2.__KHOATV_LOGIN__({ user: 'a' })).ok, false);
 });
+
+test('fixed luôn điền dù OCR trống; contains khớp theo từ khoá và không điền nếu không khớp mã nào', () => {
+  const w = page('<input id="lg"><input id="nc">');
+  const map = { 'Hồ Chí Minh': 'HCM', 'Hà Nội': 'HN' };
+  const mapping = { loai_giay_to: { selector: '#lg', fixed: '02' }, noi_cap: { selector: '#nc', map, contains: true } };
+  let r = plain(w.__KHOATV_FILL__(mapping, { noi_cap: 'CA TP. Hồ Chí Minh' }));
+  assert.deepEqual(r.filled.sort(), ['loai_giay_to', 'noi_cap']);
+  assert.equal(w.document.getElementById('lg').value, '02');
+  assert.equal(w.document.getElementById('nc').value, 'HCM');
+  w.document.getElementById('nc').value = '';
+  r = plain(w.__KHOATV_FILL__(mapping, { noi_cap: 'Cục Cảnh sát QLHC về TTXH' }));
+  assert.equal(w.document.getElementById('nc').value, '');
+  assert.ok(r.empty.includes('noi_cap'));
+});
