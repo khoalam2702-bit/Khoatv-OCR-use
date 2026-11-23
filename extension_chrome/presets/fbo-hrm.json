@@ -86,5 +86,23 @@
       "prefix": "Trúng tuyển: ",
       "append": true
     }
+  },
+  "BIEN_SO_XE": {
+    "bien_so_day_du": "[id$=\"MainReport_dirExtender_form_bien_so\"]",
+    "loai_phuong_tien": {
+      "selector": "[id$=\"MainReport_dirExtender_form_ghi_chu\"]",
+      "prefix": "Loại PT: ",
+      "append": true
+    },
+    "mau_bien": {
+      "selector": "[id$=\"MainReport_dirExtender_form_ghi_chu\"]",
+      "prefix": "Màu biển: ",
+      "append": true
+    },
+    "ten_tinh_thanh": {
+      "selector": "[id$=\"MainReport_dirExtender_form_ghi_chu\"]",
+      "prefix": "Tỉnh/TP: ",
+      "append": true
+    }
   }
 }
