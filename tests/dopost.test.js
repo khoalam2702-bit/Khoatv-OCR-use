@@ -22,4 +22,9 @@ assert.strictEqual(calls[1][4].source, 'WEB_APP');
 // SYS_COLS: 5 cột cũ giữ nguyên thứ tự, 2 cột mới nối sau và là opt
 const keys = vm.runInContext('SYS_COLS.map(c=>c.k).join()', ctx);
 assert.strictEqual(keys, 'scan_timestamp,document_type,raw_file_url,raw_file_id,scanned_by,source,fbo_sync_status');
+// Extension bỏ qua must_change chỉ với thao tác OCR; web app và quản lý tài khoản vẫn bị ép
+vm.runInContext(`listRecords = function(){ return skipMustChange_; }; listUsers = function(){ return skipMustChange_; };`, ctx);
+assert.strictEqual(post({ action: 'listRecords', args: ['t'], client: 'EXTENSION' }).data, true);
+assert.strictEqual(post({ action: 'listRecords', args: ['t'], client: 'WEB_APP' }).data, false);
+assert.strictEqual(post({ action: 'listUsers', args: ['t'], client: 'EXTENSION' }).data, false);
 console.log('doPost OK');
