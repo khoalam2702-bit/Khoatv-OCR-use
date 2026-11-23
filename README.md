@@ -46,12 +46,27 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 ```
 backend_gas/       Apps Script: Code.js (logic + cổng doPost), index.html (giao diện GAS cũ), appsscript.json
 admin_webapp/      Web Admin Next.js (NextAuth): đối soát bản ghi, quản lý tài khoản. Xem admin_webapp/README.md
-extension_chrome/  (Phase 2) Extension Manifest V3 tự điền form FBO
-.github/workflows/ deploy.yml (đẩy backend_gas lên GAS), admin-webapp.yml (kiểm tra build Next.js)
+extension_chrome/  Extension Chrome/Edge (MV3 Side Panel): quét 7 loại OCR, lưu về GAS, điền form FBO. Xem mục "Extension" bên dưới
+.github/workflows/ deploy.yml (đẩy backend_gas lên GAS), admin-webapp.yml (build Next.js), extension.yml (test extension)
 public/, vercel.json   khung Vercel bao quanh giao diện GAS cũ (giữ nguyên)
 ```
 
 Mọi thao tác **ghi** dữ liệu đều đi qua Apps Script (luật chống trùng, khoá, phân quyền và nhật ký chỉ có một nơi). Web Admin Next.js và Extension chỉ gọi cổng API bên dưới.
+
+## Extension Chrome/Edge (`extension_chrome/`)
+
+Side Panel (Chrome / Edge 114+). Giai đoạn này hỗ trợ 7 loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `CAN_DIEN_TU`, `BIEN_SO_XE` (danh sách ở `extension_chrome/lib/config.js`; nhãn và trường lấy từ `getAppConfig`).
+
+Luồng: đăng nhập (tài khoản Web Admin) → chọn loại → thêm ảnh/PDF (chọn tệp, kéo thả, Ctrl+V; ảnh nén JPEG 0.92) → `scanDocument` → xem/sửa → `saveRecord` (ghi `source = EXTENSION`, `fbo_sync_status = PENDING`) → "Điền vào FBO" → `updateSyncStatus` (`FILLED` / `ERROR`).
+
+Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked → chọn thư mục `extension_chrome`. Mở **Cài đặt** của extension để:
+1. Nhập URL Web App `/exec` và bấm "Lưu và kiểm tra kết nối".
+2. Cấp quyền cho địa chỉ FBO (xin lúc chạy, không cố định trong manifest).
+3. Khai ánh xạ `trường OCR → selector` (JSON) cho từng loại; có nút "Dò trang" để liệt kê ô nhập của form FBO đang mở.
+
+Chưa có ánh xạ cho loại nào thì nút "Điền vào FBO" chỉ báo thiếu cấu hình, extension không tự đoán selector.
+
+Kiểm thử: `cd extension_chrome && npm ci && npm test`.
 
 ## Cổng API (`doPost`)
 

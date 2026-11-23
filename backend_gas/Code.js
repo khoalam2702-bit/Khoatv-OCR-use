@@ -1060,7 +1060,8 @@ function saveRecord(token, docType, data, fileIds, meta) {
     SpreadsheetApp.flush();
   });
   audit_(me.username, updated ? 'GHI_DE' : 'THEM', docType, keyName + '=' + keyVal + '; ' + book.getName() + ' dòng ' + row);
-  return { book: book.getName(), sheet: docType, row: row, updated: updated };
+  // period + fileId: client (Extension) cần để gọi updateSyncStatus sau khi điền form FBO
+  return { book: book.getName(), sheet: docType, row: row, updated: updated, period: Utilities.formatDate(record.scan_timestamp, TZ, 'yyyy-MM'), fileId: fileId };
 }
 
 /** Danh sách các tháng (yyyy, MM) từ ngày `from` đến ngày `to` (yyyy-MM-dd). */

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OCR</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header>
+    <strong>OCR → FBO</strong>
+    <span id="who"></span>
+    <button id="btn-settings" class="link" title="Cài đặt">Cài đặt</button>
+    <button id="btn-logout" class="link" hidden>Đăng xuất</button>
+  </header>
+  <div id="msg" class="msg" hidden></div>
+
+  <section id="view-login" hidden>
+    <label>Tên đăng nhập<input id="in-user" autocomplete="username"></label>
+    <label>Mật khẩu<input id="in-pass" type="password" autocomplete="current-password"></label>
+    <button id="btn-login" class="primary">Đăng nhập</button>
+    <p class="hint">Dùng tài khoản của Web Admin OCR.</p>
+  </section>
+
+  <section id="view-scan" hidden>
+    <h2>1. Chọn loại tài liệu</h2>
+    <div id="types" class="types"></div>
+    <h2>2. Thêm ảnh hoặc PDF</h2>
+    <div id="drop" class="drop" tabindex="0">Kéo thả tệp vào đây, dán ảnh (Ctrl+V) hoặc <button id="btn-pick" class="link">chọn tệp</button></div>
+    <input id="in-files" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden>
+    <ul id="files" class="files"></ul>
+    <p id="limit-hint" class="hint"></p>
+    <button id="btn-scan" class="primary" disabled>Quét</button>
+  </section>
+
+  <section id="view-review" hidden>
+    <h2 id="review-title">Kiểm tra kết quả</h2>
+    <form id="form" autocomplete="off"></form>
+    <div id="review-actions" class="row">
+      <button id="btn-back" type="button">Quét lại</button>
+      <button id="btn-save" type="button" class="primary">Lưu</button>
+    </div>
+    <div id="after-save" hidden>
+      <div id="save-info" class="ok"></div>
+      <div class="row">
+        <button id="btn-fill" type="button" class="primary">Điền vào FBO</button>
+        <button id="btn-next" type="button">Quét tiếp</button>
+      </div>
+      <div id="fill-info" class="hint"></div>
+    </div>
+  </section>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

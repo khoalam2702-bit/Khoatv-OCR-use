@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>Cài đặt - OCR → FBO</title>
+  <link rel="stylesheet" href="sidepanel.css">
+  <style>body{max-width:760px;margin:0 auto;padding:16px} textarea.code{min-height:220px;font-family:ui-monospace,Consolas,monospace;font-size:12px} pre{background:#fff;border:1px solid var(--b);padding:8px;border-radius:6px;overflow:auto;max-height:320px;font-size:11px}</style>
+</head>
+<body>
+  <h1 style="font-size:18px">Cài đặt extension OCR → FBO</h1>
+  <div id="msg" class="msg info" hidden></div>
+
+  <h2>1. Địa chỉ Apps Script (Web App /exec)</h2>
+  <input id="gas" placeholder="https://script.google.com/macros/s/.../exec">
+  <div class="row"><button id="save-gas" class="primary">Lưu và kiểm tra kết nối</button></div>
+
+  <h2>2. Quyền truy cập trang FBO</h2>
+  <p class="hint">Nhập địa chỉ gốc của FBO (ví dụ https://ten-mien-fbo.vn) rồi bấm cấp quyền. Extension chỉ điền form ở địa chỉ đã cấp.</p>
+  <input id="fbo-origin" placeholder="https://...">
+  <div class="row"><button id="grant">Cấp quyền cho địa chỉ này</button></div>
+
+  <h2>3. Ánh xạ trường OCR → ô trên form FBO (JSON)</h2>
+  <p class="hint">Theo từng loại: <code>{"CCCD": {"so_cccd": "#txtSoCCCD", "gioi_tinh": {"selector": "#cboGT", "map": {"Nam": "1", "Nữ": "0"}}}}</code>. Ngày dd/MM/yyyy tự đổi sang yyyy-MM-dd với ô type=date; ô chọn so khớp theo giá trị hoặc chữ hiển thị, không phân biệt dấu.</p>
+  <textarea id="mapping" class="code" spellcheck="false">{}</textarea>
+  <div class="row"><button id="save-map" class="primary">Lưu ánh xạ</button></div>
+
+  <h2>4. Dò ô nhập của trang FBO đang mở</h2>
+  <p class="hint">Mở form FBO ở một tab, rồi bấm nút dưới để liệt kê các ô (id, name, nhãn, selector gợi ý). Dùng kết quả này để lập ánh xạ ở mục 3 hoặc gửi cho người hỗ trợ.</p>
+  <div class="row"><button id="inspect">Dò trang ở tab đang mở</button><button id="copy" disabled>Sao chép kết quả</button></div>
+  <pre id="out" hidden></pre>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
