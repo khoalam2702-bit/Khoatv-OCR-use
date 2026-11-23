@@ -42,3 +42,10 @@ test('preset FBO HRM nhân viên hợp lệ', async () => {
   assert.equal(validateMapping(preset, () => true), '');
   assert.ok(Array.isArray(preset.CCCD.ho_ten) && preset.CCCD.ho_ten.length === 2);
 });
+
+test('preset có GPLX, mỗi mục có ít nhất một selector', async () => {
+  const fs = await import('node:fs');
+  const preset = JSON.parse(fs.readFileSync(new URL('../presets/fbo-hrm.json', import.meta.url), 'utf8'));
+  assert.deepEqual(Object.keys(preset).sort(), ['CCCD', 'CV_UNGVIEN', 'GPLX']);
+  assert.equal(validateMapping(preset, () => true), '');
+});

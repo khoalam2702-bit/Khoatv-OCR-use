@@ -73,5 +73,18 @@
       "prefix": "Kỹ năng: ",
       "append": true
     }
+  },
+  "GPLX": {
+    "so_gplx": "[id$=\"MainReport75_dirExtender_form_so_bl\"]",
+    "hang_gplx": "[id$=\"MainReport75_dirExtender_form_bang_cap\"]",
+    "thoi_han_den": {
+      "selector": "[id$=\"MainReport75_dirExtender_form_ngay_hh\"]",
+      "format": "date"
+    },
+    "ngay_trung_tuyen": {
+      "selector": "[id$=\"MainReport75_dirExtender_form_ghi_chu\"]",
+      "prefix": "Trúng tuyển: ",
+      "append": true
+    }
   }
 }
