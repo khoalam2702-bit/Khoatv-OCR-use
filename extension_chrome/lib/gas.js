@@ -13,7 +13,7 @@ export function createGasClient({ getUrl, fetchImpl, client = 'EXTENSION', timeo
   const doFetch = fetchImpl || ((...a) => fetch(...a));
   return async function call(action, args = []) {
     const url = await getUrl();
-    if (!url) throw new GasError('Chưa cấu hình địa chỉ Apps Script. Mở Cài đặt của extension để nhập.', 'NO_URL');
+    if (!url) throw new GasError('Chưa có địa chỉ Apps Script. Liên hệ quản trị viên để cấu hình ở Web Admin.', 'NO_URL');
     let res;
     try {
       res = await doFetch(url, {

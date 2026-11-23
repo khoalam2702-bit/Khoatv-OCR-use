@@ -38,7 +38,8 @@ test('fetchRemoteConfig: lỗi mạng, HTTP lỗi, dữ liệu rác đều trả
 test('config.json đóng gói sẵn hợp lệ', () => {
   const raw = JSON.parse(fs.readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
   const c = sanitizeConfig(raw);
-  assert.ok(c.gasUrl && c.configUrl && c.fboOrigins.length >= 1);
+  assert.ok(c.gasUrl && c.configUrl);
+  assert.equal(c.fboOrigins, undefined, 'không có địa chỉ FBO mặc định, người dùng tự thêm');
 });
 test('vault: mã hoá khứ hồi, mỗi lần một IV, sai khoá không giải mã được', async () => {
   const mk = async () => crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
