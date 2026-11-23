@@ -242,8 +242,12 @@ async function doFill() {
       info.textContent = 'Chưa khai báo ánh xạ trường FBO cho loại này. Mở Cài đặt để khai báo.';
       return;
     }
-    const parts = ['Đã điền ' + r.filled.length + ' trường.'];
-    if (r.notFound.length) parts.push('Không tìm thấy ô: ' + r.notFound.join(', ') + '.');
+    const t = state.config && state.config.types.find((x) => x.code === state.type);
+    const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : k; };
+    const list = (a) => a.map(label).join(', ');
+    const parts = ['Đã điền ' + r.filled.length + ' trường' + (r.filled.length ? ' (' + list(r.filled) + ')' : '') + '.'];
+    if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
+    if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
     info.textContent = parts.join(' ');
     info.className = r.status === 'FILLED' ? 'ok' : 'warn';
     try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
