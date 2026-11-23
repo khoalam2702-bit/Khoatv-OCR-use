@@ -226,6 +226,11 @@ const API_ACTIONS = {
   deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } }
 };
 
+/** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
+ *  Quản lý tài khoản và đổi mật khẩu vẫn giữ nguyên quy tắc. Cờ chỉ sống trong một lần thực thi doPost. */
+const EXT_NO_FORCE_ACTIONS = ['scanDocument', 'saveRecord', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport'];
+let skipMustChange_ = false;
+
 function apiJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -241,6 +246,7 @@ function doPost(e) {
     if (!def) return apiJson_({ ok: false, error: 'Hành động không hợp lệ.' });
     const args = Array.isArray(body.args) ? body.args : [];
     const client = SOURCES.indexOf(body.client) >= 0 ? body.client : 'WEB_APP';
+    skipMustChange_ = client === 'EXTENSION' && EXT_NO_FORCE_ACTIONS.indexOf(action) >= 0;
     const result = def.fn(args, client);
     return apiJson_({ ok: true, data: result === undefined ? null : result });
   } catch (err) {
@@ -485,7 +491,7 @@ function auth_(token, opt) {
     if (opt.soft) return null;
     throw new Error('SESSION_EXPIRED');
   }
-  if (u.must_change && !opt.allowMustChange) throw new Error('MUST_CHANGE_PASSWORD');
+  if (u.must_change && !opt.allowMustChange && !skipMustChange_) throw new Error('MUST_CHANGE_PASSWORD');
   return me_(u);
 }
 

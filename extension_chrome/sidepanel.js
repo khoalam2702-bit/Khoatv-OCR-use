@@ -102,7 +102,6 @@ async function enter() {
   $('btn-fbo-login').hidden = false;
   await loadConfig();
   checkFboPermission();
-  if (state.auth.me.must_change) msg('Tài khoản phải đổi mật khẩu mặc định ở Web Admin trước khi quét.');
   resetScan();
   show('scan');
 }
