@@ -96,10 +96,14 @@ const DOC_TYPES = {
   },
   CV_UNGVIEN: {
     label: 'CV ứng viên', uniqueKey: null, required: ['ho_ten'],
-    hint: 'Hồ sơ ứng viên (CV). Tóm tắt học vấn, kỹ năng và kinh nghiệm gần nhất ngắn gọn, đúng theo nội dung CV.',
+    hint: 'Hồ sơ ứng viên (CV). Tóm tắt học vấn, kỹ năng và kinh nghiệm gần nhất ngắn gọn, đúng theo nội dung CV. ' +
+      'Chỉ ghi thông tin cá nhân (ngày sinh, giới tính, địa chỉ) khi CV có ghi rõ. ' +
+      'Học vấn: cap_dao_tao là trình độ cao nhất (ví dụ Đại học, Cao đẳng), truong_dao_tao là tên trường, chuyen_nganh là ngành học, xep_loai là xếp loại tốt nghiệp nếu có.',
     fields: [f_('ho_ten', 'Họ và tên'), f_('email', 'Email'), f_('so_dien_thoai', 'Số điện thoại'), f_('vi_tri_ung_tuyen', 'Vị trí ứng tuyển'),
       f_('hoc_van', 'Học vấn', 'long'), f_('ky_nang', 'Kỹ năng', 'long'), f_('so_nam_kinh_nghiem', 'Số năm kinh nghiệm', 'number'),
-      f_('kinh_nghiem_gan_nhat', 'Kinh nghiệm gần nhất', 'long')]
+      f_('kinh_nghiem_gan_nhat', 'Kinh nghiệm gần nhất', 'long'),
+      f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'), f_('dia_chi', 'Địa chỉ'),
+      f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại')]
   },
   SO_DO: {
     label: 'Sổ đỏ / Sổ hồng', uniqueKey: null, required: ['thua_dat_so', 'dia_chi_thua_dat'],

@@ -77,7 +77,23 @@
       "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
       "prefix": "Kỹ năng: ",
       "append": true
-    }
+    },
+    "ngay_sinh": {
+      "selector": "[id$=\"_dirExtender_form_ngay_sinh\"]",
+      "format": "date"
+    },
+    "gioi_tinh": {
+      "selector": "[id$=\"_dirExtender_form_gioi_tinh\"]",
+      "map": {
+        "Nam": "1",
+        "Nữ": "2"
+      }
+    },
+    "dia_chi": "[id$=\"_dirExtender_form_dia_chi\"]",
+    "cap_dao_tao": "[id$=\"_dirExtender_form_cap_dt\"]",
+    "truong_dao_tao": "[id$=\"_dirExtender_form_truong_dt\"]",
+    "chuyen_nganh": "[id$=\"_dirExtender_form_chuong_trinh_dt\"]",
+    "xep_loai": "[id$=\"_dirExtender_form_xep_loai_dt\"]"
   },
   "GPLX": {
     "so_gplx": "[id$=\"MainReport75_dirExtender_form_so_bl\"]",
