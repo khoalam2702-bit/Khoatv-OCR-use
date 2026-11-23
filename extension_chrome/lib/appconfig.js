@@ -18,6 +18,7 @@ export function sanitizeConfig(raw) {
     if (o.length) out.fboOrigins = o;
   }
   if (typeof raw.configUrl === 'string' && /^https:\/\//.test(raw.configUrl)) out.configUrl = raw.configUrl;
+  if (typeof raw.linkUrl === 'string' && /^https:\/\//.test(raw.linkUrl)) out.linkUrl = raw.linkUrl;
   return out;
 }
 
@@ -39,4 +40,20 @@ export async function fetchRemoteConfig(url, fetchImpl, timeoutMs = 4000) {
     const c = sanitizeConfig(await res.json());
     return c.gasUrl || c.fboOrigins ? c : null;
   } catch { return null; }
+}
+
+/** Lấy link Web App từ dòng `var APP_URL = '...'` trong index.html (tệp AutoSynCode tự cập nhật trên GitHub). Không thấy thì ''. */
+export function parseAppUrl(html) {
+  const m = /APP_URL\s*=\s*['"](https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec)['"]/.exec(String(html || ''));
+  return m ? m[1] : '';
+}
+
+/** Tải index.html chứa link bản triển khai. Lỗi hoặc không có link hợp lệ thì trả '' (giữ bản cũ). */
+export async function fetchLinkFromIndex(url, fetchImpl, timeoutMs = 4000) {
+  if (!url) return '';
+  try {
+    const res = await fetchImpl(url, { cache: 'no-store', signal: AbortSignal.timeout(timeoutMs) });
+    if (!res.ok) return '';
+    return parseAppUrl(await res.text());
+  } catch { return ''; }
 }

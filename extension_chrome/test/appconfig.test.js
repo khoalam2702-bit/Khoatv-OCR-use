@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { normalizeOrigin, sanitizeConfig, mergeConfig, fetchRemoteConfig } from '../lib/appconfig.js';
+import { parseAppUrl, fetchLinkFromIndex, normalizeOrigin, sanitizeConfig, mergeConfig, fetchRemoteConfig } from '../lib/appconfig.js';
 import { createVault } from '../lib/vault.js';
 
 const G1 = 'https://script.google.com/macros/s/AAA111/exec';
@@ -51,4 +51,15 @@ test('vault: mã hoá khứ hồi, mỗi lần một IV, sai khoá không giải
   assert.equal(await v1.decrypt(a), 'Mật khẩu 123!');
   await assert.rejects(v2.decrypt(a));
   await assert.rejects(v1.decrypt('rác'));
+});
+
+test('đọc link bản triển khai từ APP_URL trong index.html; sai định dạng hoặc lỗi mạng thì bỏ qua', async () => {
+  const G = 'https://script.google.com/macros/s/AKfycbyABC_def-123/exec';
+  assert.equal(parseAppUrl("<script>\n  var APP_URL = '" + G + "';\n</script>"), G);
+  assert.equal(parseAppUrl("var APP_URL = 'https://evil.example/macros/s/x/exec';"), '');
+  assert.equal(parseAppUrl(''), '');
+  const ok = async () => ({ ok: true, text: async () => "var APP_URL = '" + G + "';" });
+  assert.equal(await fetchLinkFromIndex('https://raw.example/index.html', ok), G);
+  assert.equal(await fetchLinkFromIndex('https://raw.example/index.html', async () => { throw new Error('x'); }), '');
+  assert.equal(await fetchLinkFromIndex('', ok), '');
 });
