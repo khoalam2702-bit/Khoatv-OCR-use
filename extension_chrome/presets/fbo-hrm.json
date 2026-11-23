@@ -37,6 +37,11 @@
     "ngay_het_han": {
       "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hh\"]",
       "format": "date"
+    },
+    "noi_sinh": "[id$=\"_dirExtender_form_noi_sinh\"]",
+    "loai_giay_to": {
+      "selector": "[id$=\"_dirExtender_form_ma_loai_gt\"]",
+      "fixed": "02"
     }
   },
   "CV_UNGVIEN": {

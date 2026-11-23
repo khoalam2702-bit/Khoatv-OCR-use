@@ -5,6 +5,8 @@
  *   map:    { "Nam": "1", "Nữ": "0" }  đổi giá trị OCR sang giá trị ô chọn
  *   format: "iso" ép ngày dd/MM/yyyy thành yyyy-MM-dd (ô type=date tự nhận); "date" chỉ điền khi giá trị đúng dd/MM/yyyy
  *   prefix + append: dồn nhiều trường OCR vào một ô (vd Ghi chú): "Kỹ năng: ...; Kinh nghiệm: ...", tự cắt theo maxlength của ô
+ *   fixed:  giá trị cố định luôn điền (không cần OCR), vd mã loại giấy tờ "02"
+ *   contains: true thì khoá của map chỉ cần nằm TRONG giá trị OCR (vd "Hồ Chí Minh" khớp "CA TP Hồ Chí Minh"), khoá dài được ưu tiên
  *   transform: "name_head" (họ + tên đệm) | "name_last" (tên): tách họ tên vào 2 ô
  */
 (function () {
@@ -48,11 +50,16 @@
 
   var DATE_RE = /^\s*\d{1,2}[\/.-]\d{1,2}[\/.-]\d{4}\s*$/;
 
-  function mapValue(map, v) {
+  function mapValue(map, v, contains) {
     if (!map) return v;
     if (Object.prototype.hasOwnProperty.call(map, v)) return map[v];
-    var nv = norm(v), keys = Object.keys(map);
-    for (var i = 0; i < keys.length; i++) if (norm(keys[i]) === nv) return map[keys[i]];
+    var nv = norm(v), keys = Object.keys(map), i;
+    for (i = 0; i < keys.length; i++) if (norm(keys[i]) === nv) return map[keys[i]];
+    if (contains) {
+      keys.sort(function (a, b) { return b.length - a.length; });
+      for (i = 0; i < keys.length; i++) if (nv.indexOf(norm(keys[i])) >= 0) return map[keys[i]];
+      return ''; // không khớp mã nào thì không điền, tránh đưa chữ vào ô mã
+    }
     return v;
   }
 
@@ -67,10 +74,11 @@
   function setOne(selector, value, spec, touched) {
     var el = document.querySelector(selector);
     if (!el) return 'notFound';
-    var v = transform(value, spec.transform);
+    var v = spec.fixed !== undefined ? String(spec.fixed) : transform(value, spec.transform);
     if (v === '') return 'empty';
     if (spec.format === 'date' && !DATE_RE.test(v)) return 'empty'; // vd "Không thời hạn": bỏ qua, không điền
-    v = mapValue(spec.map, v);
+    v = mapValue(spec.map, v, spec.contains);
+    if (v === '') return 'empty';
     if (el.tagName === 'SELECT') return setSelect(el, v) ? 'ok' : 'notFound';
     if (el.type === 'radio') return setRadio(selector, v) ? 'ok' : 'notFound';
     if (el.type === 'checkbox') {
@@ -97,7 +105,8 @@
     Object.keys(mapping || {}).forEach(function (k) {
       var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
       var val = data ? data[k] : null;
-      if (val === null || val === undefined || val === '') { out.empty.push(k); return; }
+      var hasFixed = specs.some(function (sp) { return sp && typeof sp === 'object' && sp.fixed !== undefined; });
+      if (!hasFixed && (val === null || val === undefined || val === '')) { out.empty.push(k); return; }
       var ok = 0, miss = 0, skip = 0;
       specs.forEach(function (spec) {
         if (typeof spec === 'string') spec = { selector: spec };
