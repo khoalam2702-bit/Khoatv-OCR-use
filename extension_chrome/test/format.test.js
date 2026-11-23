@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeText, parseNumber, numberToText, dmyToIso, toFormValues, fromFormValues, missingRequired } from '../lib/format.js';
-import { validateMapping } from '../lib/mapping.js';
+import { validateMapping, hasMapping } from '../lib/mapping.js';
 
 test('normalizeText bỏ dấu và đ', () => { assert.equal(normalizeText('  Đà  Nẵng '), 'da nang'); });
 test('parseNumber: tiền dùng dấu chấm ngăn nghìn', () => {
@@ -48,4 +48,11 @@ test('preset có GPLX, mỗi mục có ít nhất một selector', async () => {
   const preset = JSON.parse(fs.readFileSync(new URL('../presets/fbo-hrm.json', import.meta.url), 'utf8'));
   assert.deepEqual(Object.keys(preset).sort(), ['BIEN_SO_XE', 'CCCD', 'CV_UNGVIEN', 'GPLX']);
   assert.equal(validateMapping(preset, () => true), '');
+});
+
+test('hasMapping', () => {
+  assert.equal(hasMapping({ CCCD: { a: '#x' } }, 'CCCD'), true);
+  assert.equal(hasMapping({ CCCD: {} }, 'CCCD'), false);
+  assert.equal(hasMapping({}, 'HO_CHIEU'), false);
+  assert.equal(hasMapping(undefined, 'HO_CHIEU'), false);
 });

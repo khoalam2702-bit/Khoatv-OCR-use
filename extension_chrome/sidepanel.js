@@ -4,6 +4,7 @@ import { getSettings, getAuth, setAuth } from './lib/store.js';
 import { prepareFile } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { fillActiveTab } from './lib/fbo.js';
+import { hasMapping } from './lib/mapping.js';
 
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
@@ -188,6 +189,12 @@ async function doSave() {
     state.saved = { data, period: r.period || thisPeriod(), fileId: r.fileId || state.scan.fileIds[0], updated: !!r.updated };
     setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
     $('save-info').textContent = r.updated ? 'Đã lưu (ghi đè bản ghi trùng).' : 'Đã lưu bản ghi.';
+    // Loại chưa có form FBO: chỉ lưu, trạng thái đồng bộ giữ PENDING để điền sau khi bổ sung ánh xạ
+    const { fboMappings } = await getSettings();
+    const mapped = hasMapping(fboMappings, state.type);
+    $('btn-fill').hidden = !mapped;
+    $('fill-info').className = 'hint';
+    $('fill-info').textContent = mapped ? '' : 'Loại này chưa có form FBO nên chỉ lưu. Bản ghi giữ trạng thái chờ điền (PENDING) cho đến khi bổ sung ánh xạ.';
   } catch (e) { msg(e.message); }
   finally { busy(btn, false); }
 }

@@ -15,3 +15,9 @@ export function validateMapping(obj, isValidSelector) {
   }
   return '';
 }
+
+/** Loại tài liệu đã có ánh xạ FBO (ít nhất một trường) chưa. */
+export function hasMapping(mappings, docType) {
+  const t = mappings && mappings[docType];
+  return !!t && typeof t === 'object' && Object.keys(t).length > 0;
+}
