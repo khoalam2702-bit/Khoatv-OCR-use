@@ -8,7 +8,7 @@ import { readCccdQr, mergeQr } from './lib/qr.js';
 import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
 import { splitRetry, formatWait } from './lib/quota.js';
-import { FORM_WAIT_MS } from './lib/formcheck.js';
+import { FORM_WAIT_MS, FillStopped } from './lib/formcheck.js';
 import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scanprogress.js';
 
 const $ = (id) => document.getElementById(id);
@@ -337,19 +337,29 @@ function thisPeriod() {
 async function doFill() {
   msg('');
   const btn = $('btn-fill'), info = $('fill-info'), bar = $('fill-progress');
-  busy(btn, true, 'Đang kiểm tra form FBO...');
+  busy(btn, true, 'Đang chuẩn bị...');
   info.textContent = ''; info.className = 'hint';
   bar.hidden = false; bar.removeAttribute('value'); // thanh chạy không xác định trong lúc chờ form
   const t = state.config && state.config.types.find((x) => x.code === state.type);
   const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
   const list = (a) => a.map(label).join(', ');
   const cut = (v) => { v = String(v); return v.length > 40 ? v.slice(0, 40) + '…' : v; };
+  const ctl = new AbortController(), stop = $('btn-stop');
+  stop.hidden = false; stop.disabled = false; stop.onclick = () => { stop.disabled = true; ctl.abort(); };
   const opts = {
+    signal: ctl.signal,
     required: t ? t.required : [],
     onProgress: (p) => {
-      if (p.phase === 'wait') btn.textContent = 'Chờ form FBO... ' + Math.floor(p.elapsed / 1000) + '/' + p.limit / 1000 + ' giây';
+      const sec = p.elapsed != null ? ' ' + Math.floor(p.elapsed / 1000) + 's' : '';
+      if (p.phase === 'tab') { btn.textContent = 'Đang chọn tab FBO...'; info.textContent = 'Điền vào tab: "' + cut(p.title) + '". Hãy giữ nguyên tab này đến khi xong.'; }
+      else if (p.phase === 'login') btn.textContent = 'Kiểm tra đăng nhập...';
+      else if (p.phase === 'form') { if (p.label) info.textContent += ' Nhận diện form: ' + p.label + '.'; }
+      else if (p.phase === 'wait') btn.textContent = 'Chờ form FBO...' + sec + ' (thấy ' + p.found + '/' + p.total + ' ô)';
+      else if (p.phase === 'check') btn.textContent = 'Kiểm tra dữ liệu có sẵn...';
       else if (p.phase === 'fill') btn.textContent = 'Đang điền...';
     },
+    // Form chỉ khớp một phần số ô (có thể là form khác loại, hoặc tab con chưa mở): để người dùng quyết định
+    confirmPartial: async (x) => confirm('Form FBO đang mở chỉ có ' + x.found + '/' + x.total + ' ô khớp với loại "' + (t ? t.label : state.type) + '".\n\nCó thể bạn đang mở nhầm form, hoặc một số ô nằm ở tab con chưa mở.\n\nVẫn điền các ô tìm thấy?'),
     // Form đang có dữ liệu khác ở trường bắt buộc (vd mở hồ sơ người khác): hỏi trước khi ghi đè
     confirmOverwrite: async (over) => confirm('Form FBO đang có dữ liệu khác:\n\n' +
       over.map((o) => '• ' + label(o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"').join('\n') +
@@ -370,26 +380,28 @@ async function doFill() {
       info.textContent = 'Chưa thấy form FBO ở tab hiện tại (đã chờ ' + FORM_WAIT_MS / 1000 + ' giây). Mở đúng form (ví dụ Thêm nhân viên) hoặc chờ trang tải xong, rồi bấm Điền vào FBO lại.';
       info.className = 'warn'; return;
     }
-    if (r.status === 'WRONG_FORM') {
-      info.textContent = 'Form đang mở không khớp loại "' + (t ? t.label : state.type) + '" (chỉ thấy ' + r.found + '/' + r.selectors + ' ô cần điền). Mở đúng form rồi bấm lại. Chưa điền gì.';
-      info.className = 'warn'; return;
-    }
     if (r.status === 'CANCELLED') {
-      info.textContent = 'Đã hủy: không ghi đè dữ liệu đang có trên form FBO.';
+      info.textContent = r.wrongForm ? 'Đã hủy: form đang mở chỉ khớp ' + r.found + '/' + r.selectors + ' ô. Mở đúng form rồi bấm Điền vào FBO lại.' : 'Đã hủy: không ghi đè dữ liệu đang có trên form FBO.';
       info.className = 'warn'; return;
     }
     const parts = ['Đã điền ' + r.filled.length + '/' + r.total + ' trường (' + Math.round(r.filled.length * 100 / (r.total || 1)) + '%)' + (r.filled.length ? ': ' + list(r.filled) : '') + '.'];
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
+    parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
+    if (r.away) parts.push('Lưu ý: đã điền vào tab "' + cut(r.tabTitle) + '", không phải tab bạn đang xem. Quay lại tab đó để kiểm tra.');
     info.textContent = parts.join(' ');
-    info.className = r.status === 'FILLED' ? 'ok' : 'warn';
+    info.className = r.status === 'FILLED' && !r.away ? 'ok' : 'warn';
     bar.max = r.total || 1; bar.value = r.filled.length; done = true; // thanh hiện tỉ lệ đã điền, giữ lại để NSD xem
     try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
     catch (e) { info.textContent += ' (Chưa cập nhật được trạng thái đồng bộ: ' + e.message + ')'; }
   } catch (e) {
-    info.textContent = e.message; info.className = 'warn';
-    try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
-  } finally { if (!done) bar.hidden = true; busy(btn, false); }
+    if (e instanceof FillStopped) { // bấm Dừng: không đánh dấu lỗi, cho điền lại
+      info.textContent = 'Đã dừng. Mở lại tab và form FBO cần điền, rồi bấm "Điền vào FBO" để điền lại.'; info.className = 'warn';
+    } else {
+      info.textContent = e.message; info.className = 'warn';
+      try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
+    }
+  } finally { stop.hidden = true; stop.onclick = null; if (!done) bar.hidden = true; busy(btn, false); }
 }
 
 /* ---------- Quyền FBO và đăng nhập FBO ---------- */

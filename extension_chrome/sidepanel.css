@@ -36,3 +36,5 @@ label.chk input { width:auto; margin:0; }
 #perm-bar button { margin-top:6px; }
 
 .fillbar { width:100%; height:8px; margin:6px 0 2px; accent-color:#2563eb; }
+button.danger { background:#dc2626; color:#fff; border-color:#dc2626; }
+button.danger:hover { background:#b91c1c; }
