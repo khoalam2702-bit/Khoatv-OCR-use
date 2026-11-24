@@ -35,3 +35,17 @@ export function importantOverwrites(list, required) {
   const req = new Set(required || []);
   return (list || []).filter((o) => req.has(o.k));
 }
+
+/** Người dùng bấm Dừng. */
+export class FillStopped extends Error { constructor() { super('Đã dừng theo yêu cầu.'); this.name = 'FillStopped'; } }
+
+/** Hủy ngay khi signal bị abort (không chờ promise xong). Không có signal thì trả nguyên promise. */
+export function abortable(promise, signal) {
+  if (!signal) return promise;
+  if (signal.aborted) return Promise.reject(new FillStopped());
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new FillStopped());
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then((v) => { signal.removeEventListener('abort', onAbort); resolve(v); }, (e) => { signal.removeEventListener('abort', onAbort); reject(e); });
+  });
+}

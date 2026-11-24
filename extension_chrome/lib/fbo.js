@@ -1,6 +1,6 @@
 import { getSettings, getFboProfile, getDm } from './store.js';
 import { enrichData } from './dm.js';
-import { FORM_WAIT_MS, POLL_MS, STEP_TIMEOUT_MS, STABLE_POLLS, mappingSelectors, classifyForm, withTimeout, importantOverwrites } from './formcheck.js';
+import { FORM_WAIT_MS, POLL_MS, STEP_TIMEOUT_MS, STABLE_POLLS, mappingSelectors, classifyForm, withTimeout, importantOverwrites, abortable, FillStopped } from './formcheck.js';
 
 /** Tab FBO cần thao tác: tab đang xem nếu là trang web; nếu đang ở trang của extension (Cài đặt) hay trang trống thì lấy tab web dùng gần nhất. */
 async function webTab() {
@@ -29,18 +29,18 @@ async function assertSameTab(info) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const STEP_MSG = (what) => 'Tab FBO không phản hồi sau ' + STEP_TIMEOUT_MS / 1000 + ' giây khi ' + what + '. Trang có thể đang tải hoặc treo; đợi trang xong rồi bấm lại.';
-const step = (p, what) => withTimeout(p, STEP_TIMEOUT_MS, STEP_MSG(what));
+const step = (p, what, signal) => abortable(withTimeout(p, STEP_TIMEOUT_MS, STEP_MSG(what)), signal);
 
 /**
  * Dò (mọi frame) cho tới khi form hiện đủ ô, hoặc số ô thấy được đã ổn định (không tăng thêm), hoặc hết FORM_WAIT_MS.
  * Số ô ổn định > 0 nghĩa là form đã vẽ xong phần có sẵn; các ô ở tab chưa mở có thể chưa có trong trang, không chờ thêm vô ích.
  */
-async function waitForForm(target, mapping, onProgress) {
+async function waitForForm(target, mapping, onProgress, signal) {
   const total = mappingSelectors(mapping).length;
   const t0 = Date.now();
   let found = 0, state = 'NO_FORM', last = -1, stable = 0;
   for (;;) {
-    const res = await step(chrome.scripting.executeScript({ target, func: (m) => globalThis.__KHOATV_PROBE__(m), args: [mapping] }), 'dò các ô của form');
+    const res = await step(chrome.scripting.executeScript({ target, func: (m) => globalThis.__KHOATV_PROBE__(m), args: [mapping] }), 'dò các ô của form', signal);
     const seen = new Set();
     res.forEach((r) => r.result && r.result.found.forEach((x) => seen.add(x))); // mỗi frame chỉ thấy ô của frame đó
     found = seen.size;
@@ -49,14 +49,14 @@ async function waitForForm(target, mapping, onProgress) {
     const elapsed = Date.now() - t0;
     if (state === 'READY' || elapsed >= FORM_WAIT_MS || (found > 0 && stable >= STABLE_POLLS)) break;
     if (onProgress) onProgress({ phase: 'wait', elapsed, limit: FORM_WAIT_MS, found, total });
-    await sleep(POLL_MS);
+    await abortable(sleep(POLL_MS), signal);
   }
   return { state, found, total };
 }
 
 /**
  * Điền dữ liệu vào form FBO ở tab đang mở (dùng chung mọi loại tài liệu). Ánh xạ cố định trong presets/fbo-hrm.json.
- * opts: { required: [mã trường bắt buộc], onProgress({phase,...}), confirmOverwrite(list) -> Promise<boolean>, confirmPartial({found,total}) -> Promise<boolean> }
+ * opts: { signal (AbortSignal: nút Dừng), required: [mã trường bắt buộc], onProgress({phase,...}), confirmOverwrite(list) -> Promise<boolean>, confirmPartial({found,total}) -> Promise<boolean> }
  * status: FILLED | ERROR | NOT_LOGGED_IN | NO_MAPPING | NO_FORM | CANCELLED   (+ partial/wrongForm: cờ khi form chỉ khớp một phần)
  * Mỗi bước gọi vào tab có giới hạn STEP_TIMEOUT_MS; thời gian người dùng đọc hộp xác nhận không bị tính.
  */
@@ -73,14 +73,15 @@ export async function fillActiveTab(docType, data, opts) {
   const tabInfo = { id: tab.id, title: tab.title || tab.url || '', url: tab.url || '' };
   progress({ phase: 'tab', title: tabInfo.title });
   // Khoá vào đúng tab đã chọn lúc bấm: chuyển sang tab khác không làm điền nhầm sang tab đó; đóng tab hoặc chuyển trang thì dừng.
-  const guard = () => assertSameTab(tabInfo);
+  const sig = opts.signal;
+  const guard = async () => { if (sig && sig.aborted) throw new FillStopped(); await assertSameTab(tabInfo); };
   let results, form;
   try {
     progress({ phase: 'login' });
     await guard();
-    if (await step(needsLogin(tab.id), 'kiểm tra đăng nhập')) return { ...blank, total, status: 'NOT_LOGGED_IN' };
-    await step(chrome.scripting.executeScript({ target, files: ['content/page.js'] }), 'nạp công cụ điền');
-    form = await waitForForm(target, mapping, progress);
+    if (await step(needsLogin(tab.id), 'kiểm tra đăng nhập', sig)) return { ...blank, total, status: 'NOT_LOGGED_IN' };
+    await step(chrome.scripting.executeScript({ target, files: ['content/page.js'] }), 'nạp công cụ điền', sig);
+    form = await waitForForm(target, mapping, progress, sig);
     if (form.state === 'NO_FORM') return { ...blank, total, status: 'NO_FORM', found: form.found, selectors: form.total };
     const partial = form.state !== 'READY'; // thấy một phần ô: có thể là form khác loại, hoặc tab chưa mở nên chưa có ô
     if (partial && opts.confirmPartial && !(await opts.confirmPartial({ found: form.found, total: form.total }))) {
@@ -88,18 +89,18 @@ export async function fillActiveTab(docType, data, opts) {
     }
     await guard();
     const enriched = enrichData(docType, data, await getDm());
-    const call = (extra, what) => step(chrome.scripting.executeScript({ target, func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what);
+    const call = (extra, what, abortSig) => step(chrome.scripting.executeScript({ target, func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
     // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
     progress({ phase: 'check' });
-    const dry = await call({ dry: true }, 'kiểm tra dữ liệu có sẵn trên form');
+    const dry = await call({ dry: true }, 'kiểm tra dữ liệu có sẵn trên form', sig);
     const over = importantOverwrites(dry.flatMap((r) => (r.result && r.result.overwrite) || []), opts.required);
     if (over.length && opts.confirmOverwrite && !(await opts.confirmOverwrite(over))) return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total };
     // 2) điền thật
     await guard(); // người dùng có thể đã chuyển trang trong lúc đọc hộp xác nhận
     progress({ phase: 'fill' });
-    results = await call(null, 'điền form');
+    results = await call(null, 'điền form'); // lệnh điền thật chạy tức thì trong trang, không hủy giữa chừng
   } catch (e) {
-    if (e && /Tab FBO không phản hồi|Tab FBO đã/.test(e.message)) throw e;
+    if (e instanceof FillStopped || (e && /Tab FBO không phản hồi|Tab FBO đã/.test(e.message))) throw e;
     throw new Error('Không truy cập được trang này. Mở form FBO ở tab hiện tại và cấp quyền cho địa chỉ FBO trong Cài đặt. (' + (e && e.message ? e.message : e) + ')');
   }
   const filled = new Set(), notFound = new Set(), empty = new Set();

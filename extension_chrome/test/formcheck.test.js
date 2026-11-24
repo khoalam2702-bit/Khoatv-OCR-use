@@ -23,3 +23,14 @@ test('importantOverwrites chỉ giữ trường bắt buộc', () => {
   assert.deepEqual(importantOverwrites(l, ['ho_ten', 'so_cccd']), [l[0]]);
   assert.deepEqual(importantOverwrites(l, []), []);
 });
+
+import { abortable, FillStopped } from '../lib/formcheck.js';
+test('abortable: dừng ngay khi bấm Dừng, kể cả promise chưa xong', async () => {
+  const c = new AbortController();
+  const p = abortable(new Promise(() => {}), c.signal);
+  c.abort();
+  await assert.rejects(p, (e) => e instanceof FillStopped);
+  await assert.rejects(abortable(Promise.resolve(1), c.signal), (e) => e instanceof FillStopped); // đã abort từ trước
+  assert.equal(await abortable(Promise.resolve(5), new AbortController().signal), 5);
+  assert.equal(await abortable(Promise.resolve(6), undefined), 6);
+});

@@ -8,7 +8,7 @@ import { readCccdQr, mergeQr } from './lib/qr.js';
 import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
 import { splitRetry, formatWait } from './lib/quota.js';
-import { FORM_WAIT_MS } from './lib/formcheck.js';
+import { FORM_WAIT_MS, FillStopped } from './lib/formcheck.js';
 import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scanprogress.js';
 
 const $ = (id) => document.getElementById(id);
@@ -344,7 +344,10 @@ async function doFill() {
   const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
   const list = (a) => a.map(label).join(', ');
   const cut = (v) => { v = String(v); return v.length > 40 ? v.slice(0, 40) + '…' : v; };
+  const ctl = new AbortController(), stop = $('btn-stop');
+  stop.hidden = false; stop.disabled = false; stop.onclick = () => { stop.disabled = true; ctl.abort(); };
   const opts = {
+    signal: ctl.signal,
     required: t ? t.required : [],
     onProgress: (p) => {
       const sec = p.elapsed != null ? ' ' + Math.floor(p.elapsed / 1000) + 's' : '';
@@ -391,9 +394,13 @@ async function doFill() {
     try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
     catch (e) { info.textContent += ' (Chưa cập nhật được trạng thái đồng bộ: ' + e.message + ')'; }
   } catch (e) {
-    info.textContent = e.message; info.className = 'warn';
-    try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
-  } finally { if (!done) bar.hidden = true; busy(btn, false); }
+    if (e instanceof FillStopped) { // bấm Dừng: không đánh dấu lỗi, cho điền lại
+      info.textContent = 'Đã dừng. Mở lại tab và form FBO cần điền, rồi bấm "Điền vào FBO" để điền lại.'; info.className = 'warn';
+    } else {
+      info.textContent = e.message; info.className = 'warn';
+      try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
+    }
+  } finally { stop.hidden = true; stop.onclick = null; if (!done) bar.hidden = true; busy(btn, false); }
 }
 
 /* ---------- Quyền FBO và đăng nhập FBO ---------- */
