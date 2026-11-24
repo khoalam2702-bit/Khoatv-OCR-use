@@ -100,7 +100,7 @@ async function loadConfig() {
   const byCode = new Map(cfg.types.map((t) => [t.code, t]));
   state.config = {
     types: ENABLED_TYPES.map((c) => byCode.get(c)).filter(Boolean),
-    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles }
+    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles, scanPer10Min: cfg.scanPer10Min || DEFAULT_LIMITS.scanPer10Min, sessionHours: cfg.sessionHours || DEFAULT_LIMITS.sessionHours }
   };
 }
 
@@ -188,10 +188,29 @@ async function addFiles(list) {
   renderFiles(); updateScanBtn();
 }
 
+/** Ghi chú giới hạn dưới khu chọn tệp: tệp, dung lượng, số lần quét, thời gian, hạn mức AI. */
+function renderLimits() {
+  const L = state.config.limits, mb = (b) => Math.round(b / 1048576);
+  const items = [
+    'Tối đa ' + L.maxFiles + ' tệp mỗi tài liệu (ví dụ CCCD 2 mặt = 2 ảnh).',
+    'Dung lượng: mỗi tệp tối đa ' + mb(L.maxFileBytes) + ' MB, tổng các tệp tối đa ' + mb(L.maxTotalBytes) + ' MB. Chỉ nhận JPG, PNG, WEBP, PDF; ảnh tự nén JPG, cạnh dài tối đa 2400 px.',
+    'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
+    'Mỗi lần quét xử lý tối đa khoảng 6 phút; quá thời gian sẽ báo lỗi, hãy quét lại với ít trang hơn.',
+    'Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.',
+    'Hạn mức AI (Gemini) tính theo khóa API, theo phút và theo ngày do Google quy định. Chạm hạn mức sẽ hiện đồng hồ đếm ngược; hạn mức ngày đặt lại lúc 0 giờ giờ Thái Bình Dương (khoảng 14-15 giờ giờ Việt Nam).'
+  ];
+  const box = $('limit-hint');
+  box.textContent = '';
+  const ul = document.createElement('ul');
+  ul.className = 'limits';
+  for (const t of items) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
+  box.appendChild(ul);
+}
+
 function resetScan() {
   state.files = []; state.scan = null; state.saved = null;
   renderTypes(); renderFiles(); updateScanBtn();
-  $('limit-hint').textContent = 'Tối đa ' + state.config.limits.maxFiles + ' tệp mỗi tài liệu (ví dụ CCCD 2 mặt = 2 ảnh).';
+  renderLimits();
 }
 
 /* ---------- Quét ---------- */
@@ -388,6 +407,7 @@ async function doFill() {
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
     parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
+    if (r.diag) parts.push('Chẩn đoán ô địa chỉ (gửi lại cho người hỗ trợ): ' + r.diag + '.');
     if (r.mainOnly) parts.push('(Trang có khung phụ không phản hồi nên chỉ điền ở khung chính.)');
     if (r.away) parts.push('Lưu ý: đã điền vào tab "' + cut(r.tabTitle) + '", không phải tab bạn đang xem. Quay lại tab đó để kiểm tra.');
     info.textContent = parts.join(' ');
