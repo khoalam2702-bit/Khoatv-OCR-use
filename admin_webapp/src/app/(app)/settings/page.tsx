@@ -3,16 +3,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { api, errMsg } from '@/lib/api';
 
-interface Slot { set: boolean; hint: string }
-interface AiConfig { model: string; defaultModel: string; tier: '' | 'free' | 'paid'; main: Slot; backup: Slot; tested?: string[] }
+interface Slot { set: boolean; hint: string; waitSec?: number }
+interface AiConfig { model: string; defaultModel: string; tier: '' | 'free' | 'paid'; main: Slot; backup: Slot; backups?: Slot[]; tested?: string[] }
 interface TestRow { slot: string; label: string; set: boolean; hint?: string; ok?: boolean; warn?: boolean; message?: string }
 
 export default function SettingsPage() {
   const { data } = useSession();
   const [cfg, setCfg] = useState<AiConfig | null>(null);
   const [apiKey, setApiKey] = useState('');
-  const [backupKey, setBackupKey] = useState('');
-  const [clearBackup, setClearBackup] = useState(false);
+  const [backupKeys, setBackupKeys] = useState<string[]>(['', '', '', '']);
+  const [clearBackups, setClearBackups] = useState<boolean[]>([false, false, false, false]);
   const [model, setModel] = useState('');
   const [tier, setTier] = useState<'' | 'free' | 'paid'>('');
   const [err, setErr] = useState('');
@@ -31,10 +31,11 @@ export default function SettingsPage() {
     try {
       const patch: Record<string, unknown> = { model, tier };
       if (apiKey.trim()) patch.apiKey = apiKey.trim();
-      if (backupKey.trim()) patch.backupKey = backupKey.trim();
-      else if (clearBackup) patch.clearBackup = true;
+      if (backupKeys.some((k) => k.trim())) patch.backupKeys = backupKeys.map((k) => k.trim());
+      const clr = clearBackups.map((c, i) => (c && !backupKeys[i].trim() ? i + 1 : 0)).filter(Boolean);
+      if (clr.length) patch.clearBackups = clr;
       const c = await api<AiConfig>('setAiConfig', [patch]);
-      apply(c); setApiKey(''); setBackupKey(''); setClearBackup(false);
+      apply(c); setApiKey(''); setBackupKeys(['', '', '', '']); setClearBackups([false, false, false, false]);
       setOk('Đã lưu cấu hình AI.' + (c.tested?.length ? ' Đã thử: ' + c.tested.join('; ') + '.' : ''));
     } catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
   }
@@ -43,7 +44,10 @@ export default function SettingsPage() {
     try { setRows(await api<TestRow[]>('testAiConfig')); } catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
   }
 
-  const slotText = (s: Slot) => (s.set ? `Đã khai báo (${s.hint})` : 'Chưa khai báo');
+  const baks: Slot[] = cfg ? (cfg.backups ?? [cfg.backup]) : [];
+  const setBak = (i: number, v: string) => setBackupKeys((a) => a.map((x, j) => (j === i ? v : x)));
+  const setClr = (i: number, v: boolean) => setClearBackups((a) => a.map((x, j) => (j === i ? v : x)));
+  const slotText = (s: Slot) => (s.set ? `Đã khai báo (${s.hint})${s.waitSec ? ` — đang tạm nghỉ ~${Math.max(1, Math.round(s.waitSec / 60))} phút (hết hạn mức/lỗi), hệ thống tự dùng khoá khác` : ''}` : 'Chưa khai báo');
   return (
     <div className="max-w-2xl space-y-4">
       <h1 className="text-lg font-semibold">Cài đặt AI (Gemini)</h1>
@@ -56,17 +60,24 @@ export default function SettingsPage() {
       <form onSubmit={save} className="space-y-3 rounded-lg border bg-white p-4">
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><span className="text-slate-500">Khoá chính</span><div className="font-medium">{cfg ? slotText(cfg.main) : '...'}</div></div>
-          <div><span className="text-slate-500">Khoá dự phòng</span><div className="font-medium">{cfg ? slotText(cfg.backup) : '...'}</div></div>
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i}><span className="text-slate-500">Khoá dự phòng {i + 1}</span><div className="font-medium">{cfg ? slotText(baks[i] ?? { set: false, hint: '' }) : '...'}</div></div>
+          ))}
         </div>
+        <p className="rounded bg-slate-50 p-2 text-xs text-slate-600">Thứ tự dùng: khoá chính, khi hết hạn mức (hoặc bị từ chối, lỗi máy chủ) thì lần lượt dự phòng 1, 2, 3, 4. Mỗi khoá nên tạo ở một dự án Google khác nhau để hạn mức độc lập. Ô để trống = giữ nguyên khoá đang lưu.</p>
         <label className="block text-sm">Khoá chính (trả phí) — để trống nếu không đổi
-          <input type="password" autoComplete="off" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="AIza..." />
+          <input type="password" autoComplete="off" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={cfg?.main.set ? `Đang dùng ${cfg.main.hint}, để trống nếu không đổi` : 'AIza...'} />
         </label>
-        <label className="block text-sm">Khoá dự phòng (ví dụ khoá miễn phí) — tự dùng khi khoá chính hết hạn mức hoặc bị từ chối
-          <input type="password" autoComplete="off" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={backupKey} onChange={(e) => setBackupKey(e.target.value)} placeholder="AIza..." />
-        </label>
-        {cfg?.backup.set && !backupKey.trim() && (
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={clearBackup} onChange={(e) => setClearBackup(e.target.checked)} /> Xoá khoá dự phòng đang lưu</label>
-        )}
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i}>
+            <label className="block text-sm">Khoá dự phòng {i + 1} — để trống nếu không đổi
+              <input type="password" autoComplete="off" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={backupKeys[i]} onChange={(e) => setBak(i, e.target.value)} placeholder={baks[i]?.set ? `Đang dùng ${baks[i].hint}, để trống nếu không đổi` : 'AIza...'} />
+            </label>
+            {baks[i]?.set && !backupKeys[i].trim() && (
+              <label className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked={clearBackups[i]} onChange={(e) => setClr(i, e.target.checked)} /> Xoá khoá dự phòng {i + 1} đang lưu</label>
+            )}
+          </div>
+        ))}
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-sm">Gói của khoá chính
             <select className="mt-1 w-full rounded border px-2 py-1.5" value={tier} onChange={(e) => setTier(e.target.value as '' | 'free' | 'paid')}>

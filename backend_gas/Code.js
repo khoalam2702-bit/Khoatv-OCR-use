@@ -3,7 +3,7 @@
  *
  * Script Properties (Project Settings > Script Properties):
  *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API chính. ADMIN đổi được ở trang quản trị > Cài đặt AI (không cần vào Script Properties)
- *   GEMINI_API_KEY_BACKUP (tuỳ chọn) Khoá dự phòng: tự dùng khi khoá chính hết hạn mức (429) hoặc bị từ chối (403)
+ *   GEMINI_API_KEY_BACKUP, GEMINI_API_KEY_BACKUP_2, _3, _4 (tuỳ chọn) Khoá dự phòng 1 → 4: lần lượt dùng khi khoá trước hết hạn mức (429), bị từ chối (403) hoặc lỗi máy chủ (5xx). Khoá vừa lỗi được cho "nghỉ" (tối đa 30 phút) để các lần quét sau dùng thẳng khoá còn lại
  *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
@@ -987,6 +987,12 @@ function callGemini_(type, files, opts) {
   };
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
   const keys = geminiKeys_();
+  // Khoá đang "nghỉ" (vừa hết hạn mức/bị từ chối) được bỏ qua để khỏi tốn lượt gọi; hết khoá khả dụng thì báo ngay, không gọi mạng.
+  const split = splitKeysByCooldown_(keys);
+  if (!split.ready.length) {
+    throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(split.minWaitSec));
+  }
+  const ready = split.ready;
   function post_(key) {
     return fetchRetry_(url, {
       method: 'post',
@@ -994,7 +1000,7 @@ function callGemini_(type, files, opts) {
       headers: { 'x-goog-api-key': key },
       payload: JSON.stringify(body),
       muteHttpExceptions: true
-    }, keys.length > 1); // có khoá dự phòng: gặp 429 chuyển khoá ngay, không chờ thử lại
+    }, ready.length > 1); // còn khoá khác để thử: gặp 429 chuyển khoá ngay, không chờ thử lại
   }
   // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
   // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
@@ -1003,20 +1009,28 @@ function callGemini_(type, files, opts) {
     body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
     body.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
   }
-  let keyIdx = 0;
-  let resp = post_(keys[0]);
-  if (fast && resp.getResponseCode() === 400 && !isBadKey_(resp)) {
-    console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
-    delete body.generationConfig.thinkingConfig;
-    delete body.generationConfig.mediaResolution;
-    resp = post_(keys[0]);
-  }
-  // Khoá chính hết hạn mức (429) hoặc bị từ chối (403 / khoá sai): thử khoá dự phòng
-  const c0 = resp.getResponseCode();
-  if ((c0 === 429 || c0 === 403 || isBadKey_(resp)) && keys.length > 1) {
-    console.error('Khoá Gemini chính lỗi ' + c0 + ', chuyển khoá dự phòng: ' + resp.getContentText().slice(0, 300));
-    keyIdx = 1;
-    resp = post_(keys[1]);
+  let resp = null, keyIdx = 0, used = null;
+  for (let i = 0; i < ready.length; i++) {
+    keyIdx = keys.indexOf(ready[i]);
+    used = ready[i];
+    resp = post_(used);
+    if (fast && resp.getResponseCode() === 400 && !isBadKey_(resp)) {
+      console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
+      delete body.generationConfig.thinkingConfig;
+      delete body.generationConfig.mediaResolution;
+      resp = post_(used);
+    }
+    const c = resp.getResponseCode();
+    if (c === 200) break;
+    // Hết hạn mức (429), bị từ chối (403 / khoá sai) hoặc lỗi máy chủ (5xx): cho khoá này nghỉ rồi thử khoá kế tiếp (nếu có)
+    if (c === 429 || c === 403 || c >= 500 || isBadKey_(resp)) {
+      markKeyCooldown_(used, cooldownSecFor_(resp, c));
+      if (i < ready.length - 1) {
+        console.error('Khoá Gemini ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + ' lỗi ' + c + ', chuyển khoá kế tiếp: ' + resp.getContentText().slice(0, 300));
+        continue;
+      }
+    }
+    break;
   }
   const code = resp.getResponseCode();
   if (code !== 200) {
@@ -1083,14 +1097,15 @@ function testGeminiKey_(key, model) {
 function aiConfigView_() {
   const p = PropertiesService.getScriptProperties();
   const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
-  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
+  const baks = AI_BACKUP_PROPS.map(function (n) { return String(p.getProperty(n) || '').trim(); });
   const tier = String(p.getProperty('GEMINI_TIER') || '').trim();
   return {
     model: prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL),
     defaultModel: DEFAULTS.GEMINI_MODEL,
     tier: AI_TIERS.indexOf(tier) >= 0 ? tier : '',
-    main: { set: !!main, hint: keyHint_(main) },
-    backup: { set: !!bak, hint: keyHint_(bak) }
+    main: slotView_(main),
+    backup: slotView_(baks[0]), // giữ cho giao diện cũ: = dự phòng 1
+    backups: baks.map(slotView_) // dự phòng 1..4
   };
 }
 
@@ -1100,7 +1115,8 @@ function getAiConfig(token) {
 }
 
 /**
- * patch: { apiKey?, backupKey?, clearBackup?, model?, tier? }. Chỉ trường có mặt mới đổi.
+ * patch: { apiKey?, backupKeys?: [k1..k4], backupKey? (= dự phòng 1), clearBackups?: [1..4], clearBackup? (= xoá dự phòng 1), model?, tier? }.
+ * Chỉ trường có mặt mới đổi; phần tử rỗng trong backupKeys = giữ nguyên.
  * Khoá mới được thử trước; chỉ lưu khi mọi khoá mới đều dùng được (hết hạn mức 429 vẫn tính là hợp lệ).
  */
 function setAiConfig(token, patch) {
@@ -1108,25 +1124,50 @@ function setAiConfig(token, patch) {
   patch = patch || {};
   const model = patch.model !== undefined && String(patch.model).trim() !== '' ? checkModelName_(patch.model) : prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const newMain = patch.apiKey !== undefined && String(patch.apiKey).trim() !== '' ? checkKeyFormat_(patch.apiKey) : '';
-  const newBak = patch.backupKey !== undefined && String(patch.backupKey).trim() !== '' ? checkKeyFormat_(patch.backupKey) : '';
+  const rawBaks = Array.isArray(patch.backupKeys) ? patch.backupKeys.slice(0, AI_BACKUP_PROPS.length) : [];
+  if (patch.backupKey !== undefined && String(patch.backupKey).trim() !== '' && !String(rawBaks[0] || '').trim()) rawBaks[0] = patch.backupKey;
+  const newBaks = AI_BACKUP_PROPS.map(function (n, i) {
+    return rawBaks[i] !== undefined && String(rawBaks[i] || '').trim() !== '' ? checkKeyFormat_(rawBaks[i]) : '';
+  });
+  const clears = {};
+  (Array.isArray(patch.clearBackups) ? patch.clearBackups : []).forEach(function (n) {
+    n = Number(n); if (n >= 1 && n <= AI_BACKUP_PROPS.length) clears[n - 1] = true;
+  });
+  if (patch.clearBackup === true) clears[0] = true;
   if (patch.tier !== undefined && patch.tier !== '' && AI_TIERS.indexOf(patch.tier) < 0) throw new Error('Gói không hợp lệ (free hoặc paid).');
+  const p = PropertiesService.getScriptProperties();
+  // Không cho hai ô cùng một khoá: dùng chung khoá thì chung hạn mức, dự phòng không có tác dụng.
+  const finalKeys = ['GEMINI_API_KEY'].concat(AI_BACKUP_PROPS).map(function (n, i) {
+    if (i === 0) return newMain || String(p.getProperty(n) || '').trim();
+    if (newBaks[i - 1]) return newBaks[i - 1];
+    if (clears[i - 1]) return '';
+    return String(p.getProperty(n) || '').trim();
+  });
+  const seen = {};
+  finalKeys.forEach(function (k, i) {
+    if (!k) return;
+    if (seen[k] !== undefined) throw new Error((i === 0 ? 'Khoá chính' : 'Khoá dự phòng ' + i) + ' trùng với ' + (seen[k] === 0 ? 'khoá chính' : 'khoá dự phòng ' + seen[k]) + '. Mỗi ô phải là một khoá khác nhau (tạo ở dự án Google khác). Chưa lưu thay đổi nào.');
+    seen[k] = i;
+  });
   const tested = [];
-  [['Khoá chính', newMain], ['Khoá dự phòng', newBak]].forEach(function (x) {
+  [['Khoá chính', newMain]].concat(newBaks.map(function (k, i) { return ['Khoá dự phòng ' + (i + 1), k]; })).forEach(function (x) {
     if (!x[1]) return;
     const r = testGeminiKey_(x[1], model);
     if (!r.ok) throw new Error(x[0] + ': ' + r.message + ' Chưa lưu thay đổi nào.');
     tested.push(x[0] + (r.warn ? ' (hết hạn mức tạm thời)' : ''));
   });
-  const p = PropertiesService.getScriptProperties();
   const changed = [];
   if (newMain) { p.setProperty('GEMINI_API_KEY', newMain); changed.push('khoa_chinh ' + keyHint_(newMain)); }
-  if (newBak) { p.setProperty('GEMINI_API_KEY_BACKUP', newBak); changed.push('khoa_du_phong ' + keyHint_(newBak)); }
-  else if (patch.clearBackup === true) { p.deleteProperty('GEMINI_API_KEY_BACKUP'); changed.push('xoa_khoa_du_phong'); }
+  AI_BACKUP_PROPS.forEach(function (n, i) {
+    if (newBaks[i]) { p.setProperty(n, newBaks[i]); changed.push('khoa_du_phong_' + (i + 1) + ' ' + keyHint_(newBaks[i])); }
+    else if (clears[i]) { p.deleteProperty(n); changed.push('xoa_khoa_du_phong_' + (i + 1)); }
+  });
   if (model !== prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL)) { p.setProperty('GEMINI_MODEL', model); changed.push('model=' + model); }
   if (patch.tier !== undefined) {
     if (patch.tier) p.setProperty('GEMINI_TIER', patch.tier); else p.deleteProperty('GEMINI_TIER');
     changed.push('goi=' + (patch.tier || 'chua_chon'));
   }
+  if (changed.length) clearKeyCooldowns_();
   if (changed.length) audit_(admin.username, 'DOI_CAU_HINH_AI', 'GEMINI', changed.join('; ')); // chỉ ghi 4 ký tự cuối, không ghi khoá
   const view = aiConfigView_();
   view.tested = tested;
@@ -1139,7 +1180,7 @@ function testAiConfig(token) {
   const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const p = PropertiesService.getScriptProperties();
   const out = [];
-  [['main', 'Khoá chính', 'GEMINI_API_KEY'], ['backup', 'Khoá dự phòng', 'GEMINI_API_KEY_BACKUP']].forEach(function (x) {
+  [['main', 'Khoá chính', 'GEMINI_API_KEY']].concat(AI_BACKUP_PROPS.map(function (n, i) { return ['backup' + (i + 1), 'Khoá dự phòng ' + (i + 1), n]; })).forEach(function (x) {
     const k = String(p.getProperty(x[2]) || '').trim();
     if (!k) { out.push({ slot: x[0], label: x[1], set: false }); return; }
     const r = testGeminiKey_(k, model);
@@ -1683,16 +1724,87 @@ function clean_(v, type) {
 
 /* ============================ TIỆN ÍCH ============================ */
 
-/** Khoá Gemini theo thứ tự thử: khoá chính, rồi khoá dự phòng (nếu có và khác khoá chính). */
+/** Thuộc tính lưu khoá dự phòng, theo thứ tự thử: dự phòng 1 (tên cũ GEMINI_API_KEY_BACKUP), 2, 3, 4. */
+const AI_BACKUP_PROPS = ['GEMINI_API_KEY_BACKUP', 'GEMINI_API_KEY_BACKUP_2', 'GEMINI_API_KEY_BACKUP_3', 'GEMINI_API_KEY_BACKUP_4'];
+
+/** Khoá Gemini theo thứ tự thử: khoá chính, rồi dự phòng 1 → 4 (bỏ khoá trống và khoá trùng khoá đứng trước). */
 function geminiKeys_() {
   const p = PropertiesService.getScriptProperties();
-  const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
-  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
   const out = [];
-  if (main) out.push(main);
-  if (bak && bak !== main) out.push(bak);
+  ['GEMINI_API_KEY'].concat(AI_BACKUP_PROPS).forEach(function (name) {
+    const k = String(p.getProperty(name) || '').trim();
+    if (k && out.indexOf(k) < 0) out.push(k);
+  });
   if (!out.length) throw new Error('Chưa cấu hình Script Property: GEMINI_API_KEY');
   return out;
+}
+
+/* ---- Khoá Gemini "nghỉ" (cooldown): nhớ khoá vừa lỗi để lần quét sau dùng thẳng khoá còn dùng được ---- */
+const KEY_COOLDOWN_MAX_SEC = 1800; // tối đa 30 phút: lỡ hạn mức đã được nâng/đặt lại sớm thì tối đa 30 phút sau tự thử lại
+
+function cooldownCacheKey_(key) { return 'gkcd_' + hash_(key); }
+
+/** Số giây khoá nên nghỉ theo mã lỗi: 429 theo thời gian Gemini báo; 403/khoá sai 10 phút; 5xx 30 giây. */
+function cooldownSecFor_(resp, code) {
+  let sec;
+  if (code === 429) sec = retryAfterSec_(resp.getContentText(), Date.now());
+  else if (code >= 500) sec = 30;
+  else sec = 600;
+  return Math.max(5, Math.min(KEY_COOLDOWN_MAX_SEC, Math.round(sec)));
+}
+
+/** Số giây khoá còn phải nghỉ (0 nếu đang dùng được hoặc không có cache). */
+function keyCooldownLeft_(key) {
+  if (!key) return 0;
+  try {
+    const until = Number(CacheService.getScriptCache().get(cooldownCacheKey_(key)) || 0);
+    return until > Date.now() ? Math.ceil((until - Date.now()) / 1000) : 0;
+  } catch (e) { return 0; }
+}
+
+function slotView_(key) {
+  const v = { set: !!key, hint: keyHint_(key) };
+  const w = keyCooldownLeft_(key);
+  if (w > 0) v.waitSec = w; // chỉ ADMIN thấy: khoá đang nghỉ do hết hạn mức / lỗi
+  return v;
+}
+
+function markKeyCooldown_(key, sec) {
+  try {
+    CacheService.getScriptCache().put(cooldownCacheKey_(key), String(Date.now() + sec * 1000), Math.max(5, Math.min(21600, Math.round(sec))));
+  } catch (e) { /* không có cache: bỏ qua, vẫn chạy như cũ */ }
+}
+
+/** Xoá trạng thái nghỉ của mọi khoá (gọi khi ADMIN đổi khoá/gói ở Cài đặt AI). */
+function clearKeyCooldowns_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    geminiKeysSafe_().forEach(function (k) { cache.remove(cooldownCacheKey_(k)); });
+  } catch (e) { /* bỏ qua */ }
+}
+
+function geminiKeysSafe_() {
+  try { return geminiKeys_(); } catch (e) { return []; }
+}
+
+/** Tách khoá thành nhóm sẵn sàng (giữ thứ tự chính -> dự phòng) và nhóm đang nghỉ; minWaitSec = thời gian chờ ngắn nhất nếu mọi khoá đều nghỉ. */
+function splitKeysByCooldown_(keys) {
+  const now = Date.now();
+  const ready = [];
+  let minWait = 0;
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  keys.forEach(function (k) {
+    let until = 0;
+    if (cache) { try { until = Number(cache.get(cooldownCacheKey_(k)) || 0); } catch (e) { until = 0; } }
+    if (until > now) {
+      const w = Math.ceil((until - now) / 1000);
+      minWait = minWait === 0 ? w : Math.min(minWait, w);
+    } else {
+      ready.push(k);
+    }
+  });
+  return { ready: ready, minWaitSec: Math.max(1, minWait) };
 }
 
 /** Phản hồi Gemini cho biết khoá sai / bị thu hồi (HTTP 400 API_KEY_INVALID hoặc 'API key not valid'). */
