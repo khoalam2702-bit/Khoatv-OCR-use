@@ -161,16 +161,18 @@ const DOC_TYPES = {
   },
   BIEN_SO_XE: {
     label: 'Biển số xe', uniqueKey: null, required: ['bien_so_day_du'],
-    hint: 'Biển số xe Việt Nam NỀN TRẮNG (cá nhân), chữ đen dập nổi. Bỏ qua con dấu chìm, họa tiết gợn sóng, viền, khung biển và nền ảnh. ' +
-      'Có 2 kiểu: biển DÀI 1 dòng của ô tô (ví dụ 51F-970.22) và biển VUÔNG 2 dòng của xe máy (dòng trên 99-E1, dòng dưới 222.68). ' +
-      'bien_so_day_du: ghép đủ các dòng thành một chuỗi, ô tô dạng "51F-970.22", xe máy dạng "99-E1 222.68". ' +
-      'Giữ nguyên dấu gạch ngang và dấu chấm. Mã tỉnh (2 ký tự đầu) và dãy số cuối là CHỮ SỐ (không nhầm O với 0, I với 1, B với 8); ' +
-      'ký tự sau mã tỉnh là chữ cái seri (xe máy có thêm một chữ số sau chữ, ví dụ E1, B1). Dãy số cuối có 4 số hoặc 5 số (dạng 970.22). ' +
-      'loai_phuong_tien: "Ô tô" hoặc "Xe máy". mau_bien: "Trắng" nếu nền trắng, nếu là màu khác thì ghi đúng màu (Vàng, Xanh, Đỏ).',
+    hint: 'Biển số xe Việt Nam, chữ và số dập nổi. Nhận diện MÀU NỀN biển: nền trắng (cá nhân, tổ chức, chữ đen), nền vàng (kinh doanh vận tải, chữ đen), ' +
+      'nền xanh dương (cơ quan nhà nước, chữ trắng), nền đỏ (quân đội, chữ trắng). Bỏ qua con dấu / quân hiệu chìm, họa tiết gợn sóng, viền, khung biển và nền ảnh. ' +
+      'Có 2 kiểu: biển DÀI 1 dòng (ví dụ 51F-970.22) và biển VUÔNG 2 dòng (dòng trên 99-E1, dòng dưới 222.68). ' +
+      'bien_so_day_du: ghép đủ các dòng thành một chuỗi, biển 1 dòng dạng "51F-970.22", biển 2 dòng dạng "99-E1 222.68". Giữ nguyên dấu gạch ngang và dấu chấm. ' +
+      'Biển trắng / vàng / xanh: mã tỉnh (2 ký tự đầu) và dãy số cuối là CHỮ SỐ (không nhầm O với 0, I với 1, B với 8); ký tự sau mã tỉnh là chữ cái seri ' +
+      '(có thể 2 chữ như LD, NG, NN, DA, KT, MĐ; xe máy có thêm một chữ số sau chữ, ví dụ E1, B1); dãy số cuối có 4 số hoặc 5 số (dạng 970.22). ' +
+      'Biển đỏ quân đội: KHÔNG có mã tỉnh, gồm 2 chữ cái rồi 4 hoặc 5 chữ số (ví dụ "QH 12-34"), chép đúng như in trên biển. ' +
+      'loai_phuong_tien: "Ô tô" hoặc "Xe máy". mau_bien: một trong "Trắng", "Vàng", "Xanh", "Đỏ".',
     fields: [f_('bien_so_day_du', 'Biển số đầy đủ'), f_('ma_tinh_thanh', 'Mã tỉnh/thành'), f_('ten_tinh_thanh', 'Tên tỉnh/thành'), f_('seri_dang_ky', 'Seri đăng ký'),
-      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển')],
-    // Mã tỉnh, seri, tên tỉnh do hệ thống tự tách / tra từ biển số: không bắt AI sinh ra (ít chữ cần sinh hơn → nhanh hơn).
-    aiSkip: ['ma_tinh_thanh', 'ten_tinh_thanh', 'seri_dang_ky'],
+      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển'), f_('doi_tuong_su_dung', 'Đối tượng sử dụng')],
+    // Mã tỉnh, seri, tên tỉnh, đối tượng sử dụng do hệ thống tự tách / tra từ biển số và màu biển: không bắt AI sinh ra (ít chữ cần sinh hơn → nhanh hơn).
+    aiSkip: ['ma_tinh_thanh', 'ten_tinh_thanh', 'seri_dang_ky', 'doi_tuong_su_dung'],
     // Chữ trên biển rất to: độ phân giải ảnh vừa là đủ, nhanh hơn mức cao; đầu ra ngắn.
     ai: { resolution: 'MEDIA_RESOLUTION_MEDIUM', maxTokens: 256 }
   }
@@ -910,26 +912,43 @@ function scanDocument(token, payload) {
   return { data: data, fileIds: fileIds, ms: Date.now() - started, timing: timing };
 }
 
-/* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe từ chuỗi biển số ---------- */
+/* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe / đối tượng từ chuỗi biển số và màu biển ---------- */
+const PLATE_COLORS = { 'trắng': 'Trắng', 'vàng': 'Vàng', 'xanh': 'Xanh', 'đỏ': 'Đỏ' };
+const PLATE_OWNER = { 'Trắng': 'Cá nhân, tổ chức', 'Vàng': 'Kinh doanh vận tải', 'Xanh': 'Cơ quan nhà nước', 'Đỏ': 'Quân đội' };
+function plateColor_(v) {
+  const t = String(v == null ? '' : v).toLowerCase();
+  const keys = Object.keys(PLATE_COLORS);
+  for (let i = 0; i < keys.length; i++) if (t.indexOf(keys[i]) >= 0) return PLATE_COLORS[keys[i]];
+  return null;
+}
 function fixPlateReading_(data) {
+  data.mau_bien = plateColor_(data.mau_bien) || (data.mau_bien ? String(data.mau_bien).trim() : null);
   const raw = data.bien_so_day_du;
-  if (typeof raw !== 'string' || !raw.trim()) return data;
-  const s = raw.toUpperCase().replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim();
-  const m = /^(\d{2})\s*-?\s*([A-Z]{1,2}\d?)\s*[-.\s]\s*(\d{3}[.\s]?\d{2}|\d{4})$/.exec(s);
-  if (!m) {
-    const p = /^(\d{2})/.exec(s);
-    if (p && !data.ma_tinh_thanh) data.ma_tinh_thanh = p[1];
-    if (!data.mau_bien) data.mau_bien = 'Trắng';
-    return data;
+  if (typeof raw === 'string' && raw.trim()) {
+    const s = raw.toUpperCase().replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim();
+    const m = /^(\d{2})\s*-?\s*([A-ZĐ]{1,2}\d?)\s*[-.\s]\s*(\d{3}[.\s]?\d{2}|\d{4})$/.exec(s);
+    const army = /^([A-Z]{2})\s*[-\s]?\s*(\d{2})\s*[-.\s]?\s*(\d{2,3})$/.exec(s);
+    if (m) {
+      const digits = m[3].replace(/\D/g, '');
+      const num = digits.length === 5 ? digits.slice(0, 3) + '.' + digits.slice(3) : digits;
+      const moto = /\d$/.test(m[2]);
+      data.bien_so_day_du = moto ? m[1] + '-' + m[2] + ' ' + num : m[1] + m[2] + '-' + num;
+      data.ma_tinh_thanh = m[1];
+      data.seri_dang_ky = m[2];
+      if (!data.loai_phuong_tien) data.loai_phuong_tien = moto ? 'Xe máy' : 'Ô tô';
+    } else if (army && (data.mau_bien === 'Đỏ' || !data.mau_bien)) {
+      // Biển quân đội: 2 chữ cái + 4-5 số, không có mã tỉnh
+      data.bien_so_day_du = army[1] + ' ' + army[2] + '-' + army[3];
+      data.ma_tinh_thanh = null;
+      data.seri_dang_ky = army[1];
+      data.mau_bien = 'Đỏ';
+    } else {
+      const p = /^(\d{2})/.exec(s);
+      if (p && !data.ma_tinh_thanh) data.ma_tinh_thanh = p[1];
+    }
   }
-  const digits = m[3].replace(/\D/g, '');
-  const num = digits.length === 5 ? digits.slice(0, 3) + '.' + digits.slice(3) : digits;
-  const moto = /\d$/.test(m[2]);
-  data.bien_so_day_du = moto ? m[1] + '-' + m[2] + ' ' + num : m[1] + m[2] + '-' + num;
-  data.ma_tinh_thanh = m[1];
-  data.seri_dang_ky = m[2];
-  if (!data.loai_phuong_tien) data.loai_phuong_tien = moto ? 'Xe máy' : 'Ô tô';
-  if (!data.mau_bien) data.mau_bien = 'Trắng';
+  if (!data.mau_bien && data.bien_so_day_du) data.mau_bien = 'Trắng';
+  data.doi_tuong_su_dung = PLATE_OWNER[data.mau_bien] || null;
   return data;
 }
 
