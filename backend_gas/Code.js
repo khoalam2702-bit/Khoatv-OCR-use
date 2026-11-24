@@ -2,7 +2,9 @@
  * OCR đa tài liệu: Google Apps Script + Gemini Vision + Google Sheets + Google Drive
  *
  * Script Properties (Project Settings > Script Properties):
- *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API
+ *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API chính. ADMIN đổi được ở trang quản trị > Cài đặt AI (không cần vào Script Properties)
+ *   GEMINI_API_KEY_BACKUP (tuỳ chọn) Khoá dự phòng: tự dùng khi khoá chính hết hạn mức (429) hoặc bị từ chối (403)
+ *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
  *
@@ -232,7 +234,11 @@ const API_ACTIONS = {
   createUser: { fn: function (a) { return createUser(a[0], a[1]); } },
   updateUser: { fn: function (a) { return updateUser(a[0], a[1], a[2]); } },
   resetUserPassword: { fn: function (a) { return resetUserPassword(a[0], a[1]); } },
-  deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } }
+  deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } },
+  // cấu hình AI (chỉ ADMIN)
+  getAiConfig: { fn: function (a) { return getAiConfig(a[0]); } },
+  setAiConfig: { fn: function (a) { return setAiConfig(a[0], a[1]); } },
+  testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } }
 };
 
 /** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
@@ -980,14 +986,15 @@ function callGemini_(type, files, opts) {
     generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type), temperature: 0 }
   };
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-  function post_() {
+  const keys = geminiKeys_();
+  function post_(key) {
     return fetchRetry_(url, {
       method: 'post',
       contentType: 'application/json',
-      headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+      headers: { 'x-goog-api-key': key },
       payload: JSON.stringify(body),
       muteHttpExceptions: true
-    });
+    }, keys.length > 1); // có khoá dự phòng: gặp 429 chuyển khoá ngay, không chờ thử lại
   }
   // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
   // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
@@ -996,18 +1003,28 @@ function callGemini_(type, files, opts) {
     body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
     body.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
   }
-  let resp = post_();
-  if (fast && resp.getResponseCode() === 400) {
+  let keyIdx = 0;
+  let resp = post_(keys[0]);
+  if (fast && resp.getResponseCode() === 400 && !isBadKey_(resp)) {
     console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
     delete body.generationConfig.thinkingConfig;
     delete body.generationConfig.mediaResolution;
-    resp = post_();
+    resp = post_(keys[0]);
+  }
+  // Khoá chính hết hạn mức (429) hoặc bị từ chối (403 / khoá sai): thử khoá dự phòng
+  const c0 = resp.getResponseCode();
+  if ((c0 === 429 || c0 === 403 || isBadKey_(resp)) && keys.length > 1) {
+    console.error('Khoá Gemini chính lỗi ' + c0 + ', chuyển khoá dự phòng: ' + resp.getContentText().slice(0, 300));
+    keyIdx = 1;
+    resp = post_(keys[1]);
   }
   const code = resp.getResponseCode();
   if (code !== 200) {
-    console.error('Gemini ' + code + ': ' + resp.getContentText().slice(0, 800));
+    console.error('Gemini ' + code + ' (khoá ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + '): ' + resp.getContentText().slice(0, 800));
+    if (isBadKey_(resp)) throw new Error('Khoá Gemini API không hợp lệ hoặc đã bị thu hồi. Quản trị viên vào Cài đặt AI để cập nhật khoá.');
+    if (code === 403) throw new Error('Khoá Gemini API bị từ chối (403): chưa bật API hoặc khoá bị giới hạn. Quản trị viên kiểm tra khoá ở Cài đặt AI.');
     if (code === 404) throw new Error('Model Gemini "' + model + '" không tồn tại hoặc đã ngừng. Kiểm tra Script Property GEMINI_MODEL.');
-    if (code === 429) throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.');
+    if (code === 429) throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
     throw new Error('Gemini trả lỗi ' + code + '. Xem nhật ký Apps Script để biết chi tiết.');
   }
   const json = JSON.parse(resp.getContentText());
@@ -1024,6 +1041,111 @@ function callGemini_(type, files, opts) {
   } catch (e) {
     throw new Error('Kết quả AI bị cắt giữa chừng (tài liệu quá dài?). Hãy thử lại với ít trang hơn.');
   }
+}
+
+/* ============================ CẤU HÌNH AI (chỉ ADMIN) ============================
+ * Khoá lưu trong Script Properties, không bao giờ trả về giao diện: chỉ trả 4 ký tự cuối để nhận biết.
+ * Khoá mới được thử gọi Gemini 1 lần trước khi lưu; thử thất bại thì không lưu gì. */
+
+const AI_TIERS = ['free', 'paid'];
+
+function keyHint_(k) { k = String(k || ''); return k ? '••••' + k.slice(-4) : ''; }
+
+function checkKeyFormat_(k) {
+  k = String(k || '').trim();
+  if (!/^[A-Za-z0-9_\-]{20,120}$/.test(k)) throw new Error('Khoá API không đúng định dạng (20–120 ký tự chữ, số, gạch, không có khoảng trắng).');
+  return k;
+}
+
+function checkModelName_(m) {
+  m = String(m || '').trim();
+  if (!/^[A-Za-z0-9._\-]{3,60}$/.test(m)) throw new Error('Tên model không hợp lệ.');
+  return m;
+}
+
+/** Thử 1 yêu cầu nhỏ (chỉ văn bản). Trả { ok, warn, message }: 429 = khoá hợp lệ nhưng đang hết hạn mức. */
+function testGeminiKey_(key, model) {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  const resp = fetchRetry_(url, {
+    method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 8 } }),
+    muteHttpExceptions: true
+  }, true);
+  const code = resp.getResponseCode();
+  if (code === 200) return { ok: true, warn: false, message: 'Khoá dùng được.' };
+  if (code === 429) return { ok: true, warn: true, message: 'Khoá hợp lệ nhưng đang hết hạn mức (429). Gói miễn phí thường bị như vậy; bật thanh toán để dùng khoá trả phí.' };
+  if (isBadKey_(resp)) return { ok: false, warn: false, message: 'Khoá không hợp lệ hoặc đã bị thu hồi.' };
+  if (code === 403) return { ok: false, warn: false, message: 'Khoá bị từ chối (403): chưa bật Generative Language API hoặc khoá bị giới hạn.' };
+  if (code === 404) return { ok: false, warn: false, message: 'Model "' + model + '" không tồn tại hoặc khoá không được dùng model này.' };
+  return { ok: false, warn: false, message: 'Gemini trả lỗi ' + code + '.' };
+}
+
+function aiConfigView_() {
+  const p = PropertiesService.getScriptProperties();
+  const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
+  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
+  const tier = String(p.getProperty('GEMINI_TIER') || '').trim();
+  return {
+    model: prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL),
+    defaultModel: DEFAULTS.GEMINI_MODEL,
+    tier: AI_TIERS.indexOf(tier) >= 0 ? tier : '',
+    main: { set: !!main, hint: keyHint_(main) },
+    backup: { set: !!bak, hint: keyHint_(bak) }
+  };
+}
+
+function getAiConfig(token) {
+  requireAdmin_(token);
+  return aiConfigView_();
+}
+
+/**
+ * patch: { apiKey?, backupKey?, clearBackup?, model?, tier? }. Chỉ trường có mặt mới đổi.
+ * Khoá mới được thử trước; chỉ lưu khi mọi khoá mới đều dùng được (hết hạn mức 429 vẫn tính là hợp lệ).
+ */
+function setAiConfig(token, patch) {
+  const admin = requireAdmin_(token);
+  patch = patch || {};
+  const model = patch.model !== undefined && String(patch.model).trim() !== '' ? checkModelName_(patch.model) : prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
+  const newMain = patch.apiKey !== undefined && String(patch.apiKey).trim() !== '' ? checkKeyFormat_(patch.apiKey) : '';
+  const newBak = patch.backupKey !== undefined && String(patch.backupKey).trim() !== '' ? checkKeyFormat_(patch.backupKey) : '';
+  if (patch.tier !== undefined && patch.tier !== '' && AI_TIERS.indexOf(patch.tier) < 0) throw new Error('Gói không hợp lệ (free hoặc paid).');
+  const tested = [];
+  [['Khoá chính', newMain], ['Khoá dự phòng', newBak]].forEach(function (x) {
+    if (!x[1]) return;
+    const r = testGeminiKey_(x[1], model);
+    if (!r.ok) throw new Error(x[0] + ': ' + r.message + ' Chưa lưu thay đổi nào.');
+    tested.push(x[0] + (r.warn ? ' (hết hạn mức tạm thời)' : ''));
+  });
+  const p = PropertiesService.getScriptProperties();
+  const changed = [];
+  if (newMain) { p.setProperty('GEMINI_API_KEY', newMain); changed.push('khoa_chinh ' + keyHint_(newMain)); }
+  if (newBak) { p.setProperty('GEMINI_API_KEY_BACKUP', newBak); changed.push('khoa_du_phong ' + keyHint_(newBak)); }
+  else if (patch.clearBackup === true) { p.deleteProperty('GEMINI_API_KEY_BACKUP'); changed.push('xoa_khoa_du_phong'); }
+  if (model !== prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL)) { p.setProperty('GEMINI_MODEL', model); changed.push('model=' + model); }
+  if (patch.tier !== undefined) {
+    if (patch.tier) p.setProperty('GEMINI_TIER', patch.tier); else p.deleteProperty('GEMINI_TIER');
+    changed.push('goi=' + (patch.tier || 'chua_chon'));
+  }
+  if (changed.length) audit_(admin.username, 'DOI_CAU_HINH_AI', 'GEMINI', changed.join('; ')); // chỉ ghi 4 ký tự cuối, không ghi khoá
+  const view = aiConfigView_();
+  view.tested = tested;
+  return view;
+}
+
+/** Kiểm tra khoá đang dùng (chính và dự phòng) với model hiện tại. */
+function testAiConfig(token) {
+  requireAdmin_(token);
+  const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
+  const p = PropertiesService.getScriptProperties();
+  const out = [];
+  [['main', 'Khoá chính', 'GEMINI_API_KEY'], ['backup', 'Khoá dự phòng', 'GEMINI_API_KEY_BACKUP']].forEach(function (x) {
+    const k = String(p.getProperty(x[2]) || '').trim();
+    if (!k) { out.push({ slot: x[0], label: x[1], set: false }); return; }
+    const r = testGeminiKey_(k, model);
+    out.push({ slot: x[0], label: x[1], set: true, hint: keyHint_(k), ok: r.ok, warn: r.warn, message: r.message });
+  });
+  return out;
 }
 
 /* ============================ BƯỚC 2: LƯU & QUẢN LÝ BẢN GHI ============================ */
@@ -1561,6 +1683,25 @@ function clean_(v, type) {
 
 /* ============================ TIỆN ÍCH ============================ */
 
+/** Khoá Gemini theo thứ tự thử: khoá chính, rồi khoá dự phòng (nếu có và khác khoá chính). */
+function geminiKeys_() {
+  const p = PropertiesService.getScriptProperties();
+  const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
+  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
+  const out = [];
+  if (main) out.push(main);
+  if (bak && bak !== main) out.push(bak);
+  if (!out.length) throw new Error('Chưa cấu hình Script Property: GEMINI_API_KEY');
+  return out;
+}
+
+/** Phản hồi Gemini cho biết khoá sai / bị thu hồi (HTTP 400 API_KEY_INVALID hoặc 'API key not valid'). */
+function isBadKey_(resp) {
+  if (resp.getResponseCode() !== 400) return false;
+  const t = resp.getContentText();
+  return t.indexOf('API_KEY_INVALID') >= 0 || /API key not valid|API key expired/i.test(t);
+}
+
 function prop_(key, fallback) {
   const v = PropertiesService.getScriptProperties().getProperty(key);
   if (v) return v.trim();
@@ -1572,14 +1713,47 @@ function hash_(s) {
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s)).slice(0, 32);
 }
 
+/** Số giây còn lại đến 0h giờ Thái Bình Dương: lúc Gemini đặt lại hạn mức theo ngày (RPD). */
+function secondsToPacificMidnight_(nowMs) {
+  const t = Utilities.formatDate(new Date(nowMs), 'America/Los_Angeles', 'H:m:s').split(':');
+  return 86400 - (Number(t[0]) * 3600 + Number(t[1]) * 60 + Number(t[2]));
+}
+
+/**
+ * Đọc thời gian phải chờ từ thân lỗi 429 của Gemini (giây).
+ * Ưu tiên RetryInfo.retryDelay; hết hạn mức theo ngày (PerDay) thì chờ đến 0h giờ Thái Bình Dương;
+ * không có thông tin thì mặc định 60 giây (hạn mức theo phút).
+ */
+function retryAfterSec_(bodyText, nowMs) {
+  let info = null;
+  try { info = JSON.parse(bodyText); } catch (e) { info = null; }
+  const details = (info && info.error && info.error.details) || [];
+  let delay = 0, daily = false;
+  details.forEach(function (d) {
+    if (d && d.retryDelay) {
+      const m = /^(\d+(?:\.\d+)?)s$/.exec(String(d.retryDelay));
+      if (m) delay = Math.max(delay, Math.ceil(Number(m[1])));
+    }
+    (d && d.violations || []).forEach(function (v) {
+      if (/PerDay/i.test(String(v.quotaId || '') + ' ' + String(v.quotaMetric || ''))) daily = true;
+    });
+  });
+  if (daily) return secondsToPacificMidnight_(nowMs);
+  return delay > 0 ? delay : 60;
+}
+
+/** Dấu hiệu gắn cuối thông báo lỗi để giao diện đếm ngược; giao diện sẽ cắt dấu hiệu này khi hiển thị. */
+function retryMarker_(sec) { return ' [[RETRY_AFTER:' + Math.max(1, Math.round(sec)) + ']]'; }
+
 /** UrlFetch có thử lại luỹ thừa cho lỗi 429 / 5xx / lỗi mạng. */
-function fetchRetry_(url, options) {
+function fetchRetry_(url, options, no429Retry) {
   let lastErr = null;
   for (let i = 0; i < 4; i++) {
     try {
       const resp = UrlFetchApp.fetch(url, options);
       const code = resp.getResponseCode();
       if (code !== 429 && code < 500) return resp;
+      if (code === 429 && no429Retry) return resp;
       if (i === 3) return resp;
     } catch (e) {
       lastErr = e;

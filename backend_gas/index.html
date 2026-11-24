@@ -219,6 +219,7 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
             <input class="hidden" type="file" id="inPdf" accept="application/pdf" multiple>
             <div class="hint" id="fileHint"></div>
             <div class="thumbs" id="thumbs"></div>
+            <div class="note hidden" id="quotaBar" role="status" style="margin:12px 0 0"></div>
             <div style="display:flex;gap:8px;margin-top:12px">
               <button class="btn" id="btnReset" type="button">Làm lại</button>
               <button class="btn btn-primary" id="btnScan" type="button" style="flex:1" disabled>Bắt đầu quét</button>
@@ -346,7 +347,11 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
         var m = (e && e.message) || String(e);
         if (m.indexOf('SESSION_EXPIRED') >= 0) { signOut(true); reject(new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')); }
         else if (m.indexOf('MUST_CHANGE_PASSWORD') >= 0) { openPw(true); reject(new Error('Bạn phải đổi mật khẩu trước khi tiếp tục.')); }
-        else reject(new Error(m.replace(/^Error:\s*/, '')));
+        else {
+          var mk = /\s*\[\[RETRY_AFTER:(\d+)\]\]\s*$/.exec(m), er = new Error(m.replace(/^Error:\s*/, '').replace(/\s*\[\[RETRY_AFTER:\d+\]\]\s*$/, ''));
+          if (mk) er.retryAfter = Number(mk[1]);
+          reject(er);
+        }
       });
       r[fn].apply(r, args || []);
     });
@@ -794,13 +799,42 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     var hasScan = !!S.scan;
     $('btnScan').classList.toggle('hidden', hasScan);
     $('btnSave').classList.toggle('hidden', !hasScan || S.scan.saved);
-    $('btnScan').disabled = S.busy || !S.type || !S.files.length;
+    $('btnScan').disabled = S.busy || !S.type || !S.files.length || quotaLeft() > 0;
     $('btnScan').textContent = !S.type ? 'Chọn loại tài liệu' : (!S.files.length ? 'Thêm tệp để quét' :
       (S.files.length > 1 ? 'Quét ' + S.files.length + ' tệp' : 'Bắt đầu quét'));
     $('btnReset').textContent = hasScan && S.scan.saved ? 'Quét tài liệu khác' : 'Làm lại';
     ['btnCam', 'btnImg', 'btnPdf'].forEach(function (id) { $(id).disabled = hasScan; });
     Array.prototype.forEach.call(document.querySelectorAll('.thumb .rm'), function (b) { b.disabled = hasScan && S.scan.saved; });
   }
+
+  /* ---------- Hết hạn mức Gemini: cảnh báo + đếm ngược, tự ẩn khi hết giờ chờ ---------- */
+  var quotaUntil = 0, quotaTimer = null;
+  try { quotaUntil = Number(localStorage.getItem('ocrQuotaUntil')) || 0; } catch (e) { quotaUntil = 0; }
+  function quotaLeft() { return Math.ceil((quotaUntil - Date.now()) / 1000); }
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function fmtWait(sec) {
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    return h > 0 ? h + ' giờ ' + pad2(m) + ' phút ' + pad2(s) + ' giây' : pad2(m) + ':' + pad2(s);
+  }
+  function renderQuota() {
+    var bar = $('quotaBar'), left = quotaLeft();
+    if (left <= 0) {
+      clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
+      try { localStorage.removeItem('ocrQuotaUntil'); } catch (e) {}
+      bar.classList.add('hidden'); bar.textContent = ''; refresh(); return; // hết giờ chờ: ẩn thông báo, mở lại nút Quét
+    }
+    var d = new Date(quotaUntil), same = d.toDateString() === new Date().toDateString();
+    bar.textContent = '⚠ Gemini đã hết hạn mức quét. Chưa thể quét bằng AI cho đến khi hạn mức được đặt lại. Còn phải chờ: ' +
+      fmtWait(left) + ' (khoảng ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + (same ? ' hôm nay' : ' ngày mai') + ').';
+    bar.classList.remove('hidden');
+  }
+  function startQuotaWait(sec) {
+    quotaUntil = Date.now() + Math.max(1, sec) * 1000;
+    try { localStorage.setItem('ocrQuotaUntil', String(quotaUntil)); } catch (e) {}
+    clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000);
+    renderQuota(); refresh();
+  }
+  if (quotaLeft() > 0) { quotaTimer = setInterval(renderQuota, 1000); renderQuota(); } else quotaUntil = 0;
 
   $('btnScan').addEventListener('click', function () {
     if (S.busy || !S.type || !S.files.length || S.scan) return;
@@ -821,7 +855,10 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
         S.busy = false; btn.textContent = label; refresh();
         if (window.innerWidth <= 900) $('cardResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
       })
-      .catch(function (err) { S.busy = false; btn.textContent = label; refresh(); toast(err.message, 'err'); });
+      .catch(function (err) {
+        S.busy = false; btn.textContent = label;
+        if (err.retryAfter) startQuotaWait(err.retryAfter); else { refresh(); toast(err.message, 'err'); }
+      });
   });
 
   $('btnSave').addEventListener('click', function () {

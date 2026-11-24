@@ -7,6 +7,7 @@ import { DERIVED_LABELS } from './lib/dm.js';
 import { readCccdQr, mergeQr } from './lib/qr.js';
 import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
+import { splitRetry, formatWait } from './lib/quota.js';
 
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
@@ -20,6 +21,7 @@ function show(view) {
 }
 function msg(text, kind) {
   const el = $('msg');
+  text = splitRetry(text).text; // không bao giờ hiện dấu hiệu chờ thô
   el.hidden = !text; el.textContent = text || ''; el.className = 'msg' + (kind === 'info' ? ' info' : '');
 }
 function busy(btn, on, label) {
@@ -131,8 +133,38 @@ function renderFiles() {
   });
 }
 
+/* ---------- Hết hạn mức Gemini: cảnh báo + đếm ngược, tự ẩn khi hết giờ chờ ---------- */
+const QUOTA_KEY = 'ocrQuotaUntil';
+let quotaUntil = 0, quotaTimer = null;
+const quotaActive = () => quotaUntil > Date.now();
+function hhmm(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+function renderQuota() {
+  const bar = $('quota-bar');
+  const left = Math.ceil((quotaUntil - Date.now()) / 1000);
+  if (left <= 0) {
+    clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
+    try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* bỏ qua */ }
+    bar.hidden = true; bar.textContent = ''; updateScanBtn(); return; // hết giờ chờ: ẩn thông báo, mở lại nút Quét
+  }
+  bar.textContent = '';
+  const t = document.createElement('div'); t.textContent = '⚠ Gemini đã hết hạn mức quét. Chưa thể quét bằng AI cho đến khi hạn mức được đặt lại.';
+  const c = document.createElement('div'); c.append('Còn phải chờ: ');
+  const b = document.createElement('b'); b.textContent = formatWait(left); c.append(b, ' (khoảng ' + hhmm(quotaUntil) + ' ' + (new Date(quotaUntil).toDateString() === new Date().toDateString() ? 'hôm nay' : 'ngày mai') + ').');
+  bar.append(t, c); bar.hidden = false;
+}
+function startQuotaWait(seconds) {
+  quotaUntil = Date.now() + Math.max(1, seconds) * 1000;
+  try { localStorage.setItem(QUOTA_KEY, String(quotaUntil)); } catch (e) { /* bỏ qua */ }
+  clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000);
+  renderQuota(); updateScanBtn();
+}
+function restoreQuotaWait() {
+  let v = 0; try { v = Number(localStorage.getItem(QUOTA_KEY)) || 0; } catch (e) { v = 0; }
+  if (v > Date.now()) { quotaUntil = v; clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000); renderQuota(); }
+}
+
 function updateScanBtn() {
-  $('btn-scan').disabled = !(state.type && state.files.length);
+  $('btn-scan').disabled = !(state.type && state.files.length) || quotaActive();
   $('row-qronly').hidden = state.type !== 'CCCD';
 }
 
@@ -189,7 +221,11 @@ async function doScan() {
     if (skipAiUsed) msg('Chế độ chỉ QR: không dùng AI. Đã lấy số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp từ mã QR. Quê quán, nơi sinh, ngày hết hạn hãy tự nhập.', 'info');
     else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
     else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
-  } catch (e) { msg(e.message); }
+  } catch (e) {
+    const r = splitRetry(e.message);
+    if (r.seconds) { startQuotaWait(r.seconds); msg(''); } // hết hạn mức: banner đếm ngược thay cho thông báo lỗi
+    else msg(r.text);
+  }
   finally { busy(btn, false); updateScanBtn(); }
 }
 
@@ -344,6 +380,7 @@ document.addEventListener('paste', (e) => {
 
 /* ---------- Khởi động ---------- */
 (async function init() {
+  restoreQuotaWait();
   await refreshRemoteConfig(); // link Apps Script nằm ở Web Admin (Vercel); lấy mới mỗi lần mở, lỗi mạng thì dùng bản đã lưu
   const { gasUrl } = await getSettings();
   if (!gasUrl) { show('login'); msg('Chưa lấy được địa chỉ máy chủ OCR từ Web Admin. Kiểm tra mạng, hoặc liên hệ quản trị viên (biến GAS_WEB_APP_URL trên Vercel).'); return; }
