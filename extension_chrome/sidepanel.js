@@ -9,6 +9,7 @@ import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
 import { splitRetry, formatWait } from './lib/quota.js';
 import { FORM_WAIT_MS } from './lib/formcheck.js';
+import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scanprogress.js';
 
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
@@ -192,6 +193,41 @@ function resetScan() {
 }
 
 /* ---------- Quét ---------- */
+// Tiến trình quét: % là ước lượng theo thời gian các lần quét trước (máy chủ chỉ trả kết quả một lần khi xong).
+const SCAN_HIST_KEY = 'ocrScanMs';
+const scanHist = () => { try { return JSON.parse(localStorage.getItem(SCAN_HIST_KEY) || '[]'); } catch (e) { return []; } };
+const scanProg = { timer: null, t0: 0, stage: 'ai', expected: 0, n: 0, btn: null };
+function tickScan() {
+  const el = Date.now() - scanProg.t0;
+  $('scan-progress').value = estimatePercent(el, scanProg.expected);
+  const txt = stageText(scanProg.stage, el, scanProg.expected, scanProg.n);
+  $('scan-info').textContent = txt;
+  if (scanProg.btn) scanProg.btn.textContent = 'Đang quét... ' + Math.floor(el / 1000) + ' giây';
+}
+function startScanProgress(btn, n, stage) {
+  scanProg.t0 = Date.now(); scanProg.stage = stage; scanProg.n = n; scanProg.btn = btn;
+  scanProg.expected = stage === 'qr' ? 3000 : expectedMs(scanHist());
+  $('scan-progress').hidden = false; $('scan-info').hidden = false;
+  clearInterval(scanProg.timer); scanProg.timer = setInterval(tickScan, 250); tickScan();
+}
+function setScanStage(stage) {
+  if (scanProg.stage === stage) return;
+  scanProg.stage = stage;
+  if (stage === 'save') scanProg.expected = 4000; // chỉ lưu ảnh lên Drive
+  else if (stage === 'ai') { scanProg.t0 = Date.now(); scanProg.expected = expectedMs(scanHist()); } // bắt đầu đếm lại cho bước gọi AI
+  tickScan();
+}
+function stopScanProgress(success) {
+  clearInterval(scanProg.timer); scanProg.timer = null; scanProg.btn = null;
+  const bar = $('scan-progress'), info = $('scan-info');
+  if (success) {
+    const total = Date.now() - scanProg.t0;
+    if (scanProg.stage === 'ai') { try { localStorage.setItem(SCAN_HIST_KEY, JSON.stringify(pushDuration(scanHist(), total))); } catch (e) { /* bỏ qua */ } }
+    bar.value = 100; info.textContent = 'Quét xong sau ' + (total / 1000).toFixed(1) + ' giây.';
+    setTimeout(() => { if (!scanProg.timer) { bar.hidden = true; info.hidden = true; } }, 1500);
+  } else { bar.hidden = true; info.hidden = true; }
+}
+
 async function doScan() {
   msg('');
   const btn = $('btn-scan');
@@ -201,6 +237,7 @@ async function doScan() {
     // Chế độ "chỉ QR": QR hợp lệ thì không gọi AI (nhanh); QR không đọc được thì tự quay về OCR như thường.
     const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
     const qrFirst = state.type === 'CCCD' && $('in-qronly').checked;
+    startScanProgress(btn, files.length, qrFirst ? 'qr' : 'ai');
     let qr = null, qrTask = Promise.resolve(null);
     if (qrFirst) {
       qr = await readCccdQr(state.files).catch(() => null);
@@ -208,6 +245,7 @@ async function doScan() {
       qrTask = readCccdQr(state.files).catch(() => null);
     }
     const skipAiUsed = !!qr; // chỉ true ở chế độ chỉ QR khi QR hợp lệ: backend không gọi AI
+    if (qrFirst) setScanStage(skipAiUsed ? 'save' : 'ai');
     const [r, qr2] = await Promise.all([
       api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
       qrTask
@@ -222,7 +260,9 @@ async function doScan() {
     if (skipAiUsed) msg('Chế độ chỉ QR: không dùng AI. Đã lấy số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp từ mã QR. Quê quán, nơi sinh, ngày hết hạn hãy tự nhập.', 'info');
     else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
     else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
+    stopScanProgress(true);
   } catch (e) {
+    stopScanProgress(false);
     const r = splitRetry(e.message);
     if (r.seconds) { startQuotaWait(r.seconds); msg(''); } // hết hạn mức: banner đếm ngược thay cho thông báo lỗi
     else msg(r.text);
