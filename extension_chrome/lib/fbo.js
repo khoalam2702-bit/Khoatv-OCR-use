@@ -83,7 +83,7 @@ export async function fillActiveTab(docType, data, opts) {
   // Khoá vào đúng tab đã chọn lúc bấm: chuyển sang tab khác không làm điền nhầm sang tab đó; đóng tab hoặc chuyển trang thì dừng.
   const sig = opts.signal;
   const guard = async () => { if (sig && sig.aborted) throw new FillStopped(); await assertSameTab(tabInfo); };
-  let results, form;
+  let results, form, lateDiag = '';
   try {
     progress({ phase: 'prepare' });
     await guard();
@@ -129,7 +129,13 @@ export async function fillActiveTab(docType, data, opts) {
         await sleep(LATE_WAIT_MS);
         const back = await step(run(target, { func: (x) => globalThis.__KHOATV_READ__(x), args: [sels] }), 'kiểm tra ô địa chỉ chi tiết');
         const ok = (sel) => back.some((fr) => (fr.result || []).some((r) => r.sel === sel && r.found && r.value.trim()));
-        if (sels.every(ok)) break; // giá trị còn nguyên sau khi form dựng lại
+        if (sels.every(ok)) { lateDiag = ''; break; } // giá trị còn nguyên sau khi form dựng lại
+        if (i === LATE_TRIES - 1) { // vẫn không điền được: ghi lại các ô địa chỉ có trên form để biết id thật
+          try {
+            const dg = await step(run(target, { func: () => globalThis.__KHOATV_DIAG__(['dia_chi', 'que_quan']) }), 'chẩn đoán ô địa chỉ');
+            lateDiag = dg.flatMap((fr) => fr.result || []).join('; ');
+          } catch (e) { lateDiag = ''; }
+        }
       }
     }
   } catch (e) {
@@ -149,7 +155,7 @@ export async function fillActiveTab(docType, data, opts) {
   // Người dùng đang xem tab khác lúc điền xong: kết quả vẫn ở tab cũ, báo rõ để không tưởng đã điền vào tab đang xem
   let away = false;
   try { const [cur] = await chrome.tabs.query({ active: true, currentWindow: true }); away = !!cur && cur.id !== tabInfo.id; } catch (e) { away = false; }
-  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, mainOnly, formName: variants.length > 1 ? formLabel(form.variant) : '' };
+  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, mainOnly, diag: lateDiag, formName: variants.length > 1 ? formLabel(form.variant) : '' };
 }
 
 /** Tab web (http/https) vừa dùng gần nhất: trang Cài đặt tự nó là tab đang mở, nên không thể dùng "tab active". */
