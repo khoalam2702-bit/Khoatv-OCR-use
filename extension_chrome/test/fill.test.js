@@ -201,3 +201,33 @@ test('opts.except bỏ qua khóa (điền lượt sau), opts.only chỉ điền 
   assert.deepEqual(r2.filled, ['b_chi_tiet']);
   assert.deepEqual(plain(w.__KHOATV_READ__(['#b', '#none'])), [{ sel: '#b', found: true, value: 'Tổ 15' }, { sel: '#none', found: false, value: '' }]);
 });
+
+const GRID = (rows) => '<table>' + rows.map((r, i) => '<tr>' + [1, 2, 4].map((c) => `<td><input id="g_FormGrid_inputCell_${i + 1}.${c}" value="${r[c] || ''}"></td>`).join('') + '</tr>').join('') + '</table>';
+const sel = (c) => `[id$="_FormGrid_inputCell_{row}.${c}"]`;
+const GMAP = { ma_pt: { selector: sel(1), autoCode: { prefix: 'NPT', digits: 2 } }, ten: sel(2), ngay_sinh: { selector: sel(4), format: 'date' } };
+
+test('lưới: điền vào dòng của ô đang được chọn, mã tự tăng NPTxx theo mã lớn nhất trong lưới', () => {
+  const w = page(GRID([{ 1: 'NPT01', 2: 'A', 4: '  /  /    ' }, { 1: 'NPT07', 2: 'B' }, { 1: '', 2: '' }]));
+  const d = w.document;
+  d.getElementById('g_FormGrid_inputCell_3.1').focus();
+  const r = plain(w.__KHOATV_FILL__(GMAP, { ten: 'Nguyễn C', ngay_sinh: '01/02/2020' }));
+  assert.deepEqual(r.filled.sort(), ['ma_pt', 'ngay_sinh', 'ten']);
+  assert.equal(d.getElementById('g_FormGrid_inputCell_3.1').value, 'NPT08');
+  assert.equal(d.getElementById('g_FormGrid_inputCell_3.2').value, 'Nguyễn C');
+  assert.equal(d.getElementById('g_FormGrid_inputCell_1.2').value, 'A'); // dòng khác không đổi
+});
+
+test('lưới: không có ô đang chọn thì lấy dòng đầu chưa có tên; dòng đã có mã thì giữ mã', () => {
+  const w = page(GRID([{ 1: 'NPT01', 2: 'A' }, { 1: 'NPT02', 2: '' }]));
+  const r = plain(w.__KHOATV_FILL__(GMAP, { ten: 'B' }));
+  assert.equal(w.document.getElementById('g_FormGrid_inputCell_2.2').value, 'B');
+  assert.equal(w.document.getElementById('g_FormGrid_inputCell_2.1').value, 'NPT02'); // giữ mã sẵn có
+  assert.ok(r.empty.includes('ma_pt'));
+  assert.deepEqual(plain(w.__KHOATV_PROBE__(GMAP)).found.length, 3);
+});
+
+test('lưới: tính thử không coi mặt nạ ngày trống là dữ liệu cũ', () => {
+  const w = page(GRID([{ 1: '', 2: '', 4: '  /  /    ' }]));
+  const r = plain(w.__KHOATV_FILL__(GMAP, { ten: 'X', ngay_sinh: '01/02/2020' }, { dry: true }));
+  assert.deepEqual(r.overwrite, []);
+});

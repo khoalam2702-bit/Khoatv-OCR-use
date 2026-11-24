@@ -108,7 +108,8 @@ export async function fillActiveTab(docType, data, opts) {
       return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total, wrongForm: true };
     }
     await guard();
-    const enriched = enrichData(docType, data, await getDm());
+    const now = new Date(), p2 = (n) => String(n).padStart(2, '0');
+    const enriched = enrichData(docType, data, await getDm(), { relation: opts.relation, today: p2(now.getDate()) + '/' + p2(now.getMonth() + 1) + '/' + now.getFullYear() });
     const call = (extra, what, abortSig) => step(run(target, { func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
     // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
     progress({ phase: 'check' });

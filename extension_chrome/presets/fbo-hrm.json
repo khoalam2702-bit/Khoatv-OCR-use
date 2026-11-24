@@ -202,5 +202,37 @@
     },
     "noi_cap_ma": "[id$=\"_dirExtender_form_ho_chieu_noi_cap\"]",
     "noi_cap_visa_ma": "[id$=\"_dirExtender_form_visa_noi_cap\"]"
+  },
+  "KHAI_SINH": {
+    "ma_pt": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.1\"]",
+      "autoCode": {
+        "prefix": "NPT",
+        "digits": 2
+      }
+    },
+    "ho_ten_khai_sinh": "[id$=\"_FormGridhrttctpt_inputCell_{row}.2\"]",
+    "ngay_sinh": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.4\"]",
+      "format": "date"
+    },
+    "loai_giay_to": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.5\"]",
+      "fixed": "04"
+    },
+    "so_dinh_danh": [
+      "[id$=\"_FormGridhrttctpt_inputCell_{row}.7\"]",
+      "[id$=\"_FormGridhrttctpt_inputCell_{row}.8\"]"
+    ],
+    "quoc_tich": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.9\"]",
+      "fixed": "VN"
+    },
+    "loai_qh": "[id$=\"_FormGridhrttctpt_inputCell_{row}.11\"]",
+    "so_khai_sinh": "[id$=\"_FormGridhrttctpt_inputCell_{row}.14\"]",
+    "ngay_hl_tu": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.20\"]",
+      "format": "date"
+    }
   }
 }

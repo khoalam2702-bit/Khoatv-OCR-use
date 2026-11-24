@@ -74,11 +74,51 @@
     return v;
   }
 
+  /* Lưới nhập theo dòng (vd Người phụ thuộc): selector có {row} = dòng con trỏ đang đứng. Ưu tiên ô đang được chọn trong lưới;
+     không có thì dòng đầu chưa có tên; không có dòng trống thì dòng cuối. Chốt một lần cho mỗi lệnh. */
+  var rowCache = {};
+  function gridRow(marker) {
+    if (rowCache[marker] != null) return rowCache[marker];
+    var a = document.activeElement, m = a && a.id && a.id.indexOf(marker) >= 0 ? /_inputCell_(\d+)\.\d+$/.exec(a.id) : null, row = m ? +m[1] : 0;
+    if (!row) {
+      var first = 0, last = 0, els = document.querySelectorAll('input[id*="_inputCell_"]');
+      for (var i = 0; i < els.length; i++) {
+        var mm = els[i].id.indexOf(marker) >= 0 ? /_inputCell_(\d+)\.2$/.exec(els[i].id) : null;
+        if (!mm) continue;
+        last = +mm[1];
+        if (!first && !String(els[i].value || '').trim()) first = last;
+      }
+      row = first || last || 1;
+    }
+    return (rowCache[marker] = row);
+  }
+  function R(sel) {
+    if (typeof sel !== 'string' || sel.indexOf('{row}') < 0) return sel;
+    var mk = /"([^"]*?)inputCell_\{row\}/.exec(sel);
+    return sel.split('{row}').join(String(gridRow(mk ? mk[1] : '')));
+  }
+  /* Mã tự tăng (NPT01, NPT02...): lớn nhất trong cột mã của cùng lưới + 1. */
+  function nextCode(el, ac) {
+    var grid = el.id.replace(/_inputCell_\d+\.\d+$/, ''), col = (/\.(\d+)$/.exec(el.id) || [])[1];
+    var re = new RegExp('^' + (ac.prefix || '') + '(\\d+)$', 'i'), max = 0;
+    var els = document.querySelectorAll('input[id^="' + grid + '_inputCell_"]');
+    for (var i = 0; i < els.length; i++) {
+      if (els[i] === el || !new RegExp('\\.' + col + '$').test(els[i].id)) continue;
+      var m = re.exec(String(els[i].value || '').trim());
+      if (m && +m[1] > max) max = +m[1];
+    }
+    var n = String(max + 1);
+    while (n.length < (ac.digits || 2)) n = '0' + n;
+    return (ac.prefix || '') + n;
+  }
+
   var curSrc = '';
   function setOne(selector, value, spec, touched, dry) {
+    selector = R(selector);
     var el = document.querySelector(selector);
     if (!el) return 'notFound';
-    var v = spec.fixed !== undefined ? String(spec.fixed) : transform(value, spec.transform);
+    if (spec.autoCode && String(el.value || '').trim()) return 'empty'; // dòng đã có mã: giữ nguyên
+    var v = spec.autoCode ? nextCode(el, spec.autoCode) : spec.fixed !== undefined ? String(spec.fixed) : transform(value, spec.transform);
     if (v === '') return 'empty';
     if (spec.format === 'date' && !DATE_RE.test(v)) return 'empty'; // vd "Không thời hạn": bỏ qua, không điền
     v = mapValue(spec.map, v, spec.contains);
@@ -108,12 +148,13 @@
   }
 
   globalThis.__KHOATV_PROBE__ = function (mapping) {
+    rowCache = {};
     var found = {};
     Object.keys(mapping || {}).forEach(function (k) {
       (Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]]).forEach(function (sp) {
         var sel = typeof sp === 'string' ? sp : sp && sp.selector;
         if (!sel) return;
-        try { if (document.querySelector(sel)) found[sel] = 1; } catch (e) { /* selector sai: coi như không thấy */ }
+        try { if (document.querySelector(R(sel))) found[sel] = 1; } catch (e) { /* selector sai: coi như không thấy */ }
       });
     });
     return { found: Object.keys(found) };
@@ -121,6 +162,7 @@
 
   globalThis.__KHOATV_FILL__ = function (mapping, data, opts) {
     var out = { filled: [], notFound: [], empty: [] };
+    rowCache = {};
     var touched = new Set();
     var dryOn = !!(opts && opts.dry);
     curSrc = (opts && opts.src) || '';
@@ -130,7 +172,7 @@
       if (opts && opts.except && opts.except.indexOf(k) >= 0) return; // bỏ qua các khóa này (điền ở lượt sau)
       var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
       var val = data ? data[k] : null;
-      var hasFixed = specs.some(function (sp) { return sp && typeof sp === 'object' && sp.fixed !== undefined; });
+      var hasFixed = specs.some(function (sp) { return sp && typeof sp === 'object' && (sp.fixed !== undefined || sp.autoCode); });
       if (!hasFixed && (val === null || val === undefined || val === '')) { out.empty.push(k); return; }
       var ok = 0, miss = 0, skip = 0;
       specs.forEach(function (spec) {
@@ -138,7 +180,7 @@
         if (!spec || !spec.selector) return;
         var r, dry = dryOn ? [] : null;
         try { r = setOne(spec.selector, val, spec, touched, dry); } catch (e) { r = 'notFound'; }
-        if (dry) dry.forEach(function (d) { if (d.old.trim() !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v, src: d.src, foreign: !!d.src && d.src !== curSrc }); });
+        if (dry) dry.forEach(function (d) { if (d.old.replace(/[\s\/_.\-]+/g, '') !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v, src: d.src, foreign: !!d.src && d.src !== curSrc }); });
         if (r === 'ok') ok++; else if (r === 'empty') skip++; else miss++;
       });
       if (miss) out.notFound.push(k);
@@ -152,7 +194,7 @@
   globalThis.__KHOATV_READ__ = function (selectors) {
     return (selectors || []).map(function (sel) {
       var el = null;
-      try { el = document.querySelector(sel); } catch (e) { /* selector sai */ }
+      try { el = document.querySelector(R(sel)); } catch (e) { /* selector sai */ }
       return { sel: sel, found: !!el, value: el ? String(el.value || '') : '' };
     });
   };

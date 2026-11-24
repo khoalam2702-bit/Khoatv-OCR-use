@@ -94,3 +94,11 @@ test('enrichData: CV ứng viên tách địa chỉ thành chi tiết + tỉnh +
   assert.equal(o.dia_chi, '12 Lê Duẩn, Phường Hải Châu, Thành phố Đà Nẵng');
   assert.equal('dia_chi_tinh_ma' in enrichData('GPLX', { dia_chi: 'x' }, dm), false);
 });
+
+test('enrichData: Giấy khai sinh thêm loại quan hệ (Con 01, Cha/Mẹ 03) và ngày hiệu lực = ngày quét', () => {
+  assert.equal(enrichData('KHAI_SINH', {}, dm, { today: '24/11/2026' }).loai_qh, '01');
+  const o = enrichData('KHAI_SINH', { so_dinh_danh: '079123456789' }, dm, { relation: 'CHA_ME', today: '24/11/2026' });
+  assert.equal(o.loai_qh, '03');
+  assert.equal(o.ngay_hl_tu, '24/11/2026');
+  assert.equal(o.so_dinh_danh, '079123456789');
+});

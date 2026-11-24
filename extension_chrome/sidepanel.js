@@ -169,6 +169,7 @@ function restoreQuotaWait() {
 function updateScanBtn() {
   $('btn-scan').disabled = !(state.type && state.files.length) || quotaActive();
   $('row-qronly').hidden = state.type !== 'CCCD';
+  $('row-relation').hidden = state.type !== 'KHAI_SINH';
 }
 
 async function addFiles(list) {
@@ -370,6 +371,7 @@ async function doFill() {
   const opts = {
     signal: ctl.signal,
     required: t ? t.required : [],
+    relation: $('in-relation').value,
     onProgress: (p) => {
       const sec = p.elapsed != null ? ' ' + Math.floor(p.elapsed / 1000) + 's' : '';
       if (p.phase === 'tab') { btn.textContent = 'Đang chọn tab FBO...'; info.textContent = 'Điền vào tab: "' + cut(p.title) + '". Hãy giữ nguyên tab này đến khi xong.'; }

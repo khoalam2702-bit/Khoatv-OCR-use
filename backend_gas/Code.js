@@ -92,8 +92,8 @@ const DOC_TYPES = {
   },
   KHAI_SINH: {
     label: 'Giấy khai sinh', uniqueKey: null, required: ['ho_ten_khai_sinh', 'ngay_sinh'],
-    hint: 'Giấy khai sinh Việt Nam, có thể có chữ viết tay.',
-    fields: [f_('so_khai_sinh', 'Số khai sinh'), f_('ho_ten_khai_sinh', 'Họ tên người được khai sinh'), f_('gioi_tinh', 'Giới tính'),
+    hint: 'Giấy khai sinh Việt Nam, có thể có chữ viết tay. so_dinh_danh là Số định danh cá nhân (12 chữ số) của người được khai sinh, chỉ lấy khi giấy có in; không có thì để trống.',
+    fields: [f_('so_khai_sinh', 'Số khai sinh'), f_('so_dinh_danh', 'Số định danh cá nhân'), f_('ho_ten_khai_sinh', 'Họ tên người được khai sinh'), f_('gioi_tinh', 'Giới tính'),
       f_('ngay_sinh', 'Ngày sinh'), f_('noi_sinh', 'Nơi sinh'), f_('dan_toc', 'Dân tộc'), f_('quoc_tich', 'Quốc tịch'),
       f_('ho_ten_cha', 'Họ tên cha'), f_('ho_ten_me', 'Họ tên mẹ')]
   },
