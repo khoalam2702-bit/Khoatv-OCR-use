@@ -1,7 +1,7 @@
 import { ENABLED_TYPES, DEFAULT_LIMITS } from './lib/config.js';
 import { createGasClient, GasError } from './lib/gas.js';
 import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword } from './lib/store.js';
-import { prepareFile } from './lib/image.js';
+import { prepareFile, shrinkBase64 } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
 import { readCccdQr, mergeQr } from './lib/qr.js';
@@ -285,7 +285,9 @@ async function doScan() {
   try {
     // CCCD: đọc mã QR; dữ liệu QR (số CCCD, họ tên đủ dấu, ngày sinh, giới tính, thường trú, ngày cấp) ghi đè kết quả OCR.
     // Chế độ "chỉ QR": QR hợp lệ thì không gọi AI (nhanh); QR không đọc được thì tự quay về OCR như thường.
-    const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
+    // Biển số: chữ rất to, thu ảnh về 1280px cho gửi nhanh hơn (không đổi ảnh gốc đang hiển thị)
+    const toSend = state.type === 'BIEN_SO_XE' ? await Promise.all(state.files.map((f) => shrinkBase64(f, 1280))) : state.files;
+    const files = toSend.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
     const qrFirst = state.type === 'CCCD' && $('in-qronly').checked;
     startScanProgress(btn, files.length, qrFirst ? 'qr' : 'ai');
     let qr = null, qrTask = Promise.resolve(null);

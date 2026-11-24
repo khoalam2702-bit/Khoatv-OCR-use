@@ -161,11 +161,18 @@ const DOC_TYPES = {
   },
   BIEN_SO_XE: {
     label: 'Biển số xe', uniqueKey: null, required: ['bien_so_day_du'],
-    hint: 'Biển số xe Việt Nam. ma_tinh_thanh là 2 chữ số đầu; seri_dang_ky là phần chữ/số seri sau mã tỉnh; ' +
-      'loai_phuong_tien: ô tô, xe máy, xe tải...; mau_bien: trắng, vàng, xanh, đỏ. ' +
-      'Không cần điền ten_tinh_thanh (hệ thống tự tra theo ma_tinh_thanh), để null.',
+    hint: 'Biển số xe Việt Nam NỀN TRẮNG (cá nhân), chữ đen dập nổi. Bỏ qua con dấu chìm, họa tiết gợn sóng, viền, khung biển và nền ảnh. ' +
+      'Có 2 kiểu: biển DÀI 1 dòng của ô tô (ví dụ 51F-970.22) và biển VUÔNG 2 dòng của xe máy (dòng trên 99-E1, dòng dưới 222.68). ' +
+      'bien_so_day_du: ghép đủ các dòng thành một chuỗi, ô tô dạng "51F-970.22", xe máy dạng "99-E1 222.68". ' +
+      'Giữ nguyên dấu gạch ngang và dấu chấm. Mã tỉnh (2 ký tự đầu) và dãy số cuối là CHỮ SỐ (không nhầm O với 0, I với 1, B với 8); ' +
+      'ký tự sau mã tỉnh là chữ cái seri (xe máy có thêm một chữ số sau chữ, ví dụ E1, B1). Dãy số cuối có 4 số hoặc 5 số (dạng 970.22). ' +
+      'loai_phuong_tien: "Ô tô" hoặc "Xe máy". mau_bien: "Trắng" nếu nền trắng, nếu là màu khác thì ghi đúng màu (Vàng, Xanh, Đỏ).',
     fields: [f_('bien_so_day_du', 'Biển số đầy đủ'), f_('ma_tinh_thanh', 'Mã tỉnh/thành'), f_('ten_tinh_thanh', 'Tên tỉnh/thành'), f_('seri_dang_ky', 'Seri đăng ký'),
-      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển')]
+      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển')],
+    // Mã tỉnh, seri, tên tỉnh do hệ thống tự tách / tra từ biển số: không bắt AI sinh ra (ít chữ cần sinh hơn → nhanh hơn).
+    aiSkip: ['ma_tinh_thanh', 'ten_tinh_thanh', 'seri_dang_ky'],
+    // Chữ trên biển rất to: độ phân giải ảnh vừa là đủ, nhanh hơn mức cao; đầu ra ngắn.
+    ai: { resolution: 'MEDIA_RESOLUTION_MEDIUM', maxTokens: 256 }
   }
 };
 
@@ -895,8 +902,32 @@ function scanDocument(token, payload) {
   const fixMs = Date.now() - tFix;
   console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
   if (payload.docType === 'CAN_DIEN_TU') fixScaleReading_(data);
+  if (payload.docType === 'BIEN_SO_XE') fixPlateReading_(data);
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   return { data: data, fileIds: fileIds, ms: Date.now() - started };
+}
+
+/* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe từ chuỗi biển số ---------- */
+function fixPlateReading_(data) {
+  const raw = data.bien_so_day_du;
+  if (typeof raw !== 'string' || !raw.trim()) return data;
+  const s = raw.toUpperCase().replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim();
+  const m = /^(\d{2})\s*-?\s*([A-Z]{1,2}\d?)\s*[-.\s]\s*(\d{3}[.\s]?\d{2}|\d{4})$/.exec(s);
+  if (!m) {
+    const p = /^(\d{2})/.exec(s);
+    if (p && !data.ma_tinh_thanh) data.ma_tinh_thanh = p[1];
+    if (!data.mau_bien) data.mau_bien = 'Trắng';
+    return data;
+  }
+  const digits = m[3].replace(/\D/g, '');
+  const num = digits.length === 5 ? digits.slice(0, 3) + '.' + digits.slice(3) : digits;
+  const moto = /\d$/.test(m[2]);
+  data.bien_so_day_du = moto ? m[1] + '-' + m[2] + ' ' + num : m[1] + m[2] + '-' + num;
+  data.ma_tinh_thanh = m[1];
+  data.seri_dang_ky = m[2];
+  if (!data.loai_phuong_tien) data.loai_phuong_tien = moto ? 'Xe máy' : 'Ô tô';
+  if (!data.mau_bien) data.mau_bien = 'Trắng';
+  return data;
 }
 
 /* ---------- Cân điện tử: đối chiếu khối lượng × đơn giá = thành tiền ----------
@@ -1018,7 +1049,8 @@ function rateLimit_(username) {
 
 function buildSchema_(type) {
   const props = {};
-  const all = type.fields.concat(type.aux || []);
+  const skip = type.aiSkip || [];
+  const all = type.fields.filter(function (f) { return skip.indexOf(f.k) < 0; }).concat(type.aux || []);
   all.forEach(function (f) {
     if (f.type === 'items') {
       const itemProps = {};
@@ -1079,7 +1111,8 @@ function callGemini_(type, files, opts) {
   const fast = prop_('GEMINI_FAST', 'on') !== 'off' && !opts.slow; // opts.slow: lần đọc lại cần chính xác, để Gemini suy nghĩ mặc định
   if (fast) {
     body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
-    body.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
+    body.generationConfig.mediaResolution = (type.ai && type.ai.resolution) || 'MEDIA_RESOLUTION_HIGH';
+    if (type.ai && type.ai.maxTokens) body.generationConfig.maxOutputTokens = type.ai.maxTokens;
   }
   let resp = null, keyIdx = 0, used = null;
   for (let i = 0; i < ready.length; i++) {
