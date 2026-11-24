@@ -125,5 +125,25 @@
       "prefix": "Tỉnh/TP: ",
       "append": true
     }
+  },
+  "HO_CHIEU": {
+    "so_ho_chieu": "[id$=\"_dirExtender_form_ho_chieu_so\"]",
+    "ngay_cap": {
+      "selector": "[id$=\"_dirExtender_form_ho_chieu_ngay_hl\"]",
+      "format": "date"
+    },
+    "ngay_het_han": {
+      "selector": "[id$=\"_dirExtender_form_ho_chieu_ngay_hh\"]",
+      "format": "date"
+    },
+    "so_visa": "[id$=\"_dirExtender_form_visa_so\"]",
+    "ngay_cap_visa": {
+      "selector": "[id$=\"_dirExtender_form_visa_ngay_hl\"]",
+      "format": "date"
+    },
+    "ngay_het_han_visa": {
+      "selector": "[id$=\"_dirExtender_form_visa_ngay_hh\"]",
+      "format": "date"
+    }
   }
 }

@@ -76,10 +76,11 @@ const DOC_TYPES = {
   },
   HO_CHIEU: {
     label: 'Hộ chiếu', uniqueKey: 'so_ho_chieu', required: ['so_ho_chieu', 'ho_ten'],
-    hint: 'Trang thông tin hộ chiếu. Đối chiếu vùng MRZ ở cuối trang để kiểm tra số hộ chiếu và ngày tháng.',
+    hint: 'Trang thông tin hộ chiếu. Đối chiếu vùng MRZ ở cuối trang để kiểm tra số hộ chiếu và ngày tháng. Các trường thị thực (visa) chỉ điền khi tệp có trang/tem visa; không có thì trả null, không lấy từ trang thông tin hộ chiếu.',
     fields: [f_('so_ho_chieu', 'Số hộ chiếu'), f_('ho_ten', 'Họ và tên'), f_('quoc_tich', 'Quốc tịch'), f_('ngay_sinh', 'Ngày sinh'),
       f_('noi_sinh', 'Nơi sinh'), f_('gioi_tinh', 'Giới tính'), f_('so_dinh_danh', 'Số định danh'), f_('ngay_cap', 'Ngày cấp'),
-      f_('ngay_het_han', 'Ngày hết hạn'), f_('co_quan_cap', 'Cơ quan cấp')]
+      f_('ngay_het_han', 'Ngày hết hạn'), f_('co_quan_cap', 'Cơ quan cấp'),
+      f_('so_visa', 'Số thị thực (Visa)'), f_('ngay_cap_visa', 'Ngày cấp thị thực'), f_('noi_cap_visa', 'Nơi cấp thị thực'), f_('ngay_het_han_visa', 'Ngày hết hạn thị thực')]
   },
   GPLX: {
     label: 'Giấy phép lái xe', uniqueKey: 'so_gplx', required: ['so_gplx', 'ho_ten', 'hang_gplx'],
