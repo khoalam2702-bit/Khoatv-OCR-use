@@ -17,12 +17,10 @@
   <div class="row"><button id="grant-all">Cấp quyền tất cả địa chỉ trong danh sách</button></div>
 
   <h2>2. Đăng nhập FBO đã lưu</h2>
-  <p class="hint">Lưu để nút "Đăng nhập FBO" ở Side Panel tự điền Công ty, Tên, Đơn vị, Mật khẩu và bấm Nhận. Mật khẩu được mã hoá (AES-GCM), khoá nằm trong trình duyệt này và không đồng bộ lên tài khoản Chrome. Dùng máy cá nhân; máy dùng chung thì không nên lưu mật khẩu.</p>
+  <p class="hint">Lưu để nút "Đăng nhập FBO" ở Side Panel tự điền Tên, Mật khẩu và bấm Nhận (chỉ khi tab đang ở trang đăng nhập; đã đăng nhập rồi thì bỏ qua). Mật khẩu được mã hoá (AES-GCM), khoá nằm trong trình duyệt này và không đồng bộ lên tài khoản Chrome. Dùng máy cá nhân; máy dùng chung thì không nên lưu mật khẩu.</p>
   <div class="grid">
     <label>Địa chỉ FBO<input id="lg-origin" list="origin-list" placeholder="https://..."></label>
-    <label>Công ty<input id="lg-company"></label>
     <label>Tên đăng nhập<input id="lg-user" autocomplete="off"></label>
-    <label>Đơn vị<input id="lg-unit"></label>
     <label>Mật khẩu<input id="lg-pass" type="password" autocomplete="new-password" placeholder="Để trống = giữ mật khẩu đã lưu"></label>
   </div>
   <datalist id="origin-list"></datalist>

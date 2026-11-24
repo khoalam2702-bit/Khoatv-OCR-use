@@ -70,12 +70,12 @@ export async function forgetOcrPassword() {
 
 /* ---------- Đăng nhập FBO đã lưu, theo từng địa chỉ ---------- */
 export async function getFboLogins() { return (await chrome.storage.local.get({ fboLogins: {} })).fboLogins; }
-export async function saveFboLogin(origin, { company, unit, user, password }) {
+export async function saveFboLogin(origin, { user, password }) {
   const o = normalizeOrigin(origin);
   if (!o) throw new Error('Địa chỉ FBO không hợp lệ.');
   const all = await getFboLogins();
   const old = all[o] || {};
-  all[o] = { company: company || '', unit: unit || '', user: user || '', passEnc: password ? await vault.encrypt(password) : old.passEnc || '' };
+  all[o] = { user: user || '', passEnc: password ? await vault.encrypt(password) : old.passEnc || '' };
   await chrome.storage.local.set({ fboLogins: all });
 }
 export async function deleteFboLogin(origin) {
@@ -86,5 +86,5 @@ export async function getFboProfile(origin) {
   if (!rec) return null;
   let password = '';
   try { password = rec.passEnc ? await vault.decrypt(rec.passEnc) : ''; } catch { /* khoá mất: nhập lại */ }
-  return { company: rec.company, unit: rec.unit, user: rec.user, password };
+  return { user: rec.user, password };
 }
