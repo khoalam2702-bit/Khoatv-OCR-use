@@ -126,6 +126,8 @@
     curSrc = (opts && opts.src) || '';
     if (dryOn) out.overwrite = [];
     Object.keys(mapping || {}).forEach(function (k) {
+      if (opts && opts.only && opts.only.indexOf(k) < 0) return; // chỉ điền các khóa này
+      if (opts && opts.except && opts.except.indexOf(k) >= 0) return; // bỏ qua các khóa này (điền ở lượt sau)
       var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
       var val = data ? data[k] : null;
       var hasFixed = specs.some(function (sp) { return sp && typeof sp === 'object' && sp.fixed !== undefined; });
@@ -144,6 +146,15 @@
       else if (skip) out.empty.push(k);
     });
     return out;
+  };
+
+  /** Đọc lại giá trị hiện có của các ô (để kiểm tra form có xóa mất giá trị vừa điền không). */
+  globalThis.__KHOATV_READ__ = function (selectors) {
+    return (selectors || []).map(function (sel) {
+      var el = null;
+      try { el = document.querySelector(sel); } catch (e) { /* selector sai */ }
+      return { sel: sel, found: !!el, value: el ? String(el.value || '') : '' };
+    });
   };
 
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }

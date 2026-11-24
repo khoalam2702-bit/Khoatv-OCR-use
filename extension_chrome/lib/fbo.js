@@ -30,6 +30,7 @@ async function assertSameTab(info) {
   if (info.url && t.url && base(t.url) !== base(info.url)) throw new Error('Tab FBO đã chuyển sang trang khác trong lúc điền, đã dừng để tránh điền nhầm. Mở lại form rồi bấm Điền vào FBO.');
 }
 
+const LATE_KEY = /_chi_tiet$/, LATE_TRIES = 4, LATE_WAIT_MS = 600;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const STEP_MSG = (what) => 'Tab FBO không phản hồi sau ' + STEP_TIMEOUT_MS / 1000 + ' giây khi ' + what + '. Trang có thể đang tải hoặc treo; đợi trang xong rồi bấm lại.';
 const step = (p, what, signal) => abortable(withTimeout(p, STEP_TIMEOUT_MS, STEP_MSG(what)), signal);
@@ -117,7 +118,20 @@ export async function fillActiveTab(docType, data, opts) {
     // 2) điền thật
     await guard(); // người dùng có thể đã chuyển trang trong lúc đọc hộp xác nhận
     progress({ phase: 'fill' });
-    results = await call({ src: docType }, 'điền form'); // lệnh điền thật chạy tức thì trong trang, không hủy giữa chừng
+    // Ô số nhà/tổ (…_chi_tiet) điền SAU các ô tra cứu tỉnh/phường: FBO dựng lại hàng địa chỉ khi chọn tỉnh/phường nên làm mất giá trị đã điền trước
+    const late = Object.keys(mapping).filter((k) => LATE_KEY.test(k) && String(enriched[k] == null ? '' : enriched[k]).trim());
+    results = await call({ src: docType, except: late }, 'điền form'); // lệnh điền thật chạy tức thì trong trang, không hủy giữa chừng
+    if (late.length) {
+      const sels = [...new Set(late.flatMap((k) => [].concat(mapping[k]).map((sp) => (typeof sp === 'string' ? sp : sp && sp.selector)).filter(Boolean)))];
+      for (let i = 0; i < LATE_TRIES; i++) {
+        await sleep(LATE_WAIT_MS);
+        results = results.concat(await call({ src: docType, only: late }, 'điền địa chỉ chi tiết'));
+        await sleep(LATE_WAIT_MS);
+        const back = await step(run(target, { func: (x) => globalThis.__KHOATV_READ__(x), args: [sels] }), 'kiểm tra ô địa chỉ chi tiết');
+        const ok = (sel) => back.some((fr) => (fr.result || []).some((r) => r.sel === sel && r.found && r.value.trim()));
+        if (sels.every(ok)) break; // giá trị còn nguyên sau khi form dựng lại
+      }
+    }
   } catch (e) {
     if (e instanceof FillStopped || (e && /Tab FBO không phản hồi|Tab FBO đã/.test(e.message))) throw e;
     throw new Error('Không truy cập được trang này. Mở form FBO ở tab hiện tại và cấp quyền cho địa chỉ FBO trong Cài đặt. (' + (e && e.message ? e.message : e) + ')');
