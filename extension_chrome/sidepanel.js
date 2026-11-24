@@ -190,6 +190,7 @@ async function addFiles(list) {
   renderFiles(); updateScanBtn();
 }
 
+const LIMIT_OPEN_KEY = 'ocrLimitOpen';
 /** Ghi chú giới hạn dưới khu chọn tệp: tệp, dung lượng, số lần quét, thời gian, hạn mức AI. */
 function renderLimits() {
   const L = state.config.limits, mb = (b) => Math.round(b / 1048576);
@@ -203,10 +204,19 @@ function renderLimits() {
   ];
   const box = $('limit-hint');
   box.textContent = '';
+  // Thu gọn/mở rộng bằng <details>; trạng thái nhớ lại ở lần mở sau (mặc định thu gọn cho gọn màn hình).
+  const det = document.createElement('details');
+  det.className = 'limits-box';
+  try { det.open = localStorage.getItem(LIMIT_OPEN_KEY) === '1'; } catch (e) { det.open = false; }
+  const sum = document.createElement('summary');
+  sum.textContent = 'Giới hạn và lưu ý khi quét';
+  det.appendChild(sum);
   const ul = document.createElement('ul');
   ul.className = 'limits';
   for (const t of items) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
-  box.appendChild(ul);
+  det.appendChild(ul);
+  det.addEventListener('toggle', () => { try { localStorage.setItem(LIMIT_OPEN_KEY, det.open ? '1' : '0'); } catch (e) { /* bỏ qua */ } });
+  box.appendChild(det);
 }
 
 function resetScan() {
