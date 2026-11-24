@@ -3,4 +3,4 @@ export const ENABLED_TYPES = ['CCCD', 'HO_CHIEU', 'GPLX', 'KHAI_SINH', 'CV_UNGVI
 
 export const GAS_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
-export const DEFAULT_LIMITS = { maxFileBytes: 14 * 1024 * 1024, maxTotalBytes: 24 * 1024 * 1024, maxFiles: 6 };
+export const DEFAULT_LIMITS = { maxFileBytes: 14 * 1024 * 1024, maxTotalBytes: 24 * 1024 * 1024, maxFiles: 6, scanPer10Min: 40, sessionHours: 6 };

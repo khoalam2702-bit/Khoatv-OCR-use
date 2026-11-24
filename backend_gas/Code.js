@@ -276,7 +276,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, plateProvinces: PLATE_PROVINCES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), plateProvinces: PLATE_PROVINCES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
