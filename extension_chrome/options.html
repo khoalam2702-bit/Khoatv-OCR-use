@@ -27,13 +27,8 @@
   <div class="row"><button id="save-login" class="primary">Lưu đăng nhập FBO</button></div>
   <table id="logins" style="margin-top:8px"></table>
 
-  <h2>3. Ánh xạ trường OCR → ô trên form FBO (JSON)</h2>
-  <p class="hint">Extension đã có sẵn ánh xạ mặc định, không cần dán. Chỉ sửa khi form FBO của bạn khác. Theo từng loại: <code>{"CCCD": {"so_cccd": "#txtSoCCCD"}}</code>. Hỗ trợ <code>map</code>, <code>format</code>, <code>transform</code>, <code>prefix</code>, <code>append</code>, hoặc mảng nhiều ô đích.</p>
-  <textarea id="mapping" class="code" spellcheck="false">{}</textarea>
-  <div class="row"><button id="save-map" class="primary">Lưu ánh xạ</button><button id="reset-map">Khôi phục mặc định</button></div>
-
-  <h2>4. Dò ô nhập của trang FBO đang mở</h2>
-  <p class="hint">Mở form FBO ở một tab, rồi bấm nút dưới để liệt kê các ô (id, name, nhãn, selector gợi ý), dùng để lập ánh xạ ở mục 4.</p>
+  <h2>3. Dò ô nhập của trang FBO đang mở</h2>
+  <p class="hint">Mở form FBO ở một tab, rồi bấm nút dưới để liệt kê các ô (id, name, nhãn, selector gợi ý). Ánh xạ trường OCR → ô FBO đã nằm sẵn trong extension (presets/fbo-hrm.json), người dùng không cần khai báo; mục này chỉ để dò khi cần bổ sung ánh xạ vào source.</p>
   <div class="row"><button id="inspect">Dò trang ở tab đang mở</button><button id="copy" disabled>Sao chép kết quả</button></div>
   <pre id="out" hidden></pre>
   <script type="module" src="options.js"></script>

@@ -1,6 +1,5 @@
-import { getSettings, setSettings, getPreset, getFboLogins, saveFboLogin, deleteFboLogin } from './lib/store.js';
+import { getSettings, setSettings, getFboLogins, saveFboLogin, deleteFboLogin } from './lib/store.js';
 import { inspectActiveTab } from './lib/fbo.js';
-import { validateMapping, diffFromPreset } from './lib/mapping.js';
 import { normalizeOrigin } from './lib/appconfig.js';
 
 const $ = (id) => document.getElementById(id);
@@ -34,7 +33,6 @@ async function render() {
     act.appendChild(btn('Xoá', async () => { await deleteFboLogin(o); render(); }));
     lt.appendChild(tr);
   }
-  $('mapping').value = JSON.stringify(s.fboMappings, null, 2);
 }
 
 render();
@@ -61,21 +59,6 @@ $('save-login').onclick = async () => {
     say('Đã lưu đăng nhập FBO.');
     render();
   } catch (e) { say(e.message, true); }
-};
-
-$('save-map').onclick = async () => {
-  let obj;
-  try { obj = JSON.parse($('mapping').value || '{}'); } catch (e) { return say('JSON sai cú pháp: ' + e.message, true); }
-  const err = validateMapping(obj);
-  if (err) return say(err, true);
-  const user = diffFromPreset(await getPreset(), obj);
-  await setSettings({ fboMappingsUser: user });
-  say('Đã lưu. ' + Object.keys(user).length + ' loại được chỉnh khác mẫu, các loại còn lại dùng mẫu đi kèm extension.');
-};
-$('reset-map').onclick = async () => {
-  await setSettings({ fboMappingsUser: {} });
-  $('mapping').value = JSON.stringify(await getPreset(), null, 2);
-  say('Đã khôi phục ánh xạ mặc định đi kèm extension.');
 };
 
 let last = '';
