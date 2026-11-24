@@ -352,7 +352,7 @@ async function doFill() {
     onProgress: (p) => {
       const sec = p.elapsed != null ? ' ' + Math.floor(p.elapsed / 1000) + 's' : '';
       if (p.phase === 'tab') { btn.textContent = 'Đang chọn tab FBO...'; info.textContent = 'Điền vào tab: "' + cut(p.title) + '". Hãy giữ nguyên tab này đến khi xong.'; }
-      else if (p.phase === 'login') btn.textContent = 'Kiểm tra đăng nhập...';
+      else if (p.phase === 'prepare') btn.textContent = 'Chuẩn bị điền...';
       else if (p.phase === 'form') { if (p.label) info.textContent += ' Nhận diện form: ' + p.label + '.'; }
       else if (p.phase === 'wait') btn.textContent = 'Chờ form FBO...' + sec + ' (thấy ' + p.found + '/' + p.total + ' ô)';
       else if (p.phase === 'check') btn.textContent = 'Kiểm tra dữ liệu có sẵn...';
@@ -368,16 +368,12 @@ async function doFill() {
   let done = false;
   try {
     const r = await fillActiveTab(state.type, state.saved.data, opts);
-    if (r.status === 'NOT_LOGGED_IN') {
-      info.textContent = 'Tab FBO đang ở trang đăng nhập. Bấm "Đăng nhập FBO" (hoặc tự đăng nhập), rồi bấm Điền vào FBO lại.';
-      info.className = 'warn'; return;
-    }
     if (r.status === 'NO_MAPPING') {
       info.textContent = 'Chưa khai báo ánh xạ trường FBO cho loại này. Mở Cài đặt để khai báo.';
       return;
     }
     if (r.status === 'NO_FORM') {
-      info.textContent = 'Chưa thấy form FBO ở tab hiện tại (đã chờ ' + FORM_WAIT_MS / 1000 + ' giây). Mở đúng form (ví dụ Thêm nhân viên) hoặc chờ trang tải xong, rồi bấm Điền vào FBO lại.';
+      info.textContent = 'Bạn chưa mở form cần điền ở tab hiện tại (đã chờ ' + FORM_WAIT_MS / 1000 + ' giây, không thấy ô nào của form "' + (t ? t.label : state.type) + '"). Đăng nhập FBO và mở đúng form (nếu form có nhiều tab, mở tab cần điền), rồi bấm Điền vào FBO lại.';
       info.className = 'warn'; return;
     }
     if (r.status === 'CANCELLED') {

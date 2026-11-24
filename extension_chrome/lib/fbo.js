@@ -62,7 +62,7 @@ async function waitForForm(target, variants, onProgress, signal) {
 /**
  * Điền dữ liệu vào form FBO ở tab đang mở (dùng chung mọi loại tài liệu). Ánh xạ cố định trong presets/fbo-hrm.json.
  * opts: { signal (AbortSignal: nút Dừng), required: [mã trường bắt buộc], onProgress({phase,...}), confirmOverwrite(list) -> Promise<boolean>, confirmPartial({found,total}) -> Promise<boolean> }
- * status: FILLED | ERROR | NOT_LOGGED_IN | NO_MAPPING | NO_FORM | CANCELLED   (+ partial/wrongForm: cờ khi form chỉ khớp một phần)
+ * status: FILLED | ERROR | NO_MAPPING | NO_FORM | CANCELLED   (+ partial/wrongForm: cờ khi form chỉ khớp một phần)
  * Mỗi bước gọi vào tab có giới hạn STEP_TIMEOUT_MS; thời gian người dùng đọc hộp xác nhận không bị tính.
  */
 export async function fillActiveTab(docType, data, opts) {
@@ -84,7 +84,7 @@ export async function fillActiveTab(docType, data, opts) {
   const guard = async () => { if (sig && sig.aborted) throw new FillStopped(); await assertSameTab(tabInfo); };
   let results, form;
   try {
-    progress({ phase: 'login' });
+    progress({ phase: 'prepare' });
     await guard();
     // Khung phụ treo làm lệnh vào mọi khung quá hạn: thử lại một lần chỉ với khung chính (form FBO nằm ở khung chính)
     const frames = async (fn, what) => {
@@ -95,11 +95,7 @@ export async function fillActiveTab(docType, data, opts) {
         return await step(fn(target), what, sig);
       }
     };
-    // Kiểm tra đăng nhập chỉ là bước phụ (không bấm gì): không kiểm tra được thì coi như đã đăng nhập, bước dò form sẽ báo nếu không thấy form
-    let loginPage = false;
-    try { loginPage = await frames((t) => needsLogin(tab.id, t), 'kiểm tra đăng nhập'); }
-    catch (e) { if (e instanceof FillStopped || !/Tab FBO không phản hồi/.test(e.message)) throw e; }
-    if (loginPage) return { ...blank, total, status: 'NOT_LOGGED_IN' };
+    // Không kiểm tra đăng nhập: chỉ cần form cần điền đang mở. Trang đăng nhập/chưa mở form thì dò không thấy ô nào → NO_FORM
     await frames((t) => run(t, { files: ['content/page.js'] }), 'nạp công cụ điền');
     form = await waitForForm(target, variants, progress, sig);
     mapping = form.mapping; // ánh xạ của form đã nhận diện
