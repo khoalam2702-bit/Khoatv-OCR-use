@@ -189,3 +189,15 @@ test('ô do loại tài liệu khác điền: dry-run báo foreign; cùng loại
   assert.equal(same.overwrite[0].foreign, false);
   assert.equal(d.getElementById('ten').value, 'Nguyễn A'); // dry-run không ghi
 });
+
+test('opts.except bỏ qua khóa (điền lượt sau), opts.only chỉ điền khóa đó; __KHOATV_READ__ đọc lại giá trị', () => {
+  const w = page('<input id="a"><input id="b">');
+  const d = w.document;
+  const m = { a: '#a', b_chi_tiet: '#b' }, data = { a: 'x', b_chi_tiet: 'Tổ 15' };
+  const r1 = plain(w.__KHOATV_FILL__(m, data, { except: ['b_chi_tiet'] }));
+  assert.deepEqual(r1.filled, ['a']);
+  assert.equal(d.getElementById('b').value, '');
+  const r2 = plain(w.__KHOATV_FILL__(m, data, { only: ['b_chi_tiet'] }));
+  assert.deepEqual(r2.filled, ['b_chi_tiet']);
+  assert.deepEqual(plain(w.__KHOATV_READ__(['#b', '#none'])), [{ sel: '#b', found: true, value: 'Tổ 15' }, { sel: '#none', found: false, value: '' }]);
+});
