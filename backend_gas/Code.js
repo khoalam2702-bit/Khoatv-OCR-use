@@ -66,7 +66,7 @@ const DOC_TYPES = {
   CCCD: {
     label: 'Căn cước công dân', uniqueKey: 'so_cccd', required: ['so_cccd', 'ho_ten'],
     hint: 'Thẻ căn cước / CCCD Việt Nam. Số định danh cá nhân gồm đúng 12 chữ số. ' +
-      'Đọc cả hai mặt nếu có. Mặt trước: số, họ tên, ngày sinh, giới tính, quốc tịch, quê quán, nơi thường trú, nơi sinh (nếu thẻ có in), ' +
+      'Họ và tên lấy từ dòng "Họ và tên / Full name" ở mặt trước, giữ đủ dấu tiếng Việt, không lấy từ dòng MRZ ở mặt sau. Đọc cả hai mặt nếu có. Mặt trước: số, họ tên, ngày sinh, giới tính, quốc tịch, quê quán, nơi thường trú, nơi sinh (nếu thẻ có in), ' +
       'ngày hết hạn (mục "Có giá trị đến", nếu ghi "Không thời hạn" thì trả đúng chữ đó). ' +
       'Mặt sau: ngày cấp (ngày, tháng, năm cấp thẻ) và nơi cấp (cơ quan cấp, ví dụ Cục Cảnh sát quản lý hành chính về trật tự xã hội). ',
     fields: [f_('so_cccd', 'Số CCCD'), f_('ho_ten', 'Họ và tên'), f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'),
@@ -871,7 +871,9 @@ function scanDocument(token, payload) {
     return file.getId();
   });
 
+  const tAi = Date.now();
   const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {};
+  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, Gemini ' + (Date.now() - tAi) + 'ms');
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   return { data: data, fileIds: fileIds, ms: Date.now() - started };
 }
@@ -907,7 +909,8 @@ function callGemini_(type, files) {
   const system =
     'Bạn là bộ máy OCR bóc tách dữ liệu từ tài liệu tiếng Việt. Quy tắc bắt buộc:\n' +
     '1. Chỉ ghi những gì NHÌN THẤY trong tài liệu. Trường nào không có, bị che, mờ không đọc được thì trả null. Tuyệt đối không suy đoán hay tự điền.\n' +
-    '2. Giữ nguyên dấu tiếng Việt và chính tả như trên tài liệu; không tự viết hoa/thường lại.\n' +
+    '2. Giữ nguyên dấu tiếng Việt và chính tả như trên tài liệu; không tự viết hoa/thường lại. Họ tên, địa chỉ, quê quán, nơi sinh phải có ĐỦ dấu (ă â ê ô ơ ư đ và dấu thanh). ' +
+    'Tuyệt đối không bỏ dấu; không lấy chữ từ dòng mã máy đọc (MRZ, chữ in hoa không dấu) khi trên tài liệu đã có dòng viết đủ dấu.\n' +
     '3. Ngày tháng ghi dạng dd/MM/yyyy.\n' +
     '4. Trường kiểu số: chỉ trả số thuần (không dấu phân cách hàng nghìn, không ký hiệu tiền tệ hay đơn vị).\n' +
     '5. Mã số, số giấy tờ: giữ đủ mọi ký tự kể cả số 0 ở đầu.\n' +
@@ -922,15 +925,32 @@ function callGemini_(type, files) {
           '\nHãy bóc tách dữ liệu theo đúng schema.' }
       ])
     }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type) }
+    generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type), temperature: 0 }
   };
-  const resp = fetchRetry_('https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent', {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
-    payload: JSON.stringify(body),
-    muteHttpExceptions: true
-  });
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  function post_() {
+    return fetchRetry_(url, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+      payload: JSON.stringify(body),
+      muteHttpExceptions: true
+    });
+  }
+  // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
+  // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
+  const fast = prop_('GEMINI_FAST', 'on') !== 'off';
+  if (fast) {
+    body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
+    body.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
+  }
+  let resp = post_();
+  if (fast && resp.getResponseCode() === 400) {
+    console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
+    delete body.generationConfig.thinkingConfig;
+    delete body.generationConfig.mediaResolution;
+    resp = post_();
+  }
   const code = resp.getResponseCode();
   if (code !== 200) {
     console.error('Gemini ' + code + ': ' + resp.getContentText().slice(0, 800));
