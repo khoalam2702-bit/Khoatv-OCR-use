@@ -2,7 +2,9 @@
  * OCR đa tài liệu: Google Apps Script + Gemini Vision + Google Sheets + Google Drive
  *
  * Script Properties (Project Settings > Script Properties):
- *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API
+ *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API chính. ADMIN đổi được ở trang quản trị > Cài đặt AI (không cần vào Script Properties)
+ *   GEMINI_API_KEY_BACKUP, GEMINI_API_KEY_BACKUP_2, _3, _4 (tuỳ chọn) Khoá dự phòng 1 → 4: lần lượt dùng khi khoá trước hết hạn mức (429), bị từ chối (403) hoặc lỗi máy chủ (5xx). Khoá vừa lỗi được cho "nghỉ" (tối đa 30 phút) để các lần quét sau dùng thẳng khoá còn lại
+ *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
  *
@@ -76,10 +78,11 @@ const DOC_TYPES = {
   },
   HO_CHIEU: {
     label: 'Hộ chiếu', uniqueKey: 'so_ho_chieu', required: ['so_ho_chieu', 'ho_ten'],
-    hint: 'Trang thông tin hộ chiếu. Đối chiếu vùng MRZ ở cuối trang để kiểm tra số hộ chiếu và ngày tháng.',
+    hint: 'Trang thông tin hộ chiếu. Đối chiếu vùng MRZ ở cuối trang để kiểm tra số hộ chiếu và ngày tháng. Nơi cấp (noi_cap) và Nơi cấp thị thực (noi_cap_visa): ghi TÊN NƯỚC cấp bằng tiếng Việt (ví dụ Việt Nam, Mỹ, Nhật Bản, Anh), lấy từ mã quốc gia cấp ở vùng MRZ hoặc từ trang; không ghi tên cơ quan. Các trường thị thực (visa) chỉ điền khi tệp có trang/tem visa; không có thì trả null, không lấy từ trang thông tin hộ chiếu.',
     fields: [f_('so_ho_chieu', 'Số hộ chiếu'), f_('ho_ten', 'Họ và tên'), f_('quoc_tich', 'Quốc tịch'), f_('ngay_sinh', 'Ngày sinh'),
       f_('noi_sinh', 'Nơi sinh'), f_('gioi_tinh', 'Giới tính'), f_('so_dinh_danh', 'Số định danh'), f_('ngay_cap', 'Ngày cấp'),
-      f_('ngay_het_han', 'Ngày hết hạn'), f_('co_quan_cap', 'Cơ quan cấp')]
+      f_('ngay_het_han', 'Ngày hết hạn'), f_('co_quan_cap', 'Cơ quan cấp'), f_('noi_cap', 'Nơi cấp (nước cấp)'),
+      f_('so_visa', 'Số thị thực (Visa)'), f_('ngay_cap_visa', 'Ngày cấp thị thực'), f_('noi_cap_visa', 'Nơi cấp thị thực'), f_('ngay_het_han_visa', 'Ngày hết hạn thị thực')]
   },
   GPLX: {
     label: 'Giấy phép lái xe', uniqueKey: 'so_gplx', required: ['so_gplx', 'ho_ten', 'hang_gplx'],
@@ -89,8 +92,8 @@ const DOC_TYPES = {
   },
   KHAI_SINH: {
     label: 'Giấy khai sinh', uniqueKey: null, required: ['ho_ten_khai_sinh', 'ngay_sinh'],
-    hint: 'Giấy khai sinh Việt Nam, có thể có chữ viết tay.',
-    fields: [f_('so_khai_sinh', 'Số khai sinh'), f_('ho_ten_khai_sinh', 'Họ tên người được khai sinh'), f_('gioi_tinh', 'Giới tính'),
+    hint: 'Giấy khai sinh Việt Nam, có thể có chữ viết tay. so_dinh_danh là Số định danh cá nhân (12 chữ số) của người được khai sinh, chỉ lấy khi giấy có in; không có thì để trống.',
+    fields: [f_('so_khai_sinh', 'Số khai sinh'), f_('so_dinh_danh', 'Số định danh cá nhân'), f_('ho_ten_khai_sinh', 'Họ tên người được khai sinh'), f_('gioi_tinh', 'Giới tính'),
       f_('ngay_sinh', 'Ngày sinh'), f_('noi_sinh', 'Nơi sinh'), f_('dan_toc', 'Dân tộc'), f_('quoc_tich', 'Quốc tịch'),
       f_('ho_ten_cha', 'Họ tên cha'), f_('ho_ten_me', 'Họ tên mẹ')]
   },
@@ -141,21 +144,35 @@ const DOC_TYPES = {
   },
   CAN_DIEN_TU: {
     label: 'Màn hình cân điện tử', uniqueKey: null, required: ['khoi_luong', 'don_vi'],
-    hint: 'Ảnh màn hình LED/LCD 7 đoạn của cân điện tử (có thể kèm phiếu cân). Đọc từng chữ số và vị trí dấu thập phân thật cẩn thận; ' +
-      'khoi_luong là số kg (hoặc số theo don_vi); don_vi là kg, g, tấn hoặc lb; ' +
-      'don_gia là giá tiền trên mỗi đơn vị và so_tien là thành tiền CHỈ khi ảnh / phiếu có ghi, nếu không có thì trả null, không tự tính; ' +
-      'trang_thai là Gross, Net, Stable nếu màn hình có hiển thị. ' +
-      'Nếu có chữ số bị chói hoặc đứt nét không chắc chắn, mô tả rõ trong ghi_chu_can.',
-    fields: [f_('khoi_luong', 'Khối lượng (số kg)', 'number'), f_('don_vi', 'Đơn vị'), m_('don_gia', 'Đơn giá'), m_('so_tien', 'Số tiền'),
-      f_('trang_thai', 'Trạng thái'), f_('ghi_chu_can', 'Ghi chú cân', 'long')]
+    hint: 'Ảnh cân điện tử (cân siêu thị, cân tính tiền in tem, cân bàn), có thể là ảnh chụp cả máy kèm nền cửa hàng. ' +
+      'CHỈ đọc các ô số trên màn hình LED/LCD của cân; bỏ qua logo, biển hiệu, tem nhãn, bàn phím và nền. ' +
+      'Tự nhận diện bố cục (người dùng không chọn loại cân). Thường có 4 ô theo thứ tự: Trừ bì (Tare) · Khối lượng (Weight / Net / Trọng lượng) · Đơn giá (Unit price / Price / Change) · Thành tiền (Total / Total price). ' +
+      'Nhãn có thể bằng tiếng Việt hoặc tiếng Anh, bị mờ hoặc lệch so với số: khi đó dựa vào VỊ TRÍ ô và ký hiệu đơn vị (số đi kèm "kg" là khối lượng). ' +
+      'Không nhầm ô Trừ bì (Tare) với khối lượng; không lấy dòng ngày giờ hay số lượng (pcs) làm khối lượng. ' +
+      'khoi_luong là số kg cân được (số thập phân; đọc thật cẩn thận từng chữ số và vị trí dấu chấm thập phân); don_vi là kg, g, tấn hoặc lb. ' +
+      'don_gia là đơn giá và so_tien là thành tiền, đúng như màn hình hiển thị; nếu cân không có ô giá hoặc thành tiền thì trả null, không tự tính. ' +
+      'Ba trường man_hinh_khoi_luong, man_hinh_don_gia, man_hinh_thanh_tien: chép NGUYÊN VĂN chuỗi ký tự đang hiện trong ô tương ứng, giữ cả dấu chấm/phẩy và số 0 (ví dụ "0.58", "260.000", "150.800"); null nếu ô đó không có. ' +
+      'Kiểm tra chéo: khối lượng × đơn giá phải xấp xỉ thành tiền; nếu lệch thì đọc lại từng chữ số. ' +
+      'trang_thai là Gross, Net, Stable nếu màn hình có hiển thị. Chữ số bị chói hoặc đứt nét không chắc chắn thì mô tả rõ trong ghi_chu_can.',
+    fields: [f_('khoi_luong', 'Khối lượng (số kg)', 'number'), f_('don_vi', 'Đơn vị'), m_('don_gia', 'Đơn giá'), m_('so_tien', 'Thành tiền'),
+      f_('trang_thai', 'Trạng thái'), f_('ghi_chu_can', 'Ghi chú cân', 'long')],
+    // Trường phụ chỉ dùng để đối chiếu dấu chấm/phẩy: gửi cho AI nhưng không lưu và không hiện trên form.
+    aux: [f_('man_hinh_khoi_luong', 'Chuỗi hiển thị ở ô khối lượng'), f_('man_hinh_don_gia', 'Chuỗi hiển thị ở ô đơn giá'), f_('man_hinh_thanh_tien', 'Chuỗi hiển thị ở ô thành tiền')]
   },
   BIEN_SO_XE: {
     label: 'Biển số xe', uniqueKey: null, required: ['bien_so_day_du'],
-    hint: 'Biển số xe Việt Nam. ma_tinh_thanh là 2 chữ số đầu; seri_dang_ky là phần chữ/số seri sau mã tỉnh; ' +
-      'loai_phuong_tien: ô tô, xe máy, xe tải...; mau_bien: trắng, vàng, xanh, đỏ. ' +
-      'Không cần điền ten_tinh_thanh (hệ thống tự tra theo ma_tinh_thanh), để null.',
+    hint: 'Biển số xe Việt Nam NỀN TRẮNG (cá nhân), chữ đen dập nổi. Bỏ qua con dấu chìm, họa tiết gợn sóng, viền, khung biển và nền ảnh. ' +
+      'Có 2 kiểu: biển DÀI 1 dòng của ô tô (ví dụ 51F-970.22) và biển VUÔNG 2 dòng của xe máy (dòng trên 99-E1, dòng dưới 222.68). ' +
+      'bien_so_day_du: ghép đủ các dòng thành một chuỗi, ô tô dạng "51F-970.22", xe máy dạng "99-E1 222.68". ' +
+      'Giữ nguyên dấu gạch ngang và dấu chấm. Mã tỉnh (2 ký tự đầu) và dãy số cuối là CHỮ SỐ (không nhầm O với 0, I với 1, B với 8); ' +
+      'ký tự sau mã tỉnh là chữ cái seri (xe máy có thêm một chữ số sau chữ, ví dụ E1, B1). Dãy số cuối có 4 số hoặc 5 số (dạng 970.22). ' +
+      'loai_phuong_tien: "Ô tô" hoặc "Xe máy". mau_bien: "Trắng" nếu nền trắng, nếu là màu khác thì ghi đúng màu (Vàng, Xanh, Đỏ).',
     fields: [f_('bien_so_day_du', 'Biển số đầy đủ'), f_('ma_tinh_thanh', 'Mã tỉnh/thành'), f_('ten_tinh_thanh', 'Tên tỉnh/thành'), f_('seri_dang_ky', 'Seri đăng ký'),
-      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển')]
+      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển')],
+    // Mã tỉnh, seri, tên tỉnh do hệ thống tự tách / tra từ biển số: không bắt AI sinh ra (ít chữ cần sinh hơn → nhanh hơn).
+    aiSkip: ['ma_tinh_thanh', 'ten_tinh_thanh', 'seri_dang_ky'],
+    // Chữ trên biển rất to: độ phân giải ảnh vừa là đủ, nhanh hơn mức cao; đầu ra ngắn.
+    ai: { resolution: 'MEDIA_RESOLUTION_MEDIUM', maxTokens: 256 }
   }
 };
 
@@ -231,7 +248,11 @@ const API_ACTIONS = {
   createUser: { fn: function (a) { return createUser(a[0], a[1]); } },
   updateUser: { fn: function (a) { return updateUser(a[0], a[1], a[2]); } },
   resetUserPassword: { fn: function (a) { return resetUserPassword(a[0], a[1]); } },
-  deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } }
+  deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } },
+  // cấu hình AI (chỉ ADMIN)
+  getAiConfig: { fn: function (a) { return getAiConfig(a[0]); } },
+  setAiConfig: { fn: function (a) { return setAiConfig(a[0], a[1]); } },
+  testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } }
 };
 
 /** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
@@ -269,7 +290,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, plateProvinces: PLATE_PROVINCES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), plateProvinces: PLATE_PROVINCES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
@@ -858,6 +879,7 @@ function scanDocument(token, payload) {
     try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
   });
 
+  const tDrive = Date.now();
   const now = new Date();
   const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss') + '_' + Utilities.getUuid().slice(0, 6);
   const lock = LockService.getScriptLock();
@@ -880,6 +902,136 @@ function scanDocument(token, payload) {
   return { data: data, fileIds: fileIds, ms: Date.now() - started, msDrive: t1 - t0, msAi: t2 - t1 };
 }
 
+/* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe từ chuỗi biển số ---------- */
+function fixPlateReading_(data) {
+  const raw = data.bien_so_day_du;
+  if (typeof raw !== 'string' || !raw.trim()) return data;
+  const s = raw.toUpperCase().replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim();
+  const m = /^(\d{2})\s*-?\s*([A-Z]{1,2}\d?)\s*[-.\s]\s*(\d{3}[.\s]?\d{2}|\d{4})$/.exec(s);
+  if (!m) {
+    const p = /^(\d{2})/.exec(s);
+    if (p && !data.ma_tinh_thanh) data.ma_tinh_thanh = p[1];
+    if (!data.mau_bien) data.mau_bien = 'Trắng';
+    return data;
+  }
+  const digits = m[3].replace(/\D/g, '');
+  const num = digits.length === 5 ? digits.slice(0, 3) + '.' + digits.slice(3) : digits;
+  const moto = /\d$/.test(m[2]);
+  data.bien_so_day_du = moto ? m[1] + '-' + m[2] + ' ' + num : m[1] + m[2] + '-' + num;
+  data.ma_tinh_thanh = m[1];
+  data.seri_dang_ky = m[2];
+  if (!data.loai_phuong_tien) data.loai_phuong_tien = moto ? 'Xe máy' : 'Ô tô';
+  if (!data.mau_bien) data.mau_bien = 'Trắng';
+  return data;
+}
+
+/* ---------- Cân điện tử: đối chiếu khối lượng × đơn giá = thành tiền ----------
+ * Màn hình cân dùng dấu chấm cho cả số thập phân (0.58 kg) lẫn phân cách hàng nghìn (260.000 đ), tuỳ hãng, nên chỉ đọc số là không đủ.
+ * Hệ thống thử các cách hiểu của chuỗi AI chép nguyên văn và chọn cách khiến khối lượng × đơn giá khớp thành tiền.
+ */
+function scaleCandidates_(raw, thousandsFirst) {
+  const s = String(raw == null ? '' : raw).replace(/[^\d.,]/g, '');
+  if (!/\d/.test(s)) return [];
+  const t = s.replace(/,/g, '.');
+  const lastDot = t.lastIndexOf('.');
+  const decStr = lastDot < 0 ? t : t.slice(0, lastDot).replace(/\./g, '') + '.' + t.slice(lastDot + 1);
+  const dec = { v: Number(decStr), d: lastDot < 0 ? 0 : t.length - lastDot - 1 };
+  const out = [dec];
+  if (/^\d{1,3}([.,]\d{3})+$/.test(s)) {
+    const thou = { v: Number(s.replace(/[.,]/g, '')), d: 0 };
+    if (thousandsFirst) out.unshift(thou); else out.push(thou);
+  }
+  return out.filter(function (c) { return isFinite(c.v); });
+}
+
+function scaleConsistent_(w, p, t) {
+  // Sai số cho phép: làm tròn thành tiền, làm tròn khối lượng, và ~0,6% do cân làm tròn theo từng bước
+  const tol = Math.abs(t.v) * 0.006 + 0.5 * Math.pow(10, -t.d) + Math.abs(p.v) * 0.5 * Math.pow(10, -w.d);
+  return Math.abs(w.v * p.v - t.v) <= tol;
+}
+
+function scaleNote_(data, note) {
+  const cur = typeof data.ghi_chu_can === 'string' ? data.ghi_chu_can.trim() : '';
+  if (cur.indexOf(note) < 0) data.ghi_chu_can = cur ? cur + ' ' + note : note;
+}
+
+function fixScaleReading_(data) {
+  const rawW = data.man_hinh_khoi_luong, rawP = data.man_hinh_don_gia, rawT = data.man_hinh_thanh_tien;
+  delete data.man_hinh_khoi_luong; delete data.man_hinh_don_gia; delete data.man_hinh_thanh_tien;
+  const num = function (v) { return v === null || v === undefined || v === '' || !isFinite(Number(v)) ? null : Number(v); };
+  // Không có chuỗi nguyên văn thì dùng số AI đã đọc
+  const wc = scaleCandidates_(rawW, false), pc = scaleCandidates_(rawP, true), tc = scaleCandidates_(rawT, true);
+  const asCand = function (v) { return v === null ? [] : [{ v: v, d: (String(v).split('.')[1] || '').length }]; };
+  const W = wc.length ? wc : asCand(num(data.khoi_luong));
+  const P = pc.length ? pc : asCand(num(data.don_gia));
+  const T = tc.length ? tc : asCand(num(data.so_tien));
+  if (W.length) data.khoi_luong = W[0].v;
+  if (!P.length && !T.length) return data;
+  if (W.length && P.length && T.length) {
+    const unitKg = !data.don_vi || /^kg$/i.test(String(data.don_vi).trim());
+    for (let i = 0; i < P.length; i++) {
+      for (let j = 0; j < T.length; j++) {
+        if (scaleConsistent_(W[0], P[i], T[j])) {
+          data.don_gia = P[i].v; data.so_tien = T[j].v;
+          if (data.don_gia === 0 && data.so_tien === 0) scaleNote_(data, 'Màn hình đang hiện đơn giá 0 (cân chưa nhập giá).');
+          return data;
+        }
+      }
+    }
+    // Không cách hiểu nào khớp: giữ số AI đọc và báo người dùng đối chiếu (đơn vị khác kg thì bỏ qua cảnh báo vì giá có thể tính theo đơn vị khác)
+    if (unitKg) scaleNote_(data, 'Cảnh báo: khối lượng × đơn giá khác thành tiền, hãy đối chiếu lại với màn hình cân.');
+    return data;
+  }
+  // Chỉ có một trong hai ô giá: lấy cách hiểu ưu tiên của chuỗi hiển thị
+  if (P.length && pc.length) data.don_gia = P[0].v;
+  if (T.length && tc.length) data.so_tien = T[0].v;
+  return data;
+}
+
+/* ---------- Họ tên mất dấu tiếng Việt ----------
+ * Nếu họ tên (giấy tờ Việt Nam) trả về không có một dấu nào (thường do lấy từ dòng MRZ in hoa không dấu), đọc lại RIÊNG các trường đó
+ * và chỉ nhận kết quả khi bỏ dấu đi thì trùng khít với bản cũ (chỉ thêm dấu, không đổi chữ).
+ */
+const NAME_FIELDS = {
+  CCCD: ['ho_ten'], GPLX: ['ho_ten'], KHAI_SINH: ['ho_ten_khai_sinh', 'ho_ten_cha', 'ho_ten_me'], HO_CHIEU: ['ho_ten']
+};
+function stripDiacritics_(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+}
+function hasViDiacritics_(s) {
+  s = String(s == null ? '' : s);
+  return s.length > 0 && stripDiacritics_(s) !== s;
+}
+function fixNameDiacritics_(docType, type, data, files) {
+  const keys = (NAME_FIELDS[docType] || []).filter(function (k) {
+    const v = data[k];
+    if (typeof v !== 'string' || !v.trim() || hasViDiacritics_(v)) return false;
+    if (docType === 'HO_CHIEU') return /viet/.test(stripDiacritics_(data.quoc_tich).toLowerCase()); // hộ chiếu nước ngoài: tên không dấu là bình thường
+    return true;
+  });
+  if (!keys.length) return data;
+  const sub = {
+    label: type.label,
+    hint: 'CHỈ đọc lại các trường sau và giữ ĐỦ dấu tiếng Việt (ă â ê ô ơ ư đ và dấu thanh sắc huyền hỏi ngã nặng). ' +
+      'Lấy họ tên từ dòng chữ "Họ và tên" in/viết trên giấy tờ (có dấu), KHÔNG lấy từ vùng mã máy đọc MRZ hay mã vạch (in hoa không dấu). ' +
+      'Đây là tên người Việt: không được bỏ dấu, không đổi chữ cái nào ngoài việc thêm dấu.',
+    fields: type.fields.filter(function (f) { return keys.indexOf(f.k) >= 0; })
+  };
+  try {
+    const re = callGemini_(sub, files, { slow: true }) || {};
+    keys.forEach(function (k) {
+      const nv = re[k];
+      if (typeof nv === 'string' && hasViDiacritics_(nv) && stripDiacritics_(nv).toLowerCase().replace(/\s+/g, ' ').trim() === stripDiacritics_(data[k]).toLowerCase().replace(/\s+/g, ' ').trim()) {
+        console.log('Khôi phục dấu ' + k + ': "' + data[k] + '" -> "' + nv + '"');
+        data[k] = nv.trim();
+      }
+    });
+  } catch (e) {
+    console.error('Đọc lại dấu họ tên lỗi, giữ kết quả ban đầu: ' + e.message);
+  }
+  return data;
+}
+
 function rateLimit_(username) {
   const cache = CacheService.getScriptCache();
   const key = 'rate_' + hash_(username) + '_' + Math.floor(Date.now() / 600000);
@@ -892,7 +1044,9 @@ function rateLimit_(username) {
 
 function buildSchema_(type) {
   const props = {};
-  type.fields.forEach(function (f) {
+  const skip = type.aiSkip || [];
+  const all = type.fields.filter(function (f) { return skip.indexOf(f.k) < 0; }).concat(type.aux || []);
+  all.forEach(function (f) {
     if (f.type === 'items') {
       const itemProps = {};
       ITEM_FIELDS.forEach(function (c) {
@@ -903,10 +1057,11 @@ function buildSchema_(type) {
       props[f.k] = { type: f.type === 'number' ? 'NUMBER' : 'STRING', nullable: true, description: f.label };
     }
   });
-  return { type: 'OBJECT', properties: props, required: type.fields.map(function (f) { return f.k; }) };
+  return { type: 'OBJECT', properties: props, required: all.map(function (f) { return f.k; }) };
 }
 
-function callGemini_(type, files) {
+function callGemini_(type, files, opts) {
+  opts = opts || {};
   const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const system =
     'Bạn là bộ máy OCR bóc tách dữ liệu từ tài liệu tiếng Việt. Quy tắc bắt buộc:\n' +
@@ -955,9 +1110,11 @@ function callGemini_(type, files) {
   }
   const code = resp.getResponseCode();
   if (code !== 200) {
-    console.error('Gemini ' + code + ': ' + resp.getContentText().slice(0, 800));
+    console.error('Gemini ' + code + ' (khoá ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + '): ' + resp.getContentText().slice(0, 800));
+    if (isBadKey_(resp)) throw new Error('Khoá Gemini API không hợp lệ hoặc đã bị thu hồi. Quản trị viên vào Cài đặt AI để cập nhật khoá.');
+    if (code === 403) throw new Error('Khoá Gemini API bị từ chối (403): chưa bật API hoặc khoá bị giới hạn. Quản trị viên kiểm tra khoá ở Cài đặt AI.');
     if (code === 404) throw new Error('Model Gemini "' + model + '" không tồn tại hoặc đã ngừng. Kiểm tra Script Property GEMINI_MODEL.');
-    if (code === 429) throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.');
+    if (code === 429) throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
     throw new Error('Gemini trả lỗi ' + code + '. Xem nhật ký Apps Script để biết chi tiết.');
   }
   const json = JSON.parse(resp.getContentText());
@@ -974,6 +1131,138 @@ function callGemini_(type, files) {
   } catch (e) {
     throw new Error('Kết quả AI bị cắt giữa chừng (tài liệu quá dài?). Hãy thử lại với ít trang hơn.');
   }
+}
+
+/* ============================ CẤU HÌNH AI (chỉ ADMIN) ============================
+ * Khoá lưu trong Script Properties, không bao giờ trả về giao diện: chỉ trả 4 ký tự cuối để nhận biết.
+ * Khoá mới được thử gọi Gemini 1 lần trước khi lưu; thử thất bại thì không lưu gì. */
+
+const AI_TIERS = ['free', 'paid'];
+
+function keyHint_(k) { k = String(k || ''); return k ? '••••' + k.slice(-4) : ''; }
+
+function checkKeyFormat_(k) {
+  k = String(k || '').trim();
+  if (!/^[A-Za-z0-9_\-]{20,120}$/.test(k)) throw new Error('Khoá API không đúng định dạng (20–120 ký tự chữ, số, gạch, không có khoảng trắng).');
+  return k;
+}
+
+function checkModelName_(m) {
+  m = String(m || '').trim();
+  if (!/^[A-Za-z0-9._\-]{3,60}$/.test(m)) throw new Error('Tên model không hợp lệ.');
+  return m;
+}
+
+/** Thử 1 yêu cầu nhỏ (chỉ văn bản). Trả { ok, warn, message }: 429 = khoá hợp lệ nhưng đang hết hạn mức. */
+function testGeminiKey_(key, model) {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  const resp = fetchRetry_(url, {
+    method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 8 } }),
+    muteHttpExceptions: true
+  }, true);
+  const code = resp.getResponseCode();
+  if (code === 200) return { ok: true, warn: false, message: 'Khoá dùng được.' };
+  if (code === 429) return { ok: true, warn: true, message: 'Khoá hợp lệ nhưng đang hết hạn mức (429). Gói miễn phí thường bị như vậy; bật thanh toán để dùng khoá trả phí.' };
+  if (isBadKey_(resp)) return { ok: false, warn: false, message: 'Khoá không hợp lệ hoặc đã bị thu hồi.' };
+  if (code === 403) return { ok: false, warn: false, message: 'Khoá bị từ chối (403): chưa bật Generative Language API hoặc khoá bị giới hạn.' };
+  if (code === 404) return { ok: false, warn: false, message: 'Model "' + model + '" không tồn tại hoặc khoá không được dùng model này.' };
+  return { ok: false, warn: false, message: 'Gemini trả lỗi ' + code + '.' };
+}
+
+function aiConfigView_() {
+  const p = PropertiesService.getScriptProperties();
+  const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
+  const baks = AI_BACKUP_PROPS.map(function (n) { return String(p.getProperty(n) || '').trim(); });
+  const tier = String(p.getProperty('GEMINI_TIER') || '').trim();
+  return {
+    model: prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL),
+    defaultModel: DEFAULTS.GEMINI_MODEL,
+    tier: AI_TIERS.indexOf(tier) >= 0 ? tier : '',
+    main: slotView_(main),
+    backup: slotView_(baks[0]), // giữ cho giao diện cũ: = dự phòng 1
+    backups: baks.map(slotView_) // dự phòng 1..4
+  };
+}
+
+function getAiConfig(token) {
+  requireAdmin_(token);
+  return aiConfigView_();
+}
+
+/**
+ * patch: { apiKey?, backupKeys?: [k1..k4], backupKey? (= dự phòng 1), clearBackups?: [1..4], clearBackup? (= xoá dự phòng 1), model?, tier? }.
+ * Chỉ trường có mặt mới đổi; phần tử rỗng trong backupKeys = giữ nguyên.
+ * Khoá mới được thử trước; chỉ lưu khi mọi khoá mới đều dùng được (hết hạn mức 429 vẫn tính là hợp lệ).
+ */
+function setAiConfig(token, patch) {
+  const admin = requireAdmin_(token);
+  patch = patch || {};
+  const model = patch.model !== undefined && String(patch.model).trim() !== '' ? checkModelName_(patch.model) : prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
+  const newMain = patch.apiKey !== undefined && String(patch.apiKey).trim() !== '' ? checkKeyFormat_(patch.apiKey) : '';
+  const rawBaks = Array.isArray(patch.backupKeys) ? patch.backupKeys.slice(0, AI_BACKUP_PROPS.length) : [];
+  if (patch.backupKey !== undefined && String(patch.backupKey).trim() !== '' && !String(rawBaks[0] || '').trim()) rawBaks[0] = patch.backupKey;
+  const newBaks = AI_BACKUP_PROPS.map(function (n, i) {
+    return rawBaks[i] !== undefined && String(rawBaks[i] || '').trim() !== '' ? checkKeyFormat_(rawBaks[i]) : '';
+  });
+  const clears = {};
+  (Array.isArray(patch.clearBackups) ? patch.clearBackups : []).forEach(function (n) {
+    n = Number(n); if (n >= 1 && n <= AI_BACKUP_PROPS.length) clears[n - 1] = true;
+  });
+  if (patch.clearBackup === true) clears[0] = true;
+  if (patch.tier !== undefined && patch.tier !== '' && AI_TIERS.indexOf(patch.tier) < 0) throw new Error('Gói không hợp lệ (free hoặc paid).');
+  const p = PropertiesService.getScriptProperties();
+  // Không cho hai ô cùng một khoá: dùng chung khoá thì chung hạn mức, dự phòng không có tác dụng.
+  const finalKeys = ['GEMINI_API_KEY'].concat(AI_BACKUP_PROPS).map(function (n, i) {
+    if (i === 0) return newMain || String(p.getProperty(n) || '').trim();
+    if (newBaks[i - 1]) return newBaks[i - 1];
+    if (clears[i - 1]) return '';
+    return String(p.getProperty(n) || '').trim();
+  });
+  const seen = {};
+  finalKeys.forEach(function (k, i) {
+    if (!k) return;
+    if (seen[k] !== undefined) throw new Error((i === 0 ? 'Khoá chính' : 'Khoá dự phòng ' + i) + ' trùng với ' + (seen[k] === 0 ? 'khoá chính' : 'khoá dự phòng ' + seen[k]) + '. Mỗi ô phải là một khoá khác nhau (tạo ở dự án Google khác). Chưa lưu thay đổi nào.');
+    seen[k] = i;
+  });
+  const tested = [];
+  [['Khoá chính', newMain]].concat(newBaks.map(function (k, i) { return ['Khoá dự phòng ' + (i + 1), k]; })).forEach(function (x) {
+    if (!x[1]) return;
+    const r = testGeminiKey_(x[1], model);
+    if (!r.ok) throw new Error(x[0] + ': ' + r.message + ' Chưa lưu thay đổi nào.');
+    tested.push(x[0] + (r.warn ? ' (hết hạn mức tạm thời)' : ''));
+  });
+  const changed = [];
+  if (newMain) { p.setProperty('GEMINI_API_KEY', newMain); changed.push('khoa_chinh ' + keyHint_(newMain)); }
+  AI_BACKUP_PROPS.forEach(function (n, i) {
+    if (newBaks[i]) { p.setProperty(n, newBaks[i]); changed.push('khoa_du_phong_' + (i + 1) + ' ' + keyHint_(newBaks[i])); }
+    else if (clears[i]) { p.deleteProperty(n); changed.push('xoa_khoa_du_phong_' + (i + 1)); }
+  });
+  if (model !== prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL)) { p.setProperty('GEMINI_MODEL', model); changed.push('model=' + model); }
+  if (patch.tier !== undefined) {
+    if (patch.tier) p.setProperty('GEMINI_TIER', patch.tier); else p.deleteProperty('GEMINI_TIER');
+    changed.push('goi=' + (patch.tier || 'chua_chon'));
+  }
+  if (changed.length) clearKeyCooldowns_();
+  if (changed.length) audit_(admin.username, 'DOI_CAU_HINH_AI', 'GEMINI', changed.join('; ')); // chỉ ghi 4 ký tự cuối, không ghi khoá
+  const view = aiConfigView_();
+  view.tested = tested;
+  return view;
+}
+
+/** Kiểm tra khoá đang dùng (chính và dự phòng) với model hiện tại. */
+function testAiConfig(token) {
+  requireAdmin_(token);
+  const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
+  const p = PropertiesService.getScriptProperties();
+  const out = [];
+  [['main', 'Khoá chính', 'GEMINI_API_KEY']].concat(AI_BACKUP_PROPS.map(function (n, i) { return ['backup' + (i + 1), 'Khoá dự phòng ' + (i + 1), n]; })).forEach(function (x) {
+    const k = String(p.getProperty(x[2]) || '').trim();
+    if (!k) { out.push({ slot: x[0], label: x[1], set: false }); return; }
+    const r = testGeminiKey_(k, model);
+    out.push({ slot: x[0], label: x[1], set: true, hint: keyHint_(k), ok: r.ok, warn: r.warn, message: r.message });
+  });
+  return out;
 }
 
 /* ============================ BƯỚC 2: LƯU & QUẢN LÝ BẢN GHI ============================ */
@@ -1511,6 +1800,96 @@ function clean_(v, type) {
 
 /* ============================ TIỆN ÍCH ============================ */
 
+/** Thuộc tính lưu khoá dự phòng, theo thứ tự thử: dự phòng 1 (tên cũ GEMINI_API_KEY_BACKUP), 2, 3, 4. */
+const AI_BACKUP_PROPS = ['GEMINI_API_KEY_BACKUP', 'GEMINI_API_KEY_BACKUP_2', 'GEMINI_API_KEY_BACKUP_3', 'GEMINI_API_KEY_BACKUP_4'];
+
+/** Khoá Gemini theo thứ tự thử: khoá chính, rồi dự phòng 1 → 4 (bỏ khoá trống và khoá trùng khoá đứng trước). */
+function geminiKeys_() {
+  const p = PropertiesService.getScriptProperties();
+  const out = [];
+  ['GEMINI_API_KEY'].concat(AI_BACKUP_PROPS).forEach(function (name) {
+    const k = String(p.getProperty(name) || '').trim();
+    if (k && out.indexOf(k) < 0) out.push(k);
+  });
+  if (!out.length) throw new Error('Chưa cấu hình Script Property: GEMINI_API_KEY');
+  return out;
+}
+
+/* ---- Khoá Gemini "nghỉ" (cooldown): nhớ khoá vừa lỗi để lần quét sau dùng thẳng khoá còn dùng được ---- */
+const KEY_COOLDOWN_MAX_SEC = 1800; // tối đa 30 phút: lỡ hạn mức đã được nâng/đặt lại sớm thì tối đa 30 phút sau tự thử lại
+
+function cooldownCacheKey_(key) { return 'gkcd_' + hash_(key); }
+
+/** Số giây khoá nên nghỉ theo mã lỗi: 429 theo thời gian Gemini báo; 403/khoá sai 10 phút; 5xx 30 giây. */
+function cooldownSecFor_(resp, code) {
+  let sec;
+  if (code === 429) sec = retryAfterSec_(resp.getContentText(), Date.now());
+  else if (code >= 500) sec = 30;
+  else sec = 600;
+  return Math.max(5, Math.min(KEY_COOLDOWN_MAX_SEC, Math.round(sec)));
+}
+
+/** Số giây khoá còn phải nghỉ (0 nếu đang dùng được hoặc không có cache). */
+function keyCooldownLeft_(key) {
+  if (!key) return 0;
+  try {
+    const until = Number(CacheService.getScriptCache().get(cooldownCacheKey_(key)) || 0);
+    return until > Date.now() ? Math.ceil((until - Date.now()) / 1000) : 0;
+  } catch (e) { return 0; }
+}
+
+function slotView_(key) {
+  const v = { set: !!key, hint: keyHint_(key) };
+  const w = keyCooldownLeft_(key);
+  if (w > 0) v.waitSec = w; // chỉ ADMIN thấy: khoá đang nghỉ do hết hạn mức / lỗi
+  return v;
+}
+
+function markKeyCooldown_(key, sec) {
+  try {
+    CacheService.getScriptCache().put(cooldownCacheKey_(key), String(Date.now() + sec * 1000), Math.max(5, Math.min(21600, Math.round(sec))));
+  } catch (e) { /* không có cache: bỏ qua, vẫn chạy như cũ */ }
+}
+
+/** Xoá trạng thái nghỉ của mọi khoá (gọi khi ADMIN đổi khoá/gói ở Cài đặt AI). */
+function clearKeyCooldowns_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    geminiKeysSafe_().forEach(function (k) { cache.remove(cooldownCacheKey_(k)); });
+  } catch (e) { /* bỏ qua */ }
+}
+
+function geminiKeysSafe_() {
+  try { return geminiKeys_(); } catch (e) { return []; }
+}
+
+/** Tách khoá thành nhóm sẵn sàng (giữ thứ tự chính -> dự phòng) và nhóm đang nghỉ; minWaitSec = thời gian chờ ngắn nhất nếu mọi khoá đều nghỉ. */
+function splitKeysByCooldown_(keys) {
+  const now = Date.now();
+  const ready = [];
+  let minWait = 0;
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  keys.forEach(function (k) {
+    let until = 0;
+    if (cache) { try { until = Number(cache.get(cooldownCacheKey_(k)) || 0); } catch (e) { until = 0; } }
+    if (until > now) {
+      const w = Math.ceil((until - now) / 1000);
+      minWait = minWait === 0 ? w : Math.min(minWait, w);
+    } else {
+      ready.push(k);
+    }
+  });
+  return { ready: ready, minWaitSec: Math.max(1, minWait) };
+}
+
+/** Phản hồi Gemini cho biết khoá sai / bị thu hồi (HTTP 400 API_KEY_INVALID hoặc 'API key not valid'). */
+function isBadKey_(resp) {
+  if (resp.getResponseCode() !== 400) return false;
+  const t = resp.getContentText();
+  return t.indexOf('API_KEY_INVALID') >= 0 || /API key not valid|API key expired/i.test(t);
+}
+
 function prop_(key, fallback) {
   const v = PropertiesService.getScriptProperties().getProperty(key);
   if (v) return v.trim();
@@ -1522,14 +1901,47 @@ function hash_(s) {
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s)).slice(0, 32);
 }
 
+/** Số giây còn lại đến 0h giờ Thái Bình Dương: lúc Gemini đặt lại hạn mức theo ngày (RPD). */
+function secondsToPacificMidnight_(nowMs) {
+  const t = Utilities.formatDate(new Date(nowMs), 'America/Los_Angeles', 'H:m:s').split(':');
+  return 86400 - (Number(t[0]) * 3600 + Number(t[1]) * 60 + Number(t[2]));
+}
+
+/**
+ * Đọc thời gian phải chờ từ thân lỗi 429 của Gemini (giây).
+ * Ưu tiên RetryInfo.retryDelay; hết hạn mức theo ngày (PerDay) thì chờ đến 0h giờ Thái Bình Dương;
+ * không có thông tin thì mặc định 60 giây (hạn mức theo phút).
+ */
+function retryAfterSec_(bodyText, nowMs) {
+  let info = null;
+  try { info = JSON.parse(bodyText); } catch (e) { info = null; }
+  const details = (info && info.error && info.error.details) || [];
+  let delay = 0, daily = false;
+  details.forEach(function (d) {
+    if (d && d.retryDelay) {
+      const m = /^(\d+(?:\.\d+)?)s$/.exec(String(d.retryDelay));
+      if (m) delay = Math.max(delay, Math.ceil(Number(m[1])));
+    }
+    (d && d.violations || []).forEach(function (v) {
+      if (/PerDay/i.test(String(v.quotaId || '') + ' ' + String(v.quotaMetric || ''))) daily = true;
+    });
+  });
+  if (daily) return secondsToPacificMidnight_(nowMs);
+  return delay > 0 ? delay : 60;
+}
+
+/** Dấu hiệu gắn cuối thông báo lỗi để giao diện đếm ngược; giao diện sẽ cắt dấu hiệu này khi hiển thị. */
+function retryMarker_(sec) { return ' [[RETRY_AFTER:' + Math.max(1, Math.round(sec)) + ']]'; }
+
 /** UrlFetch có thử lại luỹ thừa cho lỗi 429 / 5xx / lỗi mạng. */
-function fetchRetry_(url, options) {
+function fetchRetry_(url, options, no429Retry) {
   let lastErr = null;
   for (let i = 0; i < 4; i++) {
     try {
       const resp = UrlFetchApp.fetch(url, options);
       const code = resp.getResponseCode();
       if (code !== 429 && code < 500) return resp;
+      if (code === 429 && no429Retry) return resp;
       if (i === 3) return resp;
     } catch (e) {
       lastErr = e;

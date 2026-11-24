@@ -1,6 +1,5 @@
-import { getSettings, setSettings, getPreset, getFboLogins, saveFboLogin, deleteFboLogin } from './lib/store.js';
+import { getSettings, setSettings, getFboLogins, saveFboLogin, deleteFboLogin } from './lib/store.js';
 import { inspectActiveTab } from './lib/fbo.js';
-import { validateMapping, diffFromPreset } from './lib/mapping.js';
 import { normalizeOrigin } from './lib/appconfig.js';
 
 const $ = (id) => document.getElementById(id);
@@ -28,13 +27,12 @@ async function render() {
   const lt = $('logins'); lt.textContent = '';
   for (const [o, r] of Object.entries(logins)) {
     const tr = document.createElement('tr');
-    cell(tr, o); cell(tr, [r.company, r.unit, r.user].filter(Boolean).join(' / ')); cell(tr, r.passEnc ? 'Có mật khẩu (mã hoá)' : 'Chưa có mật khẩu');
+    cell(tr, o); cell(tr, r.user || ''); cell(tr, r.passEnc ? 'Có mật khẩu (mã hoá)' : 'Chưa có mật khẩu');
     const act = cell(tr, '');
-    act.appendChild(btn('Sửa', () => { $('lg-origin').value = o; $('lg-company').value = r.company; $('lg-unit').value = r.unit; $('lg-user').value = r.user; $('lg-pass').value = ''; }));
+    act.appendChild(btn('Sửa', () => { $('lg-origin').value = o; $('lg-user').value = r.user; $('lg-pass').value = ''; }));
     act.appendChild(btn('Xoá', async () => { await deleteFboLogin(o); render(); }));
     lt.appendChild(tr);
   }
-  $('mapping').value = JSON.stringify(s.fboMappings, null, 2);
 }
 
 render();
@@ -56,26 +54,11 @@ $('grant-all').onclick = async () => grant((await getSettings()).fboOrigins);
 
 $('save-login').onclick = async () => {
   try {
-    await saveFboLogin($('lg-origin').value, { company: $('lg-company').value.trim(), unit: $('lg-unit').value.trim(), user: $('lg-user').value.trim(), password: $('lg-pass').value });
+    await saveFboLogin($('lg-origin').value, { user: $('lg-user').value.trim(), password: $('lg-pass').value });
     $('lg-pass').value = '';
     say('Đã lưu đăng nhập FBO.');
     render();
   } catch (e) { say(e.message, true); }
-};
-
-$('save-map').onclick = async () => {
-  let obj;
-  try { obj = JSON.parse($('mapping').value || '{}'); } catch (e) { return say('JSON sai cú pháp: ' + e.message, true); }
-  const err = validateMapping(obj);
-  if (err) return say(err, true);
-  const user = diffFromPreset(await getPreset(), obj);
-  await setSettings({ fboMappingsUser: user });
-  say('Đã lưu. ' + Object.keys(user).length + ' loại được chỉnh khác mẫu, các loại còn lại dùng mẫu đi kèm extension.');
-};
-$('reset-map').onclick = async () => {
-  await setSettings({ fboMappingsUser: {} });
-  $('mapping').value = JSON.stringify(await getPreset(), null, 2);
-  say('Đã khôi phục ánh xạ mặc định đi kèm extension.');
 };
 
 let last = '';

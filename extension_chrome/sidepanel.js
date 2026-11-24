@@ -1,10 +1,16 @@
 import { ENABLED_TYPES, DEFAULT_LIMITS } from './lib/config.js';
 import { createGasClient, GasError } from './lib/gas.js';
 import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword } from './lib/store.js';
-import { prepareFile } from './lib/image.js';
+import { prepareFile, shrinkBase64 } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
-import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
+import { DERIVED_LABELS } from './lib/dm.js';
+import { readCccdQr, mergeQr } from './lib/qr.js';
+import { fillActiveTab, loginFboActiveTab, inspectFormTab } from './lib/fbo.js';
+import { formatInspect, countControls } from './lib/inspectfmt.js';
 import { hasMapping } from './lib/mapping.js';
+import { splitRetry, formatWait } from './lib/quota.js';
+import { FORM_WAIT_MS, FillStopped } from './lib/formcheck.js';
+import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scanprogress.js';
 
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
@@ -18,6 +24,7 @@ function show(view) {
 }
 function msg(text, kind) {
   const el = $('msg');
+  text = splitRetry(text).text; // không bao giờ hiện dấu hiệu chờ thô
   el.hidden = !text; el.textContent = text || ''; el.className = 'msg' + (kind === 'info' ? ' info' : '');
 }
 function busy(btn, on, label) {
@@ -57,6 +64,7 @@ async function api(action, args, retried) {
 async function logout(message, keepPassword) {
   try { if (state.auth) await call('logout', [state.auth.token]); } catch { /* bỏ qua */ }
   state.auth = null; await setAuth(null);
+  $('btn-inspect').hidden = true; $('inspect-box').hidden = true;
   if (!keepPassword) await forgetOcrPassword();
   $('who').textContent = ''; $('btn-fbo-login').hidden = true;
   await showLogin(message);
@@ -93,12 +101,13 @@ async function loadConfig() {
   const byCode = new Map(cfg.types.map((t) => [t.code, t]));
   state.config = {
     types: ENABLED_TYPES.map((c) => byCode.get(c)).filter(Boolean),
-    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles }
+    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles, scanPer10Min: cfg.scanPer10Min || DEFAULT_LIMITS.scanPer10Min, sessionHours: cfg.sessionHours || DEFAULT_LIMITS.sessionHours }
   };
 }
 
 async function enter() {
   $('who').textContent = state.auth.me.name + ' (' + state.auth.me.username + ')';
+  $('btn-inspect').hidden = state.auth.me.role !== 'ADMIN'; // "Dò form" chỉ dành cho quản trị viên (người lập ánh xạ)
   $('btn-fbo-login').hidden = false;
   await loadConfig();
   checkFboPermission();
@@ -129,7 +138,58 @@ function renderFiles() {
   });
 }
 
-function updateScanBtn() { $('btn-scan').disabled = !(state.type && state.files.length); }
+/* ---------- Hết hạn mức Gemini: cảnh báo + đếm ngược, tự ẩn khi hết giờ chờ ---------- */
+const QUOTA_KEY = 'ocrQuotaUntil2'; // đổi tên khoá nhớ: bỏ các bộ đếm cũ do backend một khoá tạo ra
+const QUOTA_KEY_OLD = 'ocrQuotaUntil';
+let quotaUntil = 0, quotaTimer = null;
+function hhmm(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+function renderQuota() {
+  const bar = $('quota-bar');
+  const left = Math.ceil((quotaUntil - Date.now()) / 1000);
+  if (left <= 0) {
+    clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
+    try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* bỏ qua */ }
+    bar.hidden = true; bar.textContent = ''; delete bar.dataset.built; updateScanBtn(); return; // hết giờ chờ: ẩn thông báo, mở lại nút Quét
+  }
+  // Dựng khung một lần; mỗi giây chỉ cập nhật số đếm để nút "Ẩn thông báo" không bị vẽ lại giữa lúc bấm.
+  if (!bar.dataset.built) {
+    bar.textContent = '';
+    const t = document.createElement('div'); t.textContent = '⚠ Các khóa AI (Gemini) đang tạm hết hạn mức. Hệ thống tự dùng khóa dự phòng; bạn vẫn có thể bấm Quét để thử lại.';
+    const c = document.createElement('div'); c.append('Nếu vẫn báo lỗi, dự kiến dùng lại được sau: ');
+    const b = document.createElement('b'); b.id = 'quota-left';
+    const when = document.createElement('span'); when.id = 'quota-when'; c.append(b, when);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'link'; x.textContent = 'Ẩn thông báo';
+    x.onclick = clearQuotaWait;
+    bar.append(t, c, x); bar.dataset.built = '1';
+  }
+  $('quota-left').textContent = formatWait(left);
+  $('quota-when').textContent = ' (khoảng ' + hhmm(quotaUntil) + ' ' + (new Date(quotaUntil).toDateString() === new Date().toDateString() ? 'hôm nay' : 'ngày mai') + ').';
+  bar.hidden = false;
+}
+function startQuotaWait(seconds) {
+  quotaUntil = Date.now() + Math.max(1, seconds) * 1000;
+  try { localStorage.setItem(QUOTA_KEY, String(quotaUntil)); } catch (e) { /* bỏ qua */ }
+  clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000);
+  renderQuota(); updateScanBtn();
+}
+/** Quét AI thành công: xoá thông báo hết hạn mức còn sót lại (kể cả bản nhớ từ lần trước). */
+function clearQuotaWait() {
+  clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
+  try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* bỏ qua */ }
+  const bar = $('quota-bar'); bar.hidden = true; bar.textContent = ''; delete bar.dataset.built;
+}
+function restoreQuotaWait() {
+  try { localStorage.removeItem(QUOTA_KEY_OLD); } catch (e) { /* bỏ qua */ }
+  let v = 0; try { v = Number(localStorage.getItem(QUOTA_KEY)) || 0; } catch (e) { v = 0; }
+  if (v > Date.now()) { quotaUntil = v; clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000); renderQuota(); }
+}
+
+function updateScanBtn() {
+  // Bộ đếm hạn mức chỉ là thông báo: không khoá nút Quét, vì máy chủ tự thử lần lượt các khoá dự phòng và báo lại thời gian chờ chính xác.
+  $('btn-scan').disabled = !(state.type && state.files.length);
+  $('row-qronly').hidden = state.type !== 'CCCD';
+  $('row-relation').hidden = state.type !== 'KHAI_SINH';
+}
 
 async function addFiles(list) {
   msg('');
@@ -147,21 +207,108 @@ async function addFiles(list) {
   renderFiles(); updateScanBtn();
 }
 
+const LIMIT_OPEN_KEY = 'ocrLimitOpen';
+/** Ghi chú giới hạn dưới khu chọn tệp: tệp, dung lượng, số lần quét, thời gian, hạn mức AI. */
+function renderLimits() {
+  const L = state.config.limits, mb = (b) => Math.round(b / 1048576);
+  const items = [
+    'Tối đa ' + L.maxFiles + ' tệp mỗi tài liệu (ví dụ CCCD 2 mặt = 2 ảnh).',
+    'Dung lượng: mỗi tệp tối đa ' + mb(L.maxFileBytes) + ' MB, tổng các tệp tối đa ' + mb(L.maxTotalBytes) + ' MB. Chỉ nhận JPG, PNG, WEBP, PDF; ảnh tự nén JPG, cạnh dài tối đa 2400 px.',
+    'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
+    'Mỗi lần quét xử lý tối đa khoảng 6 phút; quá thời gian sẽ báo lỗi, hãy quét lại với ít trang hơn.',
+    'Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.',
+    'Hạn mức AI (Gemini) tính theo khóa API, theo phút và theo ngày do Google quy định. Chạm hạn mức sẽ hiện đồng hồ đếm ngược; hạn mức ngày đặt lại lúc 0 giờ giờ Thái Bình Dương (khoảng 14-15 giờ giờ Việt Nam).'
+  ];
+  const box = $('limit-hint');
+  box.textContent = '';
+  // Thu gọn/mở rộng bằng <details>; trạng thái nhớ lại ở lần mở sau (mặc định thu gọn cho gọn màn hình).
+  const det = document.createElement('details');
+  det.className = 'limits-box';
+  try { det.open = localStorage.getItem(LIMIT_OPEN_KEY) === '1'; } catch (e) { det.open = false; }
+  const sum = document.createElement('summary');
+  sum.textContent = 'Giới hạn và lưu ý khi quét';
+  det.appendChild(sum);
+  const ul = document.createElement('ul');
+  ul.className = 'limits';
+  for (const t of items) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
+  det.appendChild(ul);
+  det.addEventListener('toggle', () => { try { localStorage.setItem(LIMIT_OPEN_KEY, det.open ? '1' : '0'); } catch (e) { /* bỏ qua */ } });
+  box.appendChild(det);
+}
+
 function resetScan() {
   state.files = []; state.scan = null; state.saved = null;
   renderTypes(); renderFiles(); updateScanBtn();
-  $('limit-hint').textContent = 'Tối đa ' + state.config.limits.maxFiles + ' tệp mỗi tài liệu (ví dụ CCCD 2 mặt = 2 ảnh).';
+  renderLimits();
 }
 
 /* ---------- Quét ---------- */
+// Tiến trình quét: % là ước lượng theo thời gian các lần quét trước (máy chủ chỉ trả kết quả một lần khi xong).
+const SCAN_HIST_KEY = 'ocrScanMs';
+const scanHist = () => { try { return JSON.parse(localStorage.getItem(SCAN_HIST_KEY) || '[]'); } catch (e) { return []; } };
+const scanProg = { timer: null, t0: 0, stage: 'ai', expected: 0, n: 0, btn: null };
+function tickScan() {
+  const el = Date.now() - scanProg.t0;
+  $('scan-progress').value = estimatePercent(el, scanProg.expected);
+  const txt = stageText(scanProg.stage, el, scanProg.expected, scanProg.n);
+  $('scan-info').textContent = txt;
+  if (scanProg.btn) scanProg.btn.textContent = 'Đang quét... ' + Math.floor(el / 1000) + ' giây';
+}
+function startScanProgress(btn, n, stage) {
+  scanProg.t0 = Date.now(); scanProg.stage = stage; scanProg.n = n; scanProg.btn = btn;
+  scanProg.expected = stage === 'qr' ? 3000 : expectedMs(scanHist());
+  $('scan-progress').hidden = false; $('scan-info').hidden = false;
+  clearInterval(scanProg.timer); scanProg.timer = setInterval(tickScan, 250); tickScan();
+}
+function setScanStage(stage) {
+  if (scanProg.stage === stage) return;
+  scanProg.stage = stage;
+  if (stage === 'save') scanProg.expected = 4000; // chỉ lưu ảnh lên Drive
+  else if (stage === 'ai') { scanProg.t0 = Date.now(); scanProg.expected = expectedMs(scanHist()); } // bắt đầu đếm lại cho bước gọi AI
+  tickScan();
+}
+function stopScanProgress(success) {
+  clearInterval(scanProg.timer); scanProg.timer = null; scanProg.btn = null;
+  const bar = $('scan-progress'), info = $('scan-info');
+  if (success) {
+    const total = Date.now() - scanProg.t0;
+    if (scanProg.stage === 'ai') { try { localStorage.setItem(SCAN_HIST_KEY, JSON.stringify(pushDuration(scanHist(), total))); } catch (e) { /* bỏ qua */ } }
+    bar.value = 100; info.textContent = 'Quét xong sau ' + (total / 1000).toFixed(1) + ' giây.';
+    setTimeout(() => { if (!scanProg.timer) { bar.hidden = true; info.hidden = true; } }, 1500);
+  } else { bar.hidden = true; info.hidden = true; }
+}
+
 async function doScan() {
   msg('');
   const btn = $('btn-scan');
   busy(btn, true, 'Đang quét...');
   try {
-    const r = await api('scanDocument', [{ docType: state.type, files: state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 })) }]);
+    // CCCD: đọc mã QR; dữ liệu QR (số CCCD, họ tên đủ dấu, ngày sinh, giới tính, thường trú, ngày cấp) ghi đè kết quả OCR.
+    // Chế độ "chỉ QR": QR hợp lệ thì không gọi AI (nhanh); QR không đọc được thì tự quay về OCR như thường.
+    // Biển số: chữ rất to, thu ảnh về 1280px cho gửi nhanh hơn (không đổi ảnh gốc đang hiển thị)
+    const toSend = state.type === 'BIEN_SO_XE' ? await Promise.all(state.files.map((f) => shrinkBase64(f, 1280))) : state.files;
+    const files = toSend.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
+    const qrFirst = state.type === 'CCCD' && $('in-qronly').checked;
+    startScanProgress(btn, files.length, qrFirst ? 'qr' : 'ai');
+    let qr = null, qrTask = Promise.resolve(null);
+    if (qrFirst) {
+      qr = await readCccdQr(state.files).catch(() => null);
+    } else if (state.type === 'CCCD') {
+      qrTask = readCccdQr(state.files).catch(() => null);
+    }
+    const skipAiUsed = !!qr; // chỉ true ở chế độ chỉ QR khi QR hợp lệ: backend không gọi AI
+    if (qrFirst) setScanStage(skipAiUsed ? 'save' : 'ai');
+    const [r, qr2] = await Promise.all([
+      api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
+      qrTask
+    ]);
+    qr = qr || qr2;
+    if (!skipAiUsed) clearQuotaWait(); // AI trả kết quả được thì hạn mức không còn là vấn đề
+    r.data = r.data || {};
+    const used = mergeQr(r.data, qr);
+    if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
     state.scan = r;
-    renderReview(r.data || {});
+    renderReview(r.data);
     show('review');
     if (r.ms) msg('Quét xong trong ' + Math.round(r.ms / 1000) + ' giây (AI ' + Math.round((r.msAi || 0) / 1000) + ' giây, lưu ảnh ' + Math.round((r.msDrive || 0) / 1000) + ' giây).', 'info');
   } catch (e) { msg(e.message); }
@@ -185,7 +332,7 @@ function renderReview(data) {
     if (f.type === 'number') el.inputMode = 'decimal';
     label.appendChild(el); form.appendChild(label);
   }
-  $('after-save').hidden = true; $('review-actions').hidden = false; $('fill-info').textContent = '';
+  $('after-save').hidden = true; $('review-actions').hidden = false; $('fill-info').textContent = ''; $('fill-progress').hidden = true;
   setFormDisabled(false);
 }
 
@@ -234,30 +381,90 @@ function thisPeriod() {
 /* ---------- Bước 4: điền FBO ---------- */
 async function doFill() {
   msg('');
-  const btn = $('btn-fill'), info = $('fill-info');
-  busy(btn, true, 'Đang điền...');
-  info.textContent = '';
+  const btn = $('btn-fill'), info = $('fill-info'), bar = $('fill-progress');
+  busy(btn, true, 'Đang chuẩn bị...');
+  info.textContent = ''; info.className = 'hint';
+  bar.hidden = false; bar.removeAttribute('value'); // thanh chạy không xác định trong lúc chờ form
+  const t = state.config && state.config.types.find((x) => x.code === state.type);
+  const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
+  const list = (a) => a.map(label).join(', ');
+  const typeName = (code) => { const x = state.config && state.config.types.find((y) => y.code === code); return x ? x.label : code; };
+  const cut = (v) => { v = String(v); return v.length > 40 ? v.slice(0, 40) + '…' : v; };
+  const ctl = new AbortController(), stop = $('btn-stop');
+  stop.hidden = false; stop.disabled = false; stop.onclick = () => { stop.disabled = true; ctl.abort(); };
+  const opts = {
+    signal: ctl.signal,
+    required: t ? t.required : [],
+    relation: $('in-relation').value,
+    onProgress: (p) => {
+      const sec = p.elapsed != null ? ' ' + Math.floor(p.elapsed / 1000) + 's' : '';
+      if (p.phase === 'tab') { btn.textContent = 'Đang chọn tab FBO...'; info.textContent = 'Điền vào tab: "' + cut(p.title) + '". Hãy giữ nguyên tab này đến khi xong.'; }
+      else if (p.phase === 'prepare') btn.textContent = 'Chuẩn bị điền...';
+      else if (p.phase === 'form') { if (p.label) info.textContent += ' Nhận diện form: ' + p.label + '.'; }
+      else if (p.phase === 'wait') btn.textContent = 'Chờ form FBO...' + sec + ' (thấy ' + p.found + '/' + p.total + ' ô)';
+      else if (p.phase === 'check') btn.textContent = 'Kiểm tra dữ liệu có sẵn...';
+      else if (p.phase === 'fill') btn.textContent = 'Đang điền...';
+    },
+    // Form chỉ khớp một phần số ô (có thể là form khác loại, hoặc tab con chưa mở): để người dùng quyết định
+    confirmPartial: async (x) => confirm('Form FBO đang mở chỉ có ' + x.found + '/' + x.total + ' ô khớp với loại "' + (t ? t.label : state.type) + '".\n\nCó thể bạn đang mở nhầm form, hoặc một số ô nằm ở tab con chưa mở.\n\nVẫn điền các ô tìm thấy?'),
+    // Form đang có dữ liệu khác ở trường bắt buộc (vd mở hồ sơ người khác): hỏi trước khi ghi đè
+    confirmOverwrite: async (over) => confirm('Form FBO đang có dữ liệu khác:\n\n' +
+      over.map((o) => '• ' + label(o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"' + (o.foreign ? ' (đang là dữ liệu do tool ' + typeName(o.src) + ' điền)' : '')).join('\n') +
+      '\n\nGhi đè bằng dữ liệu vừa quét?')
+  };
+  let done = false;
   try {
-    const r = await fillActiveTab(state.type, state.saved.data);
+    const r = await fillActiveTab(state.type, state.saved.data, opts);
     if (r.status === 'NO_MAPPING') {
       info.textContent = 'Chưa khai báo ánh xạ trường FBO cho loại này. Mở Cài đặt để khai báo.';
       return;
     }
-    const t = state.config && state.config.types.find((x) => x.code === state.type);
-    const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : k; };
-    const list = (a) => a.map(label).join(', ');
-    const parts = ['Đã điền ' + r.filled.length + ' trường' + (r.filled.length ? ' (' + list(r.filled) + ')' : '') + '.'];
+    if (r.status === 'NO_FORM') {
+      info.textContent = 'Bạn chưa mở form cần điền ở tab hiện tại (đã chờ ' + FORM_WAIT_MS / 1000 + ' giây, không thấy ô nào của form "' + (t ? t.label : state.type) + '"). Đăng nhập FBO và mở đúng form (nếu form có nhiều tab, mở tab cần điền), rồi bấm Điền vào FBO lại.';
+      info.className = 'warn'; return;
+    }
+    if (r.status === 'CANCELLED') {
+      info.textContent = r.wrongForm ? 'Đã hủy: form đang mở chỉ khớp ' + r.found + '/' + r.selectors + ' ô. Mở đúng form rồi bấm Điền vào FBO lại.' : 'Đã hủy: không ghi đè dữ liệu đang có trên form FBO.';
+      info.className = 'warn'; return;
+    }
+    const parts = ['Đã điền ' + r.filled.length + '/' + r.total + ' trường (' + Math.round(r.filled.length * 100 / (r.total || 1)) + '%)' + (r.filled.length ? ': ' + list(r.filled) : '') + '.'];
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
+    parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
+    if (r.diag) parts.push('Chẩn đoán ô địa chỉ (gửi lại cho người hỗ trợ): ' + r.diag + '.');
+    if (r.mainOnly) parts.push('(Trang có khung phụ không phản hồi nên chỉ điền ở khung chính.)');
+    if (r.away) parts.push('Lưu ý: đã điền vào tab "' + cut(r.tabTitle) + '", không phải tab bạn đang xem. Quay lại tab đó để kiểm tra.');
     info.textContent = parts.join(' ');
-    info.className = r.status === 'FILLED' ? 'ok' : 'warn';
+    info.className = r.status === 'FILLED' && !r.away ? 'ok' : 'warn';
+    bar.max = r.total || 1; bar.value = r.filled.length; done = true; // thanh hiện tỉ lệ đã điền, giữ lại để NSD xem
     try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
     catch (e) { info.textContent += ' (Chưa cập nhật được trạng thái đồng bộ: ' + e.message + ')'; }
   } catch (e) {
-    info.textContent = e.message; info.className = 'warn';
-    try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
-  } finally { busy(btn, false); }
+    if (e instanceof FillStopped) { // bấm Dừng: không đánh dấu lỗi, cho điền lại
+      info.textContent = 'Đã dừng. Mở lại tab và form FBO cần điền, rồi bấm "Điền vào FBO" để điền lại.'; info.className = 'warn';
+    } else {
+      info.textContent = e.message; info.className = 'warn';
+      try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
+    }
+  } finally { stop.hidden = true; stop.onclick = null; if (!done) bar.hidden = true; busy(btn, false); }
 }
+
+/* ---------- Dò form: liệt kê ô của tab đang xem, tự sao chép để dán cho người lập ánh xạ ---------- */
+async function doInspect() {
+  msg('');
+  const b = $('btn-inspect'); b.disabled = true;
+  try {
+    const frames = await inspectFormTab();
+    const text = formatInspect(frames), n = countControls(frames);
+    $('inspect-out').value = text; $('inspect-box').hidden = !n;
+    if (!n) { msg('Không thấy ô nhập nào ở tab đang xem. Mở form FBO ở tab này rồi bấm Dò form lại.'); return; }
+    let copied = true;
+    try { await navigator.clipboard.writeText(text); } catch (e) { copied = false; }
+    msg('Đã dò ' + n + ' ô của form' + (copied ? ' và sao chép vào bộ nhớ tạm. Dán (Ctrl+V) cho Claude.' : '. Chưa tự sao chép được: mở "Kết quả dò form", chọn hết rồi sao chép.'), 'info');
+  } catch (e) { msg(e.message); }
+  finally { b.disabled = false; }
+}
+$('btn-inspect').onclick = doInspect;
 
 /* ---------- Quyền FBO và đăng nhập FBO ---------- */
 async function checkFboPermission() {
@@ -275,6 +482,7 @@ async function doFboLogin() {
   busy(btn, true, 'Đang điền...');
   try {
     const r = await loginFboActiveTab();
+    if (r.skipped) { msg('Tab FBO đã đăng nhập, không cần đăng nhập lại.', 'info'); return; }
     const parts = [r.submitted ? 'Đã điền và bấm Nhận.' : 'Đã điền thông tin đăng nhập.'].concat(r.notes || []);
     msg(parts.join(' '), 'info');
   } catch (e) { msg(e.message); }
@@ -313,6 +521,7 @@ document.addEventListener('paste', (e) => {
 
 /* ---------- Khởi động ---------- */
 (async function init() {
+  restoreQuotaWait();
   await refreshRemoteConfig(); // link Apps Script nằm ở Web Admin (Vercel); lấy mới mỗi lần mở, lỗi mạng thì dùng bản đã lưu
   const { gasUrl } = await getSettings();
   if (!gasUrl) { show('login'); msg('Chưa lấy được địa chỉ máy chủ OCR từ Web Admin. Kiểm tra mạng, hoặc liên hệ quản trị viên (biến GAS_WEB_APP_URL trên Vercel).'); return; }

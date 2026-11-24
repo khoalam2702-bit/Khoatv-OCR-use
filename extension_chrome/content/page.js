@@ -1,5 +1,8 @@
 /* Chạy trong trang FBO (tiêm bằng chrome.scripting, mọi frame). Định nghĩa hai hàm toàn cục, không tự chạy gì.
- *  __KHOATV_FILL__(mapping, data)  -> { filled: [k], notFound: [k], empty: [k] }
+ *  __KHOATV_FILL__(mapping, data, opts) -> { filled: [k], notFound: [k], empty: [k] }
+ *       opts.src = mã loại tài liệu đang điền: ô được điền sẽ gắn data-khoatv-src; tính thử báo foreign=true khi ô đã do loại khác điền
+ *       opts.dry = true: chỉ tính thử, KHÔNG ghi vào form; trả thêm overwrite: [{ k, old, v }] = ô đang có giá trị khác sẽ bị ghi đè
+ *  __KHOATV_PROBE__(mapping)       -> { found: [selector] } các ô của ánh xạ đang có trên trang (để chờ form / kiểm tra đúng form)
  *  __KHOATV_INSPECT__()            -> danh sách ô nhập của trang (để lập ánh xạ trường)
  * mapping: { "<mã trường OCR>": "<css selector>" | { selector, map?, format?, transform? } | [ nhiều mục như trên ] }
  *   map:    { "Nam": "1", "Nữ": "0" }  đổi giá trị OCR sang giá trị ô chọn
@@ -71,14 +74,56 @@
     return v;
   }
 
-  function setOne(selector, value, spec, touched) {
+  /* Lưới nhập theo dòng (vd Người phụ thuộc): selector có {row} = dòng con trỏ đang đứng. Ưu tiên ô đang được chọn trong lưới;
+     không có thì dòng đầu chưa có tên; không có dòng trống thì dòng cuối. Chốt một lần cho mỗi lệnh. */
+  var rowCache = {};
+  function gridRow(marker) {
+    if (rowCache[marker] != null) return rowCache[marker];
+    var a = document.activeElement, m = a && a.id && a.id.indexOf(marker) >= 0 ? /_inputCell_(\d+)\.\d+$/.exec(a.id) : null, row = m ? +m[1] : 0;
+    if (!row) {
+      var first = 0, last = 0, els = document.querySelectorAll('input[id*="_inputCell_"]');
+      for (var i = 0; i < els.length; i++) {
+        var mm = els[i].id.indexOf(marker) >= 0 ? /_inputCell_(\d+)\.2$/.exec(els[i].id) : null;
+        if (!mm) continue;
+        last = +mm[1];
+        if (!first && !String(els[i].value || '').trim()) first = last;
+      }
+      row = first || last || 1;
+    }
+    return (rowCache[marker] = row);
+  }
+  function R(sel) {
+    if (typeof sel !== 'string' || sel.indexOf('{row}') < 0) return sel;
+    var mk = /"([^"]*?)inputCell_\{row\}/.exec(sel);
+    return sel.split('{row}').join(String(gridRow(mk ? mk[1] : '')));
+  }
+  /* Mã tự tăng (NPT01, NPT02...): lớn nhất trong cột mã của cùng lưới + 1. */
+  function nextCode(el, ac) {
+    var grid = el.id.replace(/_inputCell_\d+\.\d+$/, ''), col = (/\.(\d+)$/.exec(el.id) || [])[1];
+    var re = new RegExp('^' + (ac.prefix || '') + '(\\d+)$', 'i'), max = 0;
+    var els = document.querySelectorAll('input[id^="' + grid + '_inputCell_"]');
+    for (var i = 0; i < els.length; i++) {
+      if (els[i] === el || !new RegExp('\\.' + col + '$').test(els[i].id)) continue;
+      var m = re.exec(String(els[i].value || '').trim());
+      if (m && +m[1] > max) max = +m[1];
+    }
+    var n = String(max + 1);
+    while (n.length < (ac.digits || 2)) n = '0' + n;
+    return (ac.prefix || '') + n;
+  }
+
+  var curSrc = '';
+  function setOne(selector, value, spec, touched, dry) {
+    selector = R(selector);
     var el = document.querySelector(selector);
     if (!el) return 'notFound';
-    var v = spec.fixed !== undefined ? String(spec.fixed) : transform(value, spec.transform);
+    if (spec.autoCode && String(el.value || '').trim()) return 'empty'; // dòng đã có mã: giữ nguyên
+    var v = spec.autoCode ? nextCode(el, spec.autoCode) : spec.fixed !== undefined ? String(spec.fixed) : transform(value, spec.transform);
     if (v === '') return 'empty';
     if (spec.format === 'date' && !DATE_RE.test(v)) return 'empty'; // vd "Không thời hạn": bỏ qua, không điền
     v = mapValue(spec.map, v, spec.contains);
     if (v === '') return 'empty';
+    if (dry && (el.tagName === 'SELECT' || el.type === 'radio' || el.type === 'checkbox')) return 'ok'; // tính thử: không đổi ô chọn
     if (el.tagName === 'SELECT') return setSelect(el, v) ? 'ok' : 'notFound';
     if (el.type === 'radio') return setRadio(selector, v) ? 'ok' : 'notFound';
     if (el.type === 'checkbox') {
@@ -87,11 +132,14 @@
     }
     if (el.type === 'date' || spec.format === 'iso') v = dmyToIso(v);
     v = String(v);
+    if (dry && spec.append) return 'ok'; // ô dồn nhiều trường (Ghi chú): luôn nối thêm, không tính là ghi đè
     if (spec.prefix) v = spec.prefix + v;
     // append: nhiều trường OCR dồn vào cùng một ô (ví dụ Ghi chú), cách nhau bằng "; "
     if (spec.append && touched.has(el) && el.value) v = el.value + '; ' + v;
     touched.add(el);
     if (el.maxLength > 0 && v.length > el.maxLength) v = v.slice(0, el.maxLength);
+    if (dry) { dry.push({ old: String(el.value || ''), v: v, src: el.getAttribute('data-khoatv-src') || '' }); return 'ok'; } // chỉ ghi nhận giá trị cũ / mới
+    if (curSrc) el.setAttribute('data-khoatv-src', curSrc); // đánh dấu ô do loại tài liệu nào điền, để loại khác điền sau còn hỏi trước khi ghi đè
     try { el.focus(); } catch (e) { /* bỏ qua */ }
     setNative(el, String(v));
     fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
@@ -99,25 +147,65 @@
     return 'ok';
   }
 
-  globalThis.__KHOATV_FILL__ = function (mapping, data) {
-    var out = { filled: [], notFound: [], empty: [] };
-    var touched = new Set();
+  globalThis.__KHOATV_PROBE__ = function (mapping) {
+    rowCache = {};
+    var found = {};
     Object.keys(mapping || {}).forEach(function (k) {
+      (Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]]).forEach(function (sp) {
+        var sel = typeof sp === 'string' ? sp : sp && sp.selector;
+        if (!sel) return;
+        try { if (document.querySelector(R(sel))) found[sel] = 1; } catch (e) { /* selector sai: coi như không thấy */ }
+      });
+    });
+    return { found: Object.keys(found) };
+  };
+
+  globalThis.__KHOATV_FILL__ = function (mapping, data, opts) {
+    var out = { filled: [], notFound: [], empty: [] };
+    rowCache = {};
+    var touched = new Set();
+    var dryOn = !!(opts && opts.dry);
+    curSrc = (opts && opts.src) || '';
+    if (dryOn) out.overwrite = [];
+    Object.keys(mapping || {}).forEach(function (k) {
+      if (opts && opts.only && opts.only.indexOf(k) < 0) return; // chỉ điền các khóa này
+      if (opts && opts.except && opts.except.indexOf(k) >= 0) return; // bỏ qua các khóa này (điền ở lượt sau)
       var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
       var val = data ? data[k] : null;
-      var hasFixed = specs.some(function (sp) { return sp && typeof sp === 'object' && sp.fixed !== undefined; });
+      var hasFixed = specs.some(function (sp) { return sp && typeof sp === 'object' && (sp.fixed !== undefined || sp.autoCode); });
       if (!hasFixed && (val === null || val === undefined || val === '')) { out.empty.push(k); return; }
       var ok = 0, miss = 0, skip = 0;
       specs.forEach(function (spec) {
         if (typeof spec === 'string') spec = { selector: spec };
         if (!spec || !spec.selector) return;
-        var r;
-        try { r = setOne(spec.selector, val, spec, touched); } catch (e) { r = 'notFound'; }
+        var r, dry = dryOn ? [] : null;
+        try { r = setOne(spec.selector, val, spec, touched, dry); } catch (e) { r = 'notFound'; }
+        if (dry) dry.forEach(function (d) { if (d.old.replace(/[\s\/_.\-]+/g, '') !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v, src: d.src, foreign: !!d.src && d.src !== curSrc }); });
         if (r === 'ok') ok++; else if (r === 'empty') skip++; else miss++;
       });
       if (miss) out.notFound.push(k);
       else if (ok) out.filled.push(k);
       else if (skip) out.empty.push(k);
+    });
+    return out;
+  };
+
+  /** Đọc lại giá trị hiện có của các ô (để kiểm tra form có xóa mất giá trị vừa điền không). */
+  globalThis.__KHOATV_READ__ = function (selectors) {
+    return (selectors || []).map(function (sel) {
+      var el = null;
+      try { el = document.querySelector(R(sel)); } catch (e) { /* selector sai */ }
+      return { sel: sel, found: !!el, value: el ? String(el.value || '') : '' };
+    });
+  };
+
+  /** Chẩn đoán: liệt kê các ô có id chứa chuỗi cho trước (tag, id, loại, giá trị, có đang hiện không) để biết ô thật của form. */
+  globalThis.__KHOATV_DIAG__ = function (needles) {
+    var re = new RegExp((needles || []).join('|'), 'i'), out = [];
+    Array.prototype.forEach.call(document.querySelectorAll('[id]'), function (el) {
+      if (out.length >= 14 || !re.test(el.id)) return;
+      var vis = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+      out.push(el.tagName.toLowerCase() + (el.type ? '[' + el.type + ']' : '') + '#' + el.id.replace(/^.*_dirExtender_form_/, '…') + (vis ? '' : ' (ẩn)') + (el.value ? '="' + String(el.value).slice(0, 20) + '"' : ''));
     });
     return out;
   };
@@ -129,16 +217,19 @@
     setNative(el, String(v)); fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
   }
 
-  /* Điền form đăng nhập FBO (Công ty, Tên, Đơn vị, Mật khẩu) rồi bấm "Nhận". p = { company, unit, user, password, submit } */
+  /* Trang hiện tại có đang hiển thị form đăng nhập FBO (ô Tên + ô Mật khẩu) không. Không có = coi như đã đăng nhập. */
+  globalThis.__KHOATV_LOGIN_STATE__ = function () {
+    var user = byId('txtUserName'), pass = byId('txtPassword');
+    var shown = !!(user && pass && (pass.offsetWidth || pass.offsetHeight || pass.getClientRects().length));
+    return { loginPage: shown };
+  };
+
+  /* Điền form đăng nhập FBO (Tên, Mật khẩu) rồi bấm "Nhận"; ô Công ty/Đơn vị giữ nguyên giá trị FBO đang chọn. p = { user, password, submit } */
   globalThis.__KHOATV_LOGIN__ = async function (p) {
     var user = byId('txtUserName'), pass = byId('txtPassword');
     if (!user || !pass) return { ok: false, reason: 'Tab hiện tại không phải trang đăng nhập FBO.' };
-    var ent = byId('cboEntity'), unit = byId('cboUnit'), notes = [];
-    if (ent && p.company && !setSelect(ent, p.company)) notes.push('Không tìm thấy công ty "' + p.company + '"');
-    await wait(500); // danh sách Đơn vị có thể nạp lại theo công ty
+    var notes = [];
     if (p.user) typeInto(user, p.user);
-    await wait(500);
-    if (unit && p.unit && !setSelect(unit, p.unit)) notes.push('Không tìm thấy đơn vị "' + p.unit + '"');
     if (p.password) typeInto(pass, p.password);
     if (p.submit === false) return { ok: true, submitted: false, notes: notes };
     var cands = document.querySelectorAll('button, input[type=button], input[type=submit], a, span, div'), btn = null;

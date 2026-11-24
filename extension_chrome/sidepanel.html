@@ -11,10 +11,13 @@
     <strong>OCR → FBO</strong>
     <span id="who"></span>
     <button id="btn-fbo-login" class="link" title="Điền tài khoản đã lưu vào trang đăng nhập FBO ở tab hiện tại" hidden>Đăng nhập FBO</button>
+    <button id="btn-inspect" class="link" hidden title="Dò các ô của form FBO đang xem và sao chép kết quả (để bổ sung ánh xạ)">Dò form</button>
     <button id="btn-settings" class="link" title="Cài đặt">Cài đặt</button>
     <button id="btn-logout" class="link" hidden>Đăng xuất</button>
   </header>
   <div id="msg" class="msg" hidden></div>
+  <details id="inspect-box" hidden><summary>Kết quả dò form (đã sao chép; bấm để xem)</summary><textarea id="inspect-out" readonly rows="10" style="width:100%"></textarea></details>
+  <div id="quota-bar" class="msg warn" role="status" hidden></div>
   <div id="perm-bar" class="msg info" hidden><span id="perm-text">Cần cấp quyền để điền form FBO.</span> <button id="btn-perm" class="primary">Cấp quyền FBO</button></div>
 
   <section id="view-login" hidden>
@@ -32,8 +35,12 @@
     <div id="drop" class="drop" tabindex="0">Kéo thả tệp vào đây, dán ảnh (Ctrl+V) hoặc <button id="btn-pick" class="link">chọn tệp</button></div>
     <input id="in-files" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden>
     <ul id="files" class="files"></ul>
-    <p id="limit-hint" class="hint"></p>
+    <div id="limit-hint" class="hint"></div>
+    <label id="row-relation" hidden>Người phụ thuộc là <select id="in-relation"><option value="CON">Con (mã 01)</option><option value="CHA_ME">Cha, mẹ (mã 03)</option></select></label>
+    <label class="chk" id="row-qronly" hidden><input id="in-qronly" type="checkbox"> CCCD: chỉ đọc mã QR (nhanh, không dùng AI). Quê quán, nơi sinh, ngày hết hạn tự nhập.</label>
     <button id="btn-scan" class="primary" disabled>Quét</button>
+    <progress id="scan-progress" class="fillbar" max="100" value="0" hidden></progress>
+    <div id="scan-info" class="hint" role="status" hidden></div>
   </section>
 
   <section id="view-review" hidden>
@@ -47,12 +54,15 @@
       <div id="save-info" class="ok"></div>
       <div class="row">
         <button id="btn-fill" type="button" class="primary">Điền vào FBO</button>
+        <button id="btn-stop" type="button" class="danger" hidden>Dừng</button>
         <button id="btn-next" type="button">Quét tiếp</button>
       </div>
+      <progress id="fill-progress" class="fillbar" max="1" hidden></progress>
       <div id="fill-info" class="hint"></div>
     </div>
   </section>
 
+  <script src="lib/vendor/jsqr.js"></script>
   <script type="module" src="sidepanel.js"></script>
 </body>
 </html>

@@ -28,8 +28,6 @@
         "Việt Nam": "VN"
       }
     },
-    "que_quan": "[id$=\"_dirExtender_form_que_quan\"]",
-    "noi_thuong_tru": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
     "ngay_cap": {
       "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hl\"]",
       "format": "date"
@@ -42,7 +40,62 @@
     "loai_giay_to": {
       "selector": "[id$=\"_dirExtender_form_ma_loai_gt\"]",
       "fixed": "02"
-    }
+    },
+    "thuong_tru_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_tinh\"]",
+    "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]",
+    "thuong_tru_xa_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_xa\"]",
+    "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]",
+    "thuong_tru_chi_tiet": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
+    "que_quan_chi_tiet": "[id$=\"_dirExtender_form_que_quan\"]"
+  },
+  "CCCD@UNGVIEN": {
+    "so_cccd": "[id$=\"_dirExtender_form_cmnd_so\"]",
+    "ho_ten": [
+      {
+        "selector": "[id$=\"_dirExtender_form_ho_uv\"]",
+        "transform": "name_head"
+      },
+      {
+        "selector": "[id$=\"_dirExtender_form_ten_uv\"]",
+        "transform": "name_last"
+      }
+    ],
+    "ngay_sinh": {
+      "selector": "[id$=\"_dirExtender_form_ngay_sinh\"]",
+      "format": "date"
+    },
+    "gioi_tinh": {
+      "selector": "[id$=\"_dirExtender_form_gioi_tinh\"]",
+      "map": {
+        "Nam": "1",
+        "Nữ": "2"
+      }
+    },
+    "quoc_tich": {
+      "selector": "[id$=\"_dirExtender_form_quoc_tich\"]",
+      "map": {
+        "Việt Nam": "VN"
+      }
+    },
+    "ngay_cap": {
+      "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hl\"]",
+      "format": "date"
+    },
+    "ngay_het_han": {
+      "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hh\"]",
+      "format": "date"
+    },
+    "noi_sinh": "[id$=\"_dirExtender_form_noi_sinh\"]",
+    "loai_giay_to": {
+      "selector": "[id$=\"_dirExtender_form_ma_loai_gt\"]",
+      "fixed": "02"
+    },
+    "thuong_tru_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_tinh\"]",
+    "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]",
+    "thuong_tru_xa_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_xa\"]",
+    "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]",
+    "thuong_tru_chi_tiet": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
+    "que_quan_chi_tiet": "[id$=\"_dirExtender_form_que_quan\"]"
   },
   "CV_UNGVIEN": {
     "ho_ten": [
@@ -89,11 +142,13 @@
         "Nữ": "2"
       }
     },
-    "dia_chi": "[id$=\"_dirExtender_form_dia_chi\"]",
     "cap_dao_tao": "[id$=\"_dirExtender_form_cap_dt\"]",
     "truong_dao_tao": "[id$=\"_dirExtender_form_truong_dt\"]",
     "chuyen_nganh": "[id$=\"_dirExtender_form_chuong_trinh_dt\"]",
-    "xep_loai": "[id$=\"_dirExtender_form_xep_loai_dt\"]"
+    "xep_loai": "[id$=\"_dirExtender_form_xep_loai_dt\"]",
+    "dia_chi_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_tinh\"]",
+    "dia_chi_xa_ma": "[id$=\"_dirExtender_form_dia_chi_xa\"]",
+    "dia_chi_chi_tiet": "[id$=\"_dirExtender_form_dia_chi\"]"
   },
   "GPLX": {
     "so_gplx": "[id$=\"MainReport75_dirExtender_form_so_bl\"]",
@@ -124,6 +179,60 @@
       "selector": "[id$=\"MainReport_dirExtender_form_ghi_chu\"]",
       "prefix": "Tỉnh/TP: ",
       "append": true
+    }
+  },
+  "HO_CHIEU": {
+    "so_ho_chieu": "[id$=\"_dirExtender_form_ho_chieu_so\"]",
+    "ngay_cap": {
+      "selector": "[id$=\"_dirExtender_form_ho_chieu_ngay_hl\"]",
+      "format": "date"
+    },
+    "ngay_het_han": {
+      "selector": "[id$=\"_dirExtender_form_ho_chieu_ngay_hh\"]",
+      "format": "date"
+    },
+    "so_visa": "[id$=\"_dirExtender_form_visa_so\"]",
+    "ngay_cap_visa": {
+      "selector": "[id$=\"_dirExtender_form_visa_ngay_hl\"]",
+      "format": "date"
+    },
+    "ngay_het_han_visa": {
+      "selector": "[id$=\"_dirExtender_form_visa_ngay_hh\"]",
+      "format": "date"
+    },
+    "noi_cap_ma": "[id$=\"_dirExtender_form_ho_chieu_noi_cap\"]",
+    "noi_cap_visa_ma": "[id$=\"_dirExtender_form_visa_noi_cap\"]"
+  },
+  "KHAI_SINH": {
+    "ma_pt": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.1\"]",
+      "autoCode": {
+        "prefix": "NPT",
+        "digits": 2
+      }
+    },
+    "ho_ten_khai_sinh": "[id$=\"_FormGridhrttctpt_inputCell_{row}.2\"]",
+    "ngay_sinh": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.4\"]",
+      "format": "date"
+    },
+    "loai_giay_to": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.5\"]",
+      "fixed": "04"
+    },
+    "so_dinh_danh": [
+      "[id$=\"_FormGridhrttctpt_inputCell_{row}.7\"]",
+      "[id$=\"_FormGridhrttctpt_inputCell_{row}.8\"]"
+    ],
+    "quoc_tich": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.9\"]",
+      "fixed": "VN"
+    },
+    "loai_qh": "[id$=\"_FormGridhrttctpt_inputCell_{row}.11\"]",
+    "so_khai_sinh": "[id$=\"_FormGridhrttctpt_inputCell_{row}.14\"]",
+    "ngay_hl_tu": {
+      "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.20\"]",
+      "format": "date"
     }
   }
 }

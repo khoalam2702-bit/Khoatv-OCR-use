@@ -5,6 +5,8 @@ header { display:flex; gap:8px; align-items:center; padding:8px 10px; background
 header #who { flex:1; color:#6b7280; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 section { padding:10px; }
 h2 { font-size:13.5px; margin:12px 0 6px; color:#374151; text-transform:uppercase; letter-spacing:.03em; }
+/* label { display:block/flex } ghi đè thuộc tính hidden của trình duyệt: phải ép lại để các dòng ẩn thật sự ẩn */
+[hidden] { display:none !important; }
 label { display:block; margin:0 0 8px; font-size:13.5px; color:#374151; }
 input, textarea, select { width:100%; margin-top:3px; padding:6px 8px; border:1px solid var(--b); border-radius:6px; font:inherit; background:#fff; }
 textarea { min-height:56px; resize:vertical; }
@@ -24,6 +26,8 @@ button.link { border:0; background:none; color:var(--pri); padding:2px 4px; }
 .files .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .msg { margin:8px 10px 0; padding:8px 10px; border-radius:6px; background:#fef2f2; color:var(--err); border:1px solid #fecaca; }
 .msg.info { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+.msg.warn { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+.msg.warn b { font-variant-numeric:tabular-nums; font-size:15px; }
 .hint { color:#6b7280; font-size:13.5px; margin:6px 0; }
 .ok { color:var(--ok); font-weight:600; margin-top:10px; }
 .req::after { content:" *"; color:var(--err); }
@@ -32,3 +36,10 @@ button.link { border:0; background:none; color:var(--pri); padding:2px 4px; }
 label.chk { display:flex; align-items:center; gap:6px; }
 label.chk input { width:auto; margin:0; }
 #perm-bar button { margin-top:6px; }
+
+.fillbar { width:100%; height:8px; margin:6px 0 2px; accent-color:#2563eb; }
+button.danger { background:#dc2626; color:#fff; border-color:#dc2626; }
+button.danger:hover { background:#b91c1c; }
+.limits-box > summary { cursor:pointer; font-size:12.5px; color:#4b5563; user-select:none; }
+.limits-box[open] > summary { margin-bottom:4px; }
+.limits { margin:0; padding-left:18px; font-size:12.5px; line-height:1.45; } .limits li { margin:2px 0; }

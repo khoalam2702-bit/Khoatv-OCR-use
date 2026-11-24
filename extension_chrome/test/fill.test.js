@@ -107,18 +107,16 @@ const LOGIN = `<select id="LoginExtender_cboEntity"><option value="">--</option>
 <input id="LoginExtender_txtUserName"><select id="LoginExtender_cboUnit"><option value="">--</option><option value="U1">Đơn vị 1</option></select>
 <input type="password" id="LoginExtender_txtPassword"><button id="ok">Nhận</button><button id="no">Hủy</button>`;
 
-test('đăng nhập FBO: điền công ty, tên, đơn vị, mật khẩu và bấm Nhận', async () => {
+test('đăng nhập FBO: điền tên, mật khẩu (giữ nguyên công ty/đơn vị) và bấm Nhận', async () => {
   const w = page(LOGIN);
   w.document.getElementById('ok').getClientRects = () => [1]; // jsdom không có layout
   Object.defineProperty(w.HTMLElement.prototype, 'offsetWidth', { get() { return 10; }, configurable: true });
   let clicked = '';
   w.document.getElementById('ok').addEventListener('click', () => { clicked = 'ok'; });
   w.document.getElementById('no').addEventListener('click', () => { clicked = 'no'; });
-  const r = await w.__KHOATV_LOGIN__({ company: 'Công ty A', unit: 'Đơn vị 1', user: 'khoa', password: 'S3cret!' });
+  const r = await w.__KHOATV_LOGIN__({ user: 'khoa', password: 'S3cret!' });
   const d = w.document;
-  assert.equal(d.getElementById('LoginExtender_cboEntity').value, 'C1');
   assert.equal(d.getElementById('LoginExtender_txtUserName').value, 'khoa');
-  assert.equal(d.getElementById('LoginExtender_cboUnit').value, 'U1');
   assert.equal(d.getElementById('LoginExtender_txtPassword').value, 'S3cret!');
   assert.equal(clicked, 'ok');
   assert.equal(r.submitted, true);
@@ -142,4 +140,94 @@ test('fixed luôn điền dù OCR trống; contains khớp theo từ khoá và k
   r = plain(w.__KHOATV_FILL__(mapping, { noi_cap: 'Cục Cảnh sát QLHC về TTXH' }));
   assert.equal(w.document.getElementById('nc').value, '');
   assert.ok(r.empty.includes('noi_cap'));
+});
+
+test('trạng thái đăng nhập: có form đăng nhập hiển thị = chưa đăng nhập; trang khác = đã đăng nhập', () => {
+  Object.defineProperty(globalThis.window ? globalThis.window.HTMLElement.prototype : Object.prototype, '_x', { value: 1, configurable: true });
+  const w = page(LOGIN);
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetWidth', { get() { return 10; }, configurable: true });
+  assert.equal(w.__KHOATV_LOGIN_STATE__().loginPage, true);
+  const w2 = page('<input id="x"><input id="y">');
+  assert.equal(w2.__KHOATV_LOGIN_STATE__().loginPage, false);
+  const w3 = page('<input id="LoginExtender_txtUserName"><input type="password" id="LoginExtender_txtPassword">');
+  assert.equal(w3.__KHOATV_LOGIN_STATE__().loginPage, false); // có trong DOM nhưng không hiển thị (jsdom không có layout)
+});
+
+test('PROBE: liệt kê ô có trên trang, bỏ qua selector sai', () => {
+  const w = page(HTML);
+  const r = plain(w.__KHOATV_PROBE__({ a: '#ten', b: ['#ns', { selector: '#khong-co' }], c: { selector: '##bad' } }));
+  assert.deepEqual(r.found.sort(), ['#ns', '#ten']);
+});
+test('dry-run: báo ô đang có giá trị khác sẽ bị ghi đè và KHÔNG ghi vào form', () => {
+  const w = page(HTML);
+  const d = w.document;
+  d.getElementById('ten').value = 'Trần Văn B';
+  d.getElementById('dc').value = '';
+  const r = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', dia_chi: '#dc', gt: '#gt' }, { ho_ten: 'Nguyễn A', dia_chi: 'Đà Nẵng', gt: 'Nam' }, { dry: true }));
+  assert.deepEqual(r.overwrite, [{ k: 'ho_ten', old: 'Trần Văn B', v: 'Nguyễn A', src: '', foreign: false }]);
+  assert.equal(d.getElementById('ten').value, 'Trần Văn B');
+  assert.equal(d.getElementById('dc').value, '');
+  assert.equal(d.getElementById('gt').value, '');
+});
+test('dry-run: cùng giá trị (khác hoa thường, dấu) không tính là ghi đè; ô Ghi chú nối thêm không tính', () => {
+  const w = page(HTML);
+  w.document.getElementById('ten').value = 'NGUYEN a';
+  w.document.getElementById('dc').value = 'ghi chú cũ';
+  const r = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', n1: { selector: '#dc', append: true, prefix: 'A: ' }, n2: { selector: '#dc', append: true, prefix: 'B: ' } },
+    { ho_ten: 'Nguyễn A', n1: 'x', n2: 'y' }, { dry: true }));
+  assert.deepEqual(r.overwrite, []);
+});
+
+test('ô do loại tài liệu khác điền: dry-run báo foreign; cùng loại điền lại thì không', () => {
+  const w = page(HTML);
+  const d = w.document;
+  w.__KHOATV_FILL__({ ho_ten: '#ten', dia_chi: '#dc' }, { ho_ten: 'Nguyễn A', dia_chi: 'Đà Nẵng' }, { src: 'CV_UNGVIEN' });
+  assert.equal(d.getElementById('ten').getAttribute('data-khoatv-src'), 'CV_UNGVIEN');
+  const other = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', dia_chi: '#dc' }, { ho_ten: 'Trần B', dia_chi: 'Đà Nẵng' }, { dry: true, src: 'CCCD' }));
+  assert.deepEqual(other.overwrite, [{ k: 'ho_ten', old: 'Nguyễn A', v: 'Trần B', src: 'CV_UNGVIEN', foreign: true }]); // dia_chi cùng giá trị: không tính
+  const same = plain(w.__KHOATV_FILL__({ ho_ten: '#ten' }, { ho_ten: 'Trần B' }, { dry: true, src: 'CV_UNGVIEN' }));
+  assert.equal(same.overwrite[0].foreign, false);
+  assert.equal(d.getElementById('ten').value, 'Nguyễn A'); // dry-run không ghi
+});
+
+test('opts.except bỏ qua khóa (điền lượt sau), opts.only chỉ điền khóa đó; __KHOATV_READ__ đọc lại giá trị', () => {
+  const w = page('<input id="a"><input id="b">');
+  const d = w.document;
+  const m = { a: '#a', b_chi_tiet: '#b' }, data = { a: 'x', b_chi_tiet: 'Tổ 15' };
+  const r1 = plain(w.__KHOATV_FILL__(m, data, { except: ['b_chi_tiet'] }));
+  assert.deepEqual(r1.filled, ['a']);
+  assert.equal(d.getElementById('b').value, '');
+  const r2 = plain(w.__KHOATV_FILL__(m, data, { only: ['b_chi_tiet'] }));
+  assert.deepEqual(r2.filled, ['b_chi_tiet']);
+  assert.deepEqual(plain(w.__KHOATV_READ__(['#b', '#none'])), [{ sel: '#b', found: true, value: 'Tổ 15' }, { sel: '#none', found: false, value: '' }]);
+});
+
+const GRID = (rows) => '<table>' + rows.map((r, i) => '<tr>' + [1, 2, 4].map((c) => `<td><input id="g_FormGrid_inputCell_${i + 1}.${c}" value="${r[c] || ''}"></td>`).join('') + '</tr>').join('') + '</table>';
+const sel = (c) => `[id$="_FormGrid_inputCell_{row}.${c}"]`;
+const GMAP = { ma_pt: { selector: sel(1), autoCode: { prefix: 'NPT', digits: 2 } }, ten: sel(2), ngay_sinh: { selector: sel(4), format: 'date' } };
+
+test('lưới: điền vào dòng của ô đang được chọn, mã tự tăng NPTxx theo mã lớn nhất trong lưới', () => {
+  const w = page(GRID([{ 1: 'NPT01', 2: 'A', 4: '  /  /    ' }, { 1: 'NPT07', 2: 'B' }, { 1: '', 2: '' }]));
+  const d = w.document;
+  d.getElementById('g_FormGrid_inputCell_3.1').focus();
+  const r = plain(w.__KHOATV_FILL__(GMAP, { ten: 'Nguyễn C', ngay_sinh: '01/02/2020' }));
+  assert.deepEqual(r.filled.sort(), ['ma_pt', 'ngay_sinh', 'ten']);
+  assert.equal(d.getElementById('g_FormGrid_inputCell_3.1').value, 'NPT08');
+  assert.equal(d.getElementById('g_FormGrid_inputCell_3.2').value, 'Nguyễn C');
+  assert.equal(d.getElementById('g_FormGrid_inputCell_1.2').value, 'A'); // dòng khác không đổi
+});
+
+test('lưới: không có ô đang chọn thì lấy dòng đầu chưa có tên; dòng đã có mã thì giữ mã', () => {
+  const w = page(GRID([{ 1: 'NPT01', 2: 'A' }, { 1: 'NPT02', 2: '' }]));
+  const r = plain(w.__KHOATV_FILL__(GMAP, { ten: 'B' }));
+  assert.equal(w.document.getElementById('g_FormGrid_inputCell_2.2').value, 'B');
+  assert.equal(w.document.getElementById('g_FormGrid_inputCell_2.1').value, 'NPT02'); // giữ mã sẵn có
+  assert.ok(r.empty.includes('ma_pt'));
+  assert.deepEqual(plain(w.__KHOATV_PROBE__(GMAP)).found.length, 3);
+});
+
+test('lưới: tính thử không coi mặt nạ ngày trống là dữ liệu cũ', () => {
+  const w = page(GRID([{ 1: '', 2: '', 4: '  /  /    ' }]));
+  const r = plain(w.__KHOATV_FILL__(GMAP, { ten: 'X', ngay_sinh: '01/02/2020' }, { dry: true }));
+  assert.deepEqual(r.overwrite, []);
 });
