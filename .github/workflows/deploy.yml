@@ -26,7 +26,7 @@ jobs:
         run: node --check backend_gas/Code.js
 
       - name: Kiểm tra cổng doPost
-        run: node tests/dopost.test.js && node tests/migrate.test.js && node tests/diacritics.test.js
+        run: node tests/dopost.test.js && node tests/migrate.test.js && node tests/diacritics.test.js && node tests/retryafter.test.js && node tests/aiconfig.test.js
 
       - name: Kiểm tra secret xác thực
         id: auth

@@ -14,6 +14,7 @@ export default function Nav({ name, role }: { name: string; role: 'ADMIN' | 'USE
         <span className="mr-4 text-base font-semibold">OCR Admin</span>
         {item('/records', 'Bản ghi')}
         {role === 'ADMIN' && item('/users', 'Tài khoản')}
+        {role === 'ADMIN' && item('/settings', 'Cài đặt AI')}
         <span className="ml-auto text-sm text-slate-500">{name} · {role}</span>
         <Link href="/password" className="btn">Mật khẩu</Link>
         <button className="btn" onClick={() => signOut({ callbackUrl: '/login' })}>Đăng xuất</button>

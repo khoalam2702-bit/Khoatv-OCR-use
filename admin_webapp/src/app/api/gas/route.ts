@@ -8,7 +8,8 @@ export const maxDuration = 60;
 /** Hành động cần phiên đăng nhập: token Apps Script được thêm vào đầu danh sách tham số ở phía server. */
 const AUTHED = new Set([
   'getMe', 'changeMyPassword', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport',
-  'listUsers', 'createUser', 'updateUser', 'resetUserPassword', 'deleteUser'
+  'listUsers', 'createUser', 'updateUser', 'resetUserPassword', 'deleteUser',
+  'getAiConfig', 'setAiConfig', 'testAiConfig'
 ]);
 /** Không cần phiên (cấu hình công khai, quên mật khẩu). */
 const PUBLIC = new Set(['getAppConfig', 'requestPasswordReset', 'resetPasswordWithCode']);

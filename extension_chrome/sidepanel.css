@@ -24,6 +24,8 @@ button.link { border:0; background:none; color:var(--pri); padding:2px 4px; }
 .files .name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .msg { margin:8px 10px 0; padding:8px 10px; border-radius:6px; background:#fef2f2; color:var(--err); border:1px solid #fecaca; }
 .msg.info { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+.msg.warn { background:#fffbeb; color:#b45309; border-color:#fde68a; }
+.msg.warn b { font-variant-numeric:tabular-nums; font-size:15px; }
 .hint { color:#6b7280; font-size:13.5px; margin:6px 0; }
 .ok { color:var(--ok); font-weight:600; margin-top:10px; }
 .req::after { content:" *"; color:var(--err); }
