@@ -34,3 +34,5 @@ button.link { border:0; background:none; color:var(--pri); padding:2px 4px; }
 label.chk { display:flex; align-items:center; gap:6px; }
 label.chk input { width:auto; margin:0; }
 #perm-bar button { margin-top:6px; }
+
+.fillbar { width:100%; height:8px; margin:6px 0 2px; accent-color:#2563eb; }

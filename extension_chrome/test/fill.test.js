@@ -152,3 +152,28 @@ test('trạng thái đăng nhập: có form đăng nhập hiển thị = chưa �
   const w3 = page('<input id="LoginExtender_txtUserName"><input type="password" id="LoginExtender_txtPassword">');
   assert.equal(w3.__KHOATV_LOGIN_STATE__().loginPage, false); // có trong DOM nhưng không hiển thị (jsdom không có layout)
 });
+
+test('PROBE: liệt kê ô có trên trang, bỏ qua selector sai', () => {
+  const w = page(HTML);
+  const r = plain(w.__KHOATV_PROBE__({ a: '#ten', b: ['#ns', { selector: '#khong-co' }], c: { selector: '##bad' } }));
+  assert.deepEqual(r.found.sort(), ['#ns', '#ten']);
+});
+test('dry-run: báo ô đang có giá trị khác sẽ bị ghi đè và KHÔNG ghi vào form', () => {
+  const w = page(HTML);
+  const d = w.document;
+  d.getElementById('ten').value = 'Trần Văn B';
+  d.getElementById('dc').value = '';
+  const r = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', dia_chi: '#dc', gt: '#gt' }, { ho_ten: 'Nguyễn A', dia_chi: 'Đà Nẵng', gt: 'Nam' }, { dry: true }));
+  assert.deepEqual(r.overwrite, [{ k: 'ho_ten', old: 'Trần Văn B', v: 'Nguyễn A' }]);
+  assert.equal(d.getElementById('ten').value, 'Trần Văn B');
+  assert.equal(d.getElementById('dc').value, '');
+  assert.equal(d.getElementById('gt').value, '');
+});
+test('dry-run: cùng giá trị (khác hoa thường, dấu) không tính là ghi đè; ô Ghi chú nối thêm không tính', () => {
+  const w = page(HTML);
+  w.document.getElementById('ten').value = 'NGUYEN a';
+  w.document.getElementById('dc').value = 'ghi chú cũ';
+  const r = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', n1: { selector: '#dc', append: true, prefix: 'A: ' }, n2: { selector: '#dc', append: true, prefix: 'B: ' } },
+    { ho_ten: 'Nguyễn A', n1: 'x', n2: 'y' }, { dry: true }));
+  assert.deepEqual(r.overwrite, []);
+});
