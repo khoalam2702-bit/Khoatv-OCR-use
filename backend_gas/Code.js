@@ -66,7 +66,7 @@ const DOC_TYPES = {
   CCCD: {
     label: 'Căn cước công dân', uniqueKey: 'so_cccd', required: ['so_cccd', 'ho_ten'],
     hint: 'Thẻ căn cước / CCCD Việt Nam. Số định danh cá nhân gồm đúng 12 chữ số. ' +
-      'Đọc cả hai mặt nếu có. Mặt trước: số, họ tên, ngày sinh, giới tính, quốc tịch, quê quán, nơi thường trú, nơi sinh (nếu thẻ có in), ' +
+      'Họ và tên lấy từ dòng "Họ và tên / Full name" ở mặt trước, giữ đủ dấu tiếng Việt, không lấy từ dòng MRZ ở mặt sau. Đọc cả hai mặt nếu có. Mặt trước: số, họ tên, ngày sinh, giới tính, quốc tịch, quê quán, nơi thường trú, nơi sinh (nếu thẻ có in), ' +
       'ngày hết hạn (mục "Có giá trị đến", nếu ghi "Không thời hạn" thì trả đúng chữ đó). ' +
       'Mặt sau: ngày cấp (ngày, tháng, năm cấp thẻ) và nơi cấp (cơ quan cấp, ví dụ Cục Cảnh sát quản lý hành chính về trật tự xã hội). ',
     fields: [f_('so_cccd', 'Số CCCD'), f_('ho_ten', 'Họ và tên'), f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'),
@@ -911,7 +911,8 @@ function callGemini_(type, files) {
   const system =
     'Bạn là bộ máy OCR bóc tách dữ liệu từ tài liệu tiếng Việt. Quy tắc bắt buộc:\n' +
     '1. Chỉ ghi những gì NHÌN THẤY trong tài liệu. Trường nào không có, bị che, mờ không đọc được thì trả null. Tuyệt đối không suy đoán hay tự điền.\n' +
-    '2. Giữ nguyên dấu tiếng Việt và chính tả như trên tài liệu; không tự viết hoa/thường lại.\n' +
+    '2. Giữ nguyên dấu tiếng Việt và chính tả như trên tài liệu; không tự viết hoa/thường lại. Họ tên, địa chỉ, quê quán, nơi sinh phải có ĐỦ dấu (ă â ê ô ơ ư đ và dấu thanh). ' +
+    'Tuyệt đối không bỏ dấu; không lấy chữ từ dòng mã máy đọc (MRZ, chữ in hoa không dấu) khi trên tài liệu đã có dòng viết đủ dấu.\n' +
     '3. Ngày tháng ghi dạng dd/MM/yyyy.\n' +
     '4. Trường kiểu số: chỉ trả số thuần (không dấu phân cách hàng nghìn, không ký hiệu tiền tệ hay đơn vị).\n' +
     '5. Mã số, số giấy tờ: giữ đủ mọi ký tự kể cả số 0 ở đầu.\n' +
@@ -926,7 +927,7 @@ function callGemini_(type, files) {
           '\nHãy bóc tách dữ liệu theo đúng schema.' }
       ])
     }],
-    generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type) }
+    generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type), temperature: 0 }
   };
   // Đọc giấy tờ không cần suy luận sâu: mặc định thinking mức thấp cho nhanh. GEMINI_THINKING = off để tắt, hoặc minimal/low/medium/high.
   const think = String(prop_('GEMINI_THINKING', 'low') || '').toLowerCase();
