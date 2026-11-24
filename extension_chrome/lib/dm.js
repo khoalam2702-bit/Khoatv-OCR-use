@@ -90,10 +90,16 @@ export function lookupNationality(dm, text) {
   return (hits.find((x) => !/^Q/.test(x.ma)) || hits[0]).ma;
 }
 
-const ADDR = { thuong_tru: 'noi_thuong_tru', que_quan: 'que_quan' };
+// Địa chỉ trên FBO gồm 3 ô riêng: số nhà/tổ (chữ) + tỉnh/thành (mã) + phường/xã (mã). Mỗi loại tài liệu khai báo các địa chỉ cần tách.
+// Riêng Nơi sinh chỉ có một ô chữ gom cả 3 nên không tách.
+const ADDR = {
+  CCCD: { thuong_tru: 'noi_thuong_tru', que_quan: 'que_quan' },
+  CV_UNGVIEN: { dia_chi: 'dia_chi' }
+};
 export const DERIVED_LABELS = {
   thuong_tru_tinh_ma: 'Thường trú - Tỉnh/thành', thuong_tru_xa_ma: 'Thường trú - Phường/xã',
   thuong_tru_chi_tiet: 'Thường trú - Số nhà, tổ', que_quan_chi_tiet: 'Quê quán - Số nhà, tổ',
+  dia_chi_tinh_ma: 'Địa chỉ - Tỉnh/thành', dia_chi_xa_ma: 'Địa chỉ - Phường/xã', dia_chi_chi_tiet: 'Địa chỉ - Số nhà, tổ',
   que_quan_tinh_ma: 'Quê quán - Tỉnh/thành', que_quan_xa_ma: 'Quê quán - Phường/xã',
   noi_cap_ma: 'Nơi cấp (mã quốc tịch)', noi_cap_visa_ma: 'Nơi cấp thị thực (mã quốc tịch)'
 };
@@ -105,12 +111,12 @@ export function enrichData(docType, data, dm) {
   if (docType === 'CCCD') {
     // Nơi sinh chỉ có một ô chữ: thẻ không in Nơi sinh thì gom thông tin nơi chốn trên thẻ (Quê quán) vào ô này.
     if (!String(out.noi_sinh == null ? '' : out.noi_sinh).trim() && out.que_quan) out.noi_sinh = out.que_quan;
-    for (const [p, k] of Object.entries(ADDR)) {
-      const r = lookupAddress(dm, out[k]);
-      out[p + '_tinh_ma'] = r.tinh ? r.tinh.ma : '';
-      out[p + '_xa_ma'] = r.xa ? r.xa.ma : '';
-      out[p + '_chi_tiet'] = addressDetail(dm, out[k]); // số nhà, tổ... cắt từ địa chỉ, điền vào ô địa chỉ chi tiết
-    }
+  }
+  for (const [p, k] of Object.entries(ADDR[docType] || {})) {
+    const r = lookupAddress(dm, out[k]);
+    out[p + '_tinh_ma'] = r.tinh ? r.tinh.ma : '';
+    out[p + '_xa_ma'] = r.xa ? r.xa.ma : '';
+    out[p + '_chi_tiet'] = addressDetail(dm, out[k]); // số nhà, tổ... cắt từ địa chỉ
   }
   if (docType === 'HO_CHIEU') {
     out.noi_cap_ma = lookupNationality(dm, out.noi_cap);
