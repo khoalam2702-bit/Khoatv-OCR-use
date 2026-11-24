@@ -139,7 +139,8 @@ function renderFiles() {
 }
 
 /* ---------- Hết hạn mức Gemini: cảnh báo + đếm ngược, tự ẩn khi hết giờ chờ ---------- */
-const QUOTA_KEY = 'ocrQuotaUntil';
+const QUOTA_KEY = 'ocrQuotaUntil2'; // đổi tên khoá nhớ: bỏ các bộ đếm cũ do backend một khoá tạo ra
+const QUOTA_KEY_OLD = 'ocrQuotaUntil';
 let quotaUntil = 0, quotaTimer = null;
 function hhmm(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
 function renderQuota() {
@@ -148,13 +149,22 @@ function renderQuota() {
   if (left <= 0) {
     clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
     try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* bỏ qua */ }
-    bar.hidden = true; bar.textContent = ''; updateScanBtn(); return; // hết giờ chờ: ẩn thông báo, mở lại nút Quét
+    bar.hidden = true; bar.textContent = ''; delete bar.dataset.built; updateScanBtn(); return; // hết giờ chờ: ẩn thông báo, mở lại nút Quét
   }
-  bar.textContent = '';
-  const t = document.createElement('div'); t.textContent = '⚠ Các khóa AI (Gemini) đang tạm hết hạn mức. Hệ thống tự dùng khóa dự phòng; bạn vẫn có thể bấm Quét để thử lại.';
-  const c = document.createElement('div'); c.append('Nếu vẫn báo lỗi, dự kiến dùng lại được sau: ');
-  const b = document.createElement('b'); b.textContent = formatWait(left); c.append(b, ' (khoảng ' + hhmm(quotaUntil) + ' ' + (new Date(quotaUntil).toDateString() === new Date().toDateString() ? 'hôm nay' : 'ngày mai') + ').');
-  bar.append(t, c); bar.hidden = false;
+  // Dựng khung một lần; mỗi giây chỉ cập nhật số đếm để nút "Ẩn thông báo" không bị vẽ lại giữa lúc bấm.
+  if (!bar.dataset.built) {
+    bar.textContent = '';
+    const t = document.createElement('div'); t.textContent = '⚠ Các khóa AI (Gemini) đang tạm hết hạn mức. Hệ thống tự dùng khóa dự phòng; bạn vẫn có thể bấm Quét để thử lại.';
+    const c = document.createElement('div'); c.append('Nếu vẫn báo lỗi, dự kiến dùng lại được sau: ');
+    const b = document.createElement('b'); b.id = 'quota-left';
+    const when = document.createElement('span'); when.id = 'quota-when'; c.append(b, when);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'link'; x.textContent = 'Ẩn thông báo';
+    x.onclick = clearQuotaWait;
+    bar.append(t, c, x); bar.dataset.built = '1';
+  }
+  $('quota-left').textContent = formatWait(left);
+  $('quota-when').textContent = ' (khoảng ' + hhmm(quotaUntil) + ' ' + (new Date(quotaUntil).toDateString() === new Date().toDateString() ? 'hôm nay' : 'ngày mai') + ').';
+  bar.hidden = false;
 }
 function startQuotaWait(seconds) {
   quotaUntil = Date.now() + Math.max(1, seconds) * 1000;
@@ -166,9 +176,10 @@ function startQuotaWait(seconds) {
 function clearQuotaWait() {
   clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
   try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* bỏ qua */ }
-  const bar = $('quota-bar'); bar.hidden = true; bar.textContent = '';
+  const bar = $('quota-bar'); bar.hidden = true; bar.textContent = ''; delete bar.dataset.built;
 }
 function restoreQuotaWait() {
+  try { localStorage.removeItem(QUOTA_KEY_OLD); } catch (e) { /* bỏ qua */ }
   let v = 0; try { v = Number(localStorage.getItem(QUOTA_KEY)) || 0; } catch (e) { v = 0; }
   if (v > Date.now()) { quotaUntil = v; clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000); renderQuota(); }
 }
