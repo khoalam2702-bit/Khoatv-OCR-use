@@ -70,7 +70,7 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 
 ### Cấu hình trung tâm và tài khoản đã lưu
 
-- **Link Apps Script chỉ admin nhập một lần:** biến `GAS_WEB_APP_URL` trên Vercel (Web Admin). Extension tự lấy qua `GET /api/extension-config` (cùng `EXTENSION_FBO_ORIGINS`, tuỳ chọn; mặc định không có địa chỉ FBO nào, người dùng tự thêm ở Cài đặt), có bản đóng gói sẵn ở `extension_chrome/config.json` làm dự phòng. Người dùng chỉ cài extension, không nhập link. Ưu tiên: Web Admin > `config.json`; người dùng không có ô nhập link.
+- **Link bản triển khai Apps Script** nằm ở một nơi duy nhất: dòng `var APP_URL = '...'` trong `public/index.html` trên GitHub (AutoSynCode tự cập nhật sau mỗi lần deploy). Extension đọc tệp này (`linkUrl` trong `extension_chrome/config.json`) mỗi lần mở Side Panel; biến `GAS_WEB_APP_URL` trên Vercel chỉ là dự phòng. Link **không** lưu trong extension, người dùng không nhập link. Lần đầu cần có mạng; sau đó extension giữ bản đã lấy khi mất mạng. Địa chỉ FBO mặc định (tuỳ chọn) lấy từ `EXTENSION_FBO_ORIGINS` trên Vercel; mặc định không có, người dùng tự thêm ở Cài đặt.
 - **Nhớ tài khoản OCR:** tên đăng nhập, phiên (5,5 giờ) và, nếu tích "Ghi nhớ", mật khẩu mã hoá AES-GCM (khoá không xuất được trong IndexedDB, không đồng bộ). Hết phiên thì tự đăng nhập lại; bấm Đăng xuất sẽ xoá mật khẩu đã nhớ.
 - **Đăng nhập FBO đã lưu** theo từng địa chỉ (Cài đặt, mục 3): nút "Đăng nhập FBO" ở Side Panel điền Công ty, Tên, Đơn vị, Mật khẩu và bấm Nhận ở tab hiện tại.
 - Địa chỉ FBO trong cấu hình chỉ cần cấp quyền một lần (banner "Cấp quyền FBO" ở Side Panel).

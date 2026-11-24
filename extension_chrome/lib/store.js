@@ -1,6 +1,6 @@
 // Cài đặt và tài khoản đã lưu, tất cả ở storage.local của extension (không đồng bộ lên tài khoản Chrome).
 import { effectiveMappings } from './mapping.js';
-import { mergeConfig, sanitizeConfig, fetchRemoteConfig, normalizeOrigin } from './appconfig.js';
+import { mergeConfig, sanitizeConfig, fetchRemoteConfig, fetchLinkFromIndex, normalizeOrigin } from './appconfig.js';
 import { createVault, idbKeyProvider } from './vault.js';
 
 const vault = createVault({ getKey: idbKeyProvider() });
@@ -17,9 +17,15 @@ export const getPreset = () => packaged('presets/fbo-hrm.json');
 /** Cấu hình trung tâm: lấy từ Web Admin (admin nhập 1 lần ở Vercel), lưu đệm để mở panel là dùng ngay. */
 export async function refreshRemoteConfig() {
   const shipped = sanitizeConfig(await packaged('config.json'));
-  const remote = await fetchRemoteConfig(shipped.configUrl, (...a) => fetch(...a));
-  if (remote) await chrome.storage.local.set({ remoteConfig: remote });
-  return remote;
+  const f = (...a) => fetch(...a);
+  // Link bản triển khai: index.html trên GitHub (AutoSynCode tự cập nhật) được ưu tiên; Web Admin (Vercel) cấp địa chỉ FBO và link dự phòng.
+  const [remote, link] = await Promise.all([fetchRemoteConfig(shipped.configUrl, f), fetchLinkFromIndex(shipped.linkUrl, f)]);
+  const fresh = { ...(remote || {}), ...(link ? { gasUrl: link } : {}) };
+  if (!Object.keys(fresh).length) return null;
+  const { remoteConfig } = await chrome.storage.local.get({ remoteConfig: {} });
+  const merged = { ...remoteConfig, ...fresh };
+  await chrome.storage.local.set({ remoteConfig: merged });
+  return merged;
 }
 
 export async function getSettings() {
