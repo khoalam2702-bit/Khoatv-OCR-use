@@ -3,7 +3,7 @@
  *
  * Script Properties (Project Settings > Script Properties):
  *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API chính. ADMIN đổi được ở trang quản trị > Cài đặt AI (không cần vào Script Properties)
- *   GEMINI_API_KEY_BACKUP (tuỳ chọn) Khoá dự phòng: tự dùng khi khoá chính hết hạn mức (429), bị từ chối (403) hoặc lỗi máy chủ (5xx). Khoá vừa lỗi được cho "nghỉ" (tối đa 30 phút) để các lần quét sau dùng thẳng khoá còn lại
+ *   GEMINI_API_KEY_BACKUP, GEMINI_API_KEY_BACKUP_2, _3, _4 (tuỳ chọn) Khoá dự phòng 1 → 4: lần lượt dùng khi khoá trước hết hạn mức (429), bị từ chối (403) hoặc lỗi máy chủ (5xx). Khoá vừa lỗi được cho "nghỉ" (tối đa 30 phút) để các lần quét sau dùng thẳng khoá còn lại
  *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
@@ -1097,14 +1097,15 @@ function testGeminiKey_(key, model) {
 function aiConfigView_() {
   const p = PropertiesService.getScriptProperties();
   const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
-  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
+  const baks = AI_BACKUP_PROPS.map(function (n) { return String(p.getProperty(n) || '').trim(); });
   const tier = String(p.getProperty('GEMINI_TIER') || '').trim();
   return {
     model: prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL),
     defaultModel: DEFAULTS.GEMINI_MODEL,
     tier: AI_TIERS.indexOf(tier) >= 0 ? tier : '',
     main: { set: !!main, hint: keyHint_(main) },
-    backup: { set: !!bak, hint: keyHint_(bak) }
+    backup: { set: !!baks[0], hint: keyHint_(baks[0]) }, // giữ cho giao diện cũ: = dự phòng 1
+    backups: baks.map(function (k) { return { set: !!k, hint: keyHint_(k) }; }) // dự phòng 1..4
   };
 }
 
@@ -1114,7 +1115,8 @@ function getAiConfig(token) {
 }
 
 /**
- * patch: { apiKey?, backupKey?, clearBackup?, model?, tier? }. Chỉ trường có mặt mới đổi.
+ * patch: { apiKey?, backupKeys?: [k1..k4], backupKey? (= dự phòng 1), clearBackups?: [1..4], clearBackup? (= xoá dự phòng 1), model?, tier? }.
+ * Chỉ trường có mặt mới đổi; phần tử rỗng trong backupKeys = giữ nguyên.
  * Khoá mới được thử trước; chỉ lưu khi mọi khoá mới đều dùng được (hết hạn mức 429 vẫn tính là hợp lệ).
  */
 function setAiConfig(token, patch) {
@@ -1122,20 +1124,44 @@ function setAiConfig(token, patch) {
   patch = patch || {};
   const model = patch.model !== undefined && String(patch.model).trim() !== '' ? checkModelName_(patch.model) : prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const newMain = patch.apiKey !== undefined && String(patch.apiKey).trim() !== '' ? checkKeyFormat_(patch.apiKey) : '';
-  const newBak = patch.backupKey !== undefined && String(patch.backupKey).trim() !== '' ? checkKeyFormat_(patch.backupKey) : '';
+  const rawBaks = Array.isArray(patch.backupKeys) ? patch.backupKeys.slice(0, AI_BACKUP_PROPS.length) : [];
+  if (patch.backupKey !== undefined && String(patch.backupKey).trim() !== '' && !String(rawBaks[0] || '').trim()) rawBaks[0] = patch.backupKey;
+  const newBaks = AI_BACKUP_PROPS.map(function (n, i) {
+    return rawBaks[i] !== undefined && String(rawBaks[i] || '').trim() !== '' ? checkKeyFormat_(rawBaks[i]) : '';
+  });
+  const clears = {};
+  (Array.isArray(patch.clearBackups) ? patch.clearBackups : []).forEach(function (n) {
+    n = Number(n); if (n >= 1 && n <= AI_BACKUP_PROPS.length) clears[n - 1] = true;
+  });
+  if (patch.clearBackup === true) clears[0] = true;
   if (patch.tier !== undefined && patch.tier !== '' && AI_TIERS.indexOf(patch.tier) < 0) throw new Error('Gói không hợp lệ (free hoặc paid).');
+  const p = PropertiesService.getScriptProperties();
+  // Không cho hai ô cùng một khoá: dùng chung khoá thì chung hạn mức, dự phòng không có tác dụng.
+  const finalKeys = ['GEMINI_API_KEY'].concat(AI_BACKUP_PROPS).map(function (n, i) {
+    if (i === 0) return newMain || String(p.getProperty(n) || '').trim();
+    if (newBaks[i - 1]) return newBaks[i - 1];
+    if (clears[i - 1]) return '';
+    return String(p.getProperty(n) || '').trim();
+  });
+  const seen = {};
+  finalKeys.forEach(function (k, i) {
+    if (!k) return;
+    if (seen[k] !== undefined) throw new Error((i === 0 ? 'Khoá chính' : 'Khoá dự phòng ' + i) + ' trùng với ' + (seen[k] === 0 ? 'khoá chính' : 'khoá dự phòng ' + seen[k]) + '. Mỗi ô phải là một khoá khác nhau (tạo ở dự án Google khác). Chưa lưu thay đổi nào.');
+    seen[k] = i;
+  });
   const tested = [];
-  [['Khoá chính', newMain], ['Khoá dự phòng', newBak]].forEach(function (x) {
+  [['Khoá chính', newMain]].concat(newBaks.map(function (k, i) { return ['Khoá dự phòng ' + (i + 1), k]; })).forEach(function (x) {
     if (!x[1]) return;
     const r = testGeminiKey_(x[1], model);
     if (!r.ok) throw new Error(x[0] + ': ' + r.message + ' Chưa lưu thay đổi nào.');
     tested.push(x[0] + (r.warn ? ' (hết hạn mức tạm thời)' : ''));
   });
-  const p = PropertiesService.getScriptProperties();
   const changed = [];
   if (newMain) { p.setProperty('GEMINI_API_KEY', newMain); changed.push('khoa_chinh ' + keyHint_(newMain)); }
-  if (newBak) { p.setProperty('GEMINI_API_KEY_BACKUP', newBak); changed.push('khoa_du_phong ' + keyHint_(newBak)); }
-  else if (patch.clearBackup === true) { p.deleteProperty('GEMINI_API_KEY_BACKUP'); changed.push('xoa_khoa_du_phong'); }
+  AI_BACKUP_PROPS.forEach(function (n, i) {
+    if (newBaks[i]) { p.setProperty(n, newBaks[i]); changed.push('khoa_du_phong_' + (i + 1) + ' ' + keyHint_(newBaks[i])); }
+    else if (clears[i]) { p.deleteProperty(n); changed.push('xoa_khoa_du_phong_' + (i + 1)); }
+  });
   if (model !== prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL)) { p.setProperty('GEMINI_MODEL', model); changed.push('model=' + model); }
   if (patch.tier !== undefined) {
     if (patch.tier) p.setProperty('GEMINI_TIER', patch.tier); else p.deleteProperty('GEMINI_TIER');
@@ -1154,7 +1180,7 @@ function testAiConfig(token) {
   const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const p = PropertiesService.getScriptProperties();
   const out = [];
-  [['main', 'Khoá chính', 'GEMINI_API_KEY'], ['backup', 'Khoá dự phòng', 'GEMINI_API_KEY_BACKUP']].forEach(function (x) {
+  [['main', 'Khoá chính', 'GEMINI_API_KEY']].concat(AI_BACKUP_PROPS.map(function (n, i) { return ['backup' + (i + 1), 'Khoá dự phòng ' + (i + 1), n]; })).forEach(function (x) {
     const k = String(p.getProperty(x[2]) || '').trim();
     if (!k) { out.push({ slot: x[0], label: x[1], set: false }); return; }
     const r = testGeminiKey_(k, model);
@@ -1698,14 +1724,17 @@ function clean_(v, type) {
 
 /* ============================ TIỆN ÍCH ============================ */
 
-/** Khoá Gemini theo thứ tự thử: khoá chính, rồi khoá dự phòng (nếu có và khác khoá chính). */
+/** Thuộc tính lưu khoá dự phòng, theo thứ tự thử: dự phòng 1 (tên cũ GEMINI_API_KEY_BACKUP), 2, 3, 4. */
+const AI_BACKUP_PROPS = ['GEMINI_API_KEY_BACKUP', 'GEMINI_API_KEY_BACKUP_2', 'GEMINI_API_KEY_BACKUP_3', 'GEMINI_API_KEY_BACKUP_4'];
+
+/** Khoá Gemini theo thứ tự thử: khoá chính, rồi dự phòng 1 → 4 (bỏ khoá trống và khoá trùng khoá đứng trước). */
 function geminiKeys_() {
   const p = PropertiesService.getScriptProperties();
-  const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
-  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
   const out = [];
-  if (main) out.push(main);
-  if (bak && bak !== main) out.push(bak);
+  ['GEMINI_API_KEY'].concat(AI_BACKUP_PROPS).forEach(function (name) {
+    const k = String(p.getProperty(name) || '').trim();
+    if (k && out.indexOf(k) < 0) out.push(k);
+  });
   if (!out.length) throw new Error('Chưa cấu hình Script Property: GEMINI_API_KEY');
   return out;
 }
