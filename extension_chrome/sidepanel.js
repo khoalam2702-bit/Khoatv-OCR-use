@@ -388,6 +388,7 @@ async function doFill() {
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
     parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
+    if (r.mainOnly) parts.push('(Trang có khung phụ không phản hồi nên chỉ điền ở khung chính.)');
     if (r.away) parts.push('Lưu ý: đã điền vào tab "' + cut(r.tabTitle) + '", không phải tab bạn đang xem. Quay lại tab đó để kiểm tra.');
     info.textContent = parts.join(' ');
     info.className = r.status === 'FILLED' && !r.away ? 'ok' : 'warn';

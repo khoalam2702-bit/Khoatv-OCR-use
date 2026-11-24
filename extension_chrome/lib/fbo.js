@@ -2,6 +2,9 @@ import { getSettings, getFboProfile, getDm } from './store.js';
 import { enrichData } from './dm.js';
 import { FORM_WAIT_MS, POLL_MS, STEP_TIMEOUT_MS, STABLE_POLLS, mappingSelectors, classifyForm, withTimeout, importantOverwrites, abortable, FillStopped, mappingVariants, pickVariant, formLabel } from './formcheck.js';
 
+/** Chạy script trong tab NGAY, không chờ khung phụ tải xong (document_idle). Trang FBO có khung phụ không bao giờ tải xong thì lệnh mặc định treo mãi. */
+const run = (target, spec) => chrome.scripting.executeScript({ target, injectImmediately: true, ...spec });
+
 /** Tab FBO cần thao tác: tab đang xem nếu là trang web; nếu đang ở trang của extension (Cài đặt) hay trang trống thì lấy tab web dùng gần nhất. */
 async function webTab() {
   const [cur] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -12,10 +15,10 @@ async function webTab() {
 }
 
 /** Tab đang hiện form đăng nhập FBO (ở bất kỳ frame nào) = chưa đăng nhập. Không thấy form đăng nhập = coi như đã đăng nhập. */
-async function needsLogin(tabId) {
-  const target = { tabId, allFrames: true };
-  await chrome.scripting.executeScript({ target, files: ['content/page.js'] });
-  const res = await chrome.scripting.executeScript({ target, func: () => globalThis.__KHOATV_LOGIN_STATE__() });
+async function needsLogin(tabId, target) {
+  target = target || { tabId, allFrames: true };
+  await run(target, { files: ['content/page.js'] });
+  const res = await run(target, { func: () => globalThis.__KHOATV_LOGIN_STATE__() });
   return res.some((r) => r.result && r.result.loginPage);
 }
 
@@ -42,7 +45,7 @@ async function waitForForm(target, variants, onProgress, signal) {
   const t0 = Date.now();
   let best = null, state = 'NO_FORM', last = -1, stable = 0;
   for (;;) {
-    const res = await step(chrome.scripting.executeScript({ target, func: (m) => globalThis.__KHOATV_PROBE__(m), args: [union] }), 'dò các ô của form', signal);
+    const res = await step(run(target, { func: (m) => globalThis.__KHOATV_PROBE__(m), args: [union] }), 'dò các ô của form', signal);
     const seen = new Set();
     res.forEach((r) => r.result && r.result.found.forEach((x) => seen.add(x))); // mỗi frame chỉ thấy ô của frame đó
     best = pickVariant(variants, [...seen]);
@@ -72,7 +75,8 @@ export async function fillActiveTab(docType, data, opts) {
   let total = Object.keys(mapping).length;
   const progress = (p) => { if (opts.onProgress) opts.onProgress(p); };
   const tab = await webTab();
-  const target = { tabId: tab.id, allFrames: true };
+  let target = { tabId: tab.id, allFrames: true };
+  let mainOnly = false;
   const tabInfo = { id: tab.id, title: tab.title || tab.url || '', url: tab.url || '' };
   progress({ phase: 'tab', title: tabInfo.title });
   // Khoá vào đúng tab đã chọn lúc bấm: chuyển sang tab khác không làm điền nhầm sang tab đó; đóng tab hoặc chuyển trang thì dừng.
@@ -82,8 +86,21 @@ export async function fillActiveTab(docType, data, opts) {
   try {
     progress({ phase: 'login' });
     await guard();
-    if (await step(needsLogin(tab.id), 'kiểm tra đăng nhập', sig)) return { ...blank, total, status: 'NOT_LOGGED_IN' };
-    await step(chrome.scripting.executeScript({ target, files: ['content/page.js'] }), 'nạp công cụ điền', sig);
+    // Khung phụ treo làm lệnh vào mọi khung quá hạn: thử lại một lần chỉ với khung chính (form FBO nằm ở khung chính)
+    const frames = async (fn, what) => {
+      try { return await step(fn(target), what, sig); }
+      catch (e) {
+        if (mainOnly || !/Tab FBO không phản hồi/.test(e.message)) throw e;
+        mainOnly = true; target = { tabId: tab.id };
+        return await step(fn(target), what, sig);
+      }
+    };
+    // Kiểm tra đăng nhập chỉ là bước phụ (không bấm gì): không kiểm tra được thì coi như đã đăng nhập, bước dò form sẽ báo nếu không thấy form
+    let loginPage = false;
+    try { loginPage = await frames((t) => needsLogin(tab.id, t), 'kiểm tra đăng nhập'); }
+    catch (e) { if (e instanceof FillStopped || !/Tab FBO không phản hồi/.test(e.message)) throw e; }
+    if (loginPage) return { ...blank, total, status: 'NOT_LOGGED_IN' };
+    await frames((t) => run(t, { files: ['content/page.js'] }), 'nạp công cụ điền');
     form = await waitForForm(target, variants, progress, sig);
     mapping = form.mapping; // ánh xạ của form đã nhận diện
     total = Object.keys(mapping).length;
@@ -95,7 +112,7 @@ export async function fillActiveTab(docType, data, opts) {
     }
     await guard();
     const enriched = enrichData(docType, data, await getDm());
-    const call = (extra, what, abortSig) => step(chrome.scripting.executeScript({ target, func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
+    const call = (extra, what, abortSig) => step(run(target, { func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
     // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
     progress({ phase: 'check' });
     const dry = await call({ dry: true }, 'kiểm tra dữ liệu có sẵn trên form', sig);
@@ -122,7 +139,7 @@ export async function fillActiveTab(docType, data, opts) {
   // Người dùng đang xem tab khác lúc điền xong: kết quả vẫn ở tab cũ, báo rõ để không tưởng đã điền vào tab đang xem
   let away = false;
   try { const [cur] = await chrome.tabs.query({ active: true, currentWindow: true }); away = !!cur && cur.id !== tabInfo.id; } catch (e) { away = false; }
-  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, formName: variants.length > 1 ? formLabel(form.variant) : '' };
+  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, mainOnly, formName: variants.length > 1 ? formLabel(form.variant) : '' };
 }
 
 /** Tab web (http/https) vừa dùng gần nhất: trang Cài đặt tự nó là tab đang mở, nên không thể dùng "tab active". */
@@ -138,8 +155,8 @@ export async function inspectActiveTab() {
   if (!tab) throw new Error('Không thấy tab web nào đang mở. Mở form FBO ở một tab rồi thử lại.');
   const target = { tabId: tab.id, allFrames: true };
   try {
-    await chrome.scripting.executeScript({ target, files: ['content/page.js'] });
-    const res = await chrome.scripting.executeScript({ target, func: () => globalThis.__KHOATV_INSPECT__() });
+    await run(target, { files: ['content/page.js'] });
+    const res = await run(target, { func: () => globalThis.__KHOATV_INSPECT__() });
     return res.map((r) => r.result).filter((r) => r && r.controls.length);
   } catch (e) {
     throw new Error('Không truy cập được tab ' + new URL(tab.url).origin + '. Cấp quyền cho địa chỉ này ở mục 2. (' + (e && e.message ? e.message : e) + ')');
@@ -160,7 +177,7 @@ export async function loginFboActiveTab() {
   const target = { tabId: tab.id, allFrames: true };
   let res;
   try {
-    res = await chrome.scripting.executeScript({ target, func: (p) => globalThis.__KHOATV_LOGIN__(p), args: [profile] });
+    res = await run(target, { func: (p) => globalThis.__KHOATV_LOGIN__(p), args: [profile] });
   } catch (e) {
     throw new Error('Không đăng nhập được: ' + (e && e.message ? e.message : e));
   }
