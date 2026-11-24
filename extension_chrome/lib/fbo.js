@@ -1,5 +1,14 @@
 import { getSettings, getFboProfile } from './store.js';
 
+/** Tab FBO cần thao tác: tab đang xem nếu là trang web; nếu đang ở trang của extension (Cài đặt) hay trang trống thì lấy tab web dùng gần nhất. */
+async function webTab() {
+  const [cur] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (cur && cur.id != null && /^https?:/.test(cur.url || '')) return cur;
+  const tab = await pickWebTab();
+  if (!tab) throw new Error('Không thấy tab web nào đang mở. Mở trang FBO ở một tab rồi thử lại.');
+  return tab;
+}
+
 /** Điền dữ liệu vào form FBO ở tab đang mở. Ánh xạ trường do người dùng khai ở trang Cài đặt (chưa có thì báo, không đoán). */
 export async function fillActiveTab(docType, data) {
   const { fboMappings } = await getSettings();
@@ -7,8 +16,7 @@ export async function fillActiveTab(docType, data) {
   if (!mapping || !Object.keys(mapping).length) {
     return { status: 'NO_MAPPING', filled: [], notFound: [], empty: [] };
   }
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || tab.id == null) throw new Error('Không tìm thấy tab đang mở.');
+  const tab = await webTab();
   const target = { tabId: tab.id, allFrames: true };
   let results;
   try {
@@ -57,8 +65,7 @@ export async function inspectActiveTab() {
 
 /** Đăng nhập FBO ở tab đang mở bằng tài khoản đã lưu cho địa chỉ của tab đó. */
 export async function loginFboActiveTab() {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab || tab.id == null || !tab.url) throw new Error('Không tìm thấy tab đang mở.');
+  const tab = await webTab();
   const origin = new URL(tab.url).origin;
   const profile = await getFboProfile(origin);
   if (!profile) throw new Error('Chưa lưu tài khoản FBO cho ' + origin + '. Mở Cài đặt, mục "Đăng nhập FBO", để lưu.');
