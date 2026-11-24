@@ -858,6 +858,7 @@ function scanDocument(token, payload) {
     try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
   });
 
+  const tDrive = Date.now();
   const now = new Date();
   const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss') + '_' + Utilities.getUuid().slice(0, 6);
   const lock = LockService.getScriptLock();
@@ -873,7 +874,7 @@ function scanDocument(token, payload) {
 
   const tAi = Date.now();
   const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {};
-  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, Gemini ' + (Date.now() - tAi) + 'ms');
+  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (Date.now() - tAi) + 'ms, ' + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   return { data: data, fileIds: fileIds, ms: Date.now() - started };
 }
