@@ -169,14 +169,16 @@ async function doScan() {
     const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
     const qrFirst = state.type === 'CCCD' && $('in-qronly').checked;
     let qr = null, qrTask = Promise.resolve(null);
-    if (qrFirst) qr = await readCccdQr(state.files).catch(() => null);
-    const qrFirstQr = qr;
-    else if (state.type === 'CCCD') qrTask = readCccdQr(state.files).catch(() => null);
+    if (qrFirst) {
+      qr = await readCccdQr(state.files).catch(() => null);
+    } else if (state.type === 'CCCD') {
+      qrTask = readCccdQr(state.files).catch(() => null);
+    }
+    const skipAiUsed = !!qr; // chỉ true ở chế độ chỉ QR khi QR hợp lệ: backend không gọi AI
     const [r, qr2] = await Promise.all([
-      api('scanDocument', [{ docType: state.type, files, skipAi: !!qr }]),
+      api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
       qrTask
     ]);
-    const skipAiUsed = !!qrFirstQr;
     qr = qr || qr2;
     r.data = r.data || {};
     const used = mergeQr(r.data, qr);
