@@ -46,7 +46,7 @@ assert.throws(() => run(CALL), /hết hạn mức.*RETRY_AFTER:\d+/);
 assert.strictEqual(fetches.length, 0, 'mọi khoá đang nghỉ thì không được gọi mạng');
 
 // 4) Lỗi 5xx cũng chuyển khoá dự phòng
-reset(); nowMs += 3600 * 1000; plan = [resp(503, '{}'), resp(503, '{}'), resp(503, '{}'), resp(503, '{}'), OK];
+reset(); nowMs += 3600 * 1000; plan = [resp(503, '{}'), OK]; // còn khoá khác: gặp 503 chuyển khoá ngay, không chờ thử lại cùng khoá
 assert.strictEqual(run(CALL).so_cccd, '1');
 assert.strictEqual(fetches[fetches.length - 1], K2);
 
