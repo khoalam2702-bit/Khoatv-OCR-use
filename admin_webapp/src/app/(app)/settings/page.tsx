@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { api, errMsg } from '@/lib/api';
 
-interface Slot { set: boolean; hint: string }
+interface Slot { set: boolean; hint: string; waitSec?: number }
 interface AiConfig { model: string; defaultModel: string; tier: '' | 'free' | 'paid'; main: Slot; backup: Slot; backups?: Slot[]; tested?: string[] }
 interface TestRow { slot: string; label: string; set: boolean; hint?: string; ok?: boolean; warn?: boolean; message?: string }
 
@@ -47,7 +47,7 @@ export default function SettingsPage() {
   const baks: Slot[] = cfg ? (cfg.backups ?? [cfg.backup]) : [];
   const setBak = (i: number, v: string) => setBackupKeys((a) => a.map((x, j) => (j === i ? v : x)));
   const setClr = (i: number, v: boolean) => setClearBackups((a) => a.map((x, j) => (j === i ? v : x)));
-  const slotText = (s: Slot) => (s.set ? `Đã khai báo (${s.hint})` : 'Chưa khai báo');
+  const slotText = (s: Slot) => (s.set ? `Đã khai báo (${s.hint})${s.waitSec ? ` — đang tạm nghỉ ~${Math.max(1, Math.round(s.waitSec / 60))} phút (hết hạn mức/lỗi), hệ thống tự dùng khoá khác` : ''}` : 'Chưa khai báo');
   return (
     <div className="max-w-2xl space-y-4">
       <h1 className="text-lg font-semibold">Cài đặt AI (Gemini)</h1>

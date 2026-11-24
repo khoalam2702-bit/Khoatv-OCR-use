@@ -1103,9 +1103,9 @@ function aiConfigView_() {
     model: prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL),
     defaultModel: DEFAULTS.GEMINI_MODEL,
     tier: AI_TIERS.indexOf(tier) >= 0 ? tier : '',
-    main: { set: !!main, hint: keyHint_(main) },
-    backup: { set: !!baks[0], hint: keyHint_(baks[0]) }, // giữ cho giao diện cũ: = dự phòng 1
-    backups: baks.map(function (k) { return { set: !!k, hint: keyHint_(k) }; }) // dự phòng 1..4
+    main: slotView_(main),
+    backup: slotView_(baks[0]), // giữ cho giao diện cũ: = dự phòng 1
+    backups: baks.map(slotView_) // dự phòng 1..4
   };
 }
 
@@ -1751,6 +1751,22 @@ function cooldownSecFor_(resp, code) {
   else if (code >= 500) sec = 30;
   else sec = 600;
   return Math.max(5, Math.min(KEY_COOLDOWN_MAX_SEC, Math.round(sec)));
+}
+
+/** Số giây khoá còn phải nghỉ (0 nếu đang dùng được hoặc không có cache). */
+function keyCooldownLeft_(key) {
+  if (!key) return 0;
+  try {
+    const until = Number(CacheService.getScriptCache().get(cooldownCacheKey_(key)) || 0);
+    return until > Date.now() ? Math.ceil((until - Date.now()) / 1000) : 0;
+  } catch (e) { return 0; }
+}
+
+function slotView_(key) {
+  const v = { set: !!key, hint: keyHint_(key) };
+  const w = keyCooldownLeft_(key);
+  if (w > 0) v.waitSec = w; // chỉ ADMIN thấy: khoá đang nghỉ do hết hạn mức / lỗi
+  return v;
 }
 
 function markKeyCooldown_(key, sec) {

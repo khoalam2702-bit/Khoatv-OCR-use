@@ -35,6 +35,9 @@ assert.ok(!JSON.stringify(v).includes(K[1]) && !JSON.stringify(ctx.__audit).incl
 reset(); plan = [QUOTA, QUOTA, QUOTA, QUOTA, OK];
 assert.strictEqual(run(CALL).so_cccd, '9');
 assert.deepStrictEqual(fetches, K);
+// ADMIN thấy khoá nào đang nghỉ; khoá đang dùng được thì không có waitSec
+v = run('getAiConfig("t")');
+assert.ok(v.main.waitSec > 0 && v.backups[2].waitSec > 0 && v.backups[3].waitSec === undefined);
 // lần sau: các khoá đang nghỉ bị bỏ qua, dùng thẳng DP4
 fetches.length = 0; plan = [OK];
 run(CALL);
