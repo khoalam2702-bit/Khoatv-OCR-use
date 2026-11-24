@@ -107,18 +107,16 @@ const LOGIN = `<select id="LoginExtender_cboEntity"><option value="">--</option>
 <input id="LoginExtender_txtUserName"><select id="LoginExtender_cboUnit"><option value="">--</option><option value="U1">Đơn vị 1</option></select>
 <input type="password" id="LoginExtender_txtPassword"><button id="ok">Nhận</button><button id="no">Hủy</button>`;
 
-test('đăng nhập FBO: điền công ty, tên, đơn vị, mật khẩu và bấm Nhận', async () => {
+test('đăng nhập FBO: điền tên, mật khẩu (giữ nguyên công ty/đơn vị) và bấm Nhận', async () => {
   const w = page(LOGIN);
   w.document.getElementById('ok').getClientRects = () => [1]; // jsdom không có layout
   Object.defineProperty(w.HTMLElement.prototype, 'offsetWidth', { get() { return 10; }, configurable: true });
   let clicked = '';
   w.document.getElementById('ok').addEventListener('click', () => { clicked = 'ok'; });
   w.document.getElementById('no').addEventListener('click', () => { clicked = 'no'; });
-  const r = await w.__KHOATV_LOGIN__({ company: 'Công ty A', unit: 'Đơn vị 1', user: 'khoa', password: 'S3cret!' });
+  const r = await w.__KHOATV_LOGIN__({ user: 'khoa', password: 'S3cret!' });
   const d = w.document;
-  assert.equal(d.getElementById('LoginExtender_cboEntity').value, 'C1');
   assert.equal(d.getElementById('LoginExtender_txtUserName').value, 'khoa');
-  assert.equal(d.getElementById('LoginExtender_cboUnit').value, 'U1');
   assert.equal(d.getElementById('LoginExtender_txtPassword').value, 'S3cret!');
   assert.equal(clicked, 'ok');
   assert.equal(r.submitted, true);
@@ -142,4 +140,15 @@ test('fixed luôn điền dù OCR trống; contains khớp theo từ khoá và k
   r = plain(w.__KHOATV_FILL__(mapping, { noi_cap: 'Cục Cảnh sát QLHC về TTXH' }));
   assert.equal(w.document.getElementById('nc').value, '');
   assert.ok(r.empty.includes('noi_cap'));
+});
+
+test('trạng thái đăng nhập: có form đăng nhập hiển thị = chưa đăng nhập; trang khác = đã đăng nhập', () => {
+  Object.defineProperty(globalThis.window ? globalThis.window.HTMLElement.prototype : Object.prototype, '_x', { value: 1, configurable: true });
+  const w = page(LOGIN);
+  Object.defineProperty(w.HTMLElement.prototype, 'offsetWidth', { get() { return 10; }, configurable: true });
+  assert.equal(w.__KHOATV_LOGIN_STATE__().loginPage, true);
+  const w2 = page('<input id="x"><input id="y">');
+  assert.equal(w2.__KHOATV_LOGIN_STATE__().loginPage, false);
+  const w3 = page('<input id="LoginExtender_txtUserName"><input type="password" id="LoginExtender_txtPassword">');
+  assert.equal(w3.__KHOATV_LOGIN_STATE__().loginPage, false); // có trong DOM nhưng không hiển thị (jsdom không có layout)
 });

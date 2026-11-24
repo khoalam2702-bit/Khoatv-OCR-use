@@ -238,6 +238,11 @@ async function doFill() {
   info.textContent = '';
   try {
     const r = await fillActiveTab(state.type, state.saved.data);
+    if (r.status === 'NOT_LOGGED_IN') {
+      info.textContent = 'Tab FBO đang ở trang đăng nhập. Bấm "Đăng nhập FBO" (hoặc tự đăng nhập), rồi bấm Điền vào FBO lại.';
+      info.className = 'warn';
+      return;
+    }
     if (r.status === 'NO_MAPPING') {
       info.textContent = 'Chưa khai báo ánh xạ trường FBO cho loại này. Mở Cài đặt để khai báo.';
       return;
@@ -274,6 +279,7 @@ async function doFboLogin() {
   busy(btn, true, 'Đang điền...');
   try {
     const r = await loginFboActiveTab();
+    if (r.skipped) { msg('Tab FBO đã đăng nhập, không cần đăng nhập lại.', 'info'); return; }
     const parts = [r.submitted ? 'Đã điền và bấm Nhận.' : 'Đã điền thông tin đăng nhập.'].concat(r.notes || []);
     msg(parts.join(' '), 'info');
   } catch (e) { msg(e.message); }

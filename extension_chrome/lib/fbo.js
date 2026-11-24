@@ -9,6 +9,14 @@ async function webTab() {
   return tab;
 }
 
+/** Tab đang hiện form đăng nhập FBO (ở bất kỳ frame nào) = chưa đăng nhập. Không thấy form đăng nhập = coi như đã đăng nhập. */
+async function needsLogin(tabId) {
+  const target = { tabId, allFrames: true };
+  await chrome.scripting.executeScript({ target, files: ['content/page.js'] });
+  const res = await chrome.scripting.executeScript({ target, func: () => globalThis.__KHOATV_LOGIN_STATE__() });
+  return res.some((r) => r.result && r.result.loginPage);
+}
+
 /** Điền dữ liệu vào form FBO ở tab đang mở. Ánh xạ trường do người dùng khai ở trang Cài đặt (chưa có thì báo, không đoán). */
 export async function fillActiveTab(docType, data) {
   const { fboMappings } = await getSettings();
@@ -20,6 +28,7 @@ export async function fillActiveTab(docType, data) {
   const target = { tabId: tab.id, allFrames: true };
   let results;
   try {
+    if (await needsLogin(tab.id)) return { status: 'NOT_LOGGED_IN', filled: [], notFound: [], empty: [] };
     await chrome.scripting.executeScript({ target, files: ['content/page.js'] });
     results = await chrome.scripting.executeScript({
       target,
@@ -63,21 +72,28 @@ export async function inspectActiveTab() {
   }
 }
 
-/** Đăng nhập FBO ở tab đang mở bằng tài khoản đã lưu cho địa chỉ của tab đó. */
+/** Đăng nhập FBO ở tab đang mở. Chỉ đăng nhập khi tab đang hiện form đăng nhập; đã đăng nhập rồi thì bỏ qua (không cần tài khoản đã lưu). */
 export async function loginFboActiveTab() {
   const tab = await webTab();
   const origin = new URL(tab.url).origin;
-  const profile = await getFboProfile(origin);
-  if (!profile) throw new Error('Chưa lưu tài khoản FBO cho ' + origin + '. Mở Cài đặt, mục "Đăng nhập FBO", để lưu.');
-  const target = { tabId: tab.id };
-  let res;
   try {
-    await chrome.scripting.executeScript({ target, files: ['content/page.js'] });
-    res = await chrome.scripting.executeScript({ target, func: (p) => globalThis.__KHOATV_LOGIN__(p), args: [profile] });
+    if (!(await needsLogin(tab.id))) return { ok: true, skipped: true, submitted: false, notes: [] };
   } catch (e) {
     throw new Error('Không truy cập được tab này. Cấp quyền cho ' + origin + ' (Cài đặt, mục 2). (' + (e && e.message ? e.message : e) + ')');
   }
-  const r = res[0] && res[0].result;
-  if (!r || !r.ok) throw new Error((r && r.reason) || 'Không đăng nhập được.');
-  return r;
+  const profile = await getFboProfile(origin);
+  if (!profile) throw new Error('Chưa lưu tài khoản FBO cho ' + origin + '. Mở Cài đặt, mục "Đăng nhập FBO", để lưu.');
+  const target = { tabId: tab.id, allFrames: true };
+  let res;
+  try {
+    res = await chrome.scripting.executeScript({ target, func: (p) => globalThis.__KHOATV_LOGIN__(p), args: [profile] });
+  } catch (e) {
+    throw new Error('Không đăng nhập được: ' + (e && e.message ? e.message : e));
+  }
+  const ok = res.map((x) => x.result).find((r) => r && r.ok);
+  if (!ok) {
+    const bad = res.map((x) => x.result).find((r) => r && r.reason);
+    throw new Error((bad && bad.reason) || 'Không đăng nhập được.');
+  }
+  return ok;
 }

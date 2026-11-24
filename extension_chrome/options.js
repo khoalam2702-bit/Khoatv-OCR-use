@@ -28,9 +28,9 @@ async function render() {
   const lt = $('logins'); lt.textContent = '';
   for (const [o, r] of Object.entries(logins)) {
     const tr = document.createElement('tr');
-    cell(tr, o); cell(tr, [r.company, r.unit, r.user].filter(Boolean).join(' / ')); cell(tr, r.passEnc ? 'Có mật khẩu (mã hoá)' : 'Chưa có mật khẩu');
+    cell(tr, o); cell(tr, r.user || ''); cell(tr, r.passEnc ? 'Có mật khẩu (mã hoá)' : 'Chưa có mật khẩu');
     const act = cell(tr, '');
-    act.appendChild(btn('Sửa', () => { $('lg-origin').value = o; $('lg-company').value = r.company; $('lg-unit').value = r.unit; $('lg-user').value = r.user; $('lg-pass').value = ''; }));
+    act.appendChild(btn('Sửa', () => { $('lg-origin').value = o; $('lg-user').value = r.user; $('lg-pass').value = ''; }));
     act.appendChild(btn('Xoá', async () => { await deleteFboLogin(o); render(); }));
     lt.appendChild(tr);
   }
@@ -56,7 +56,7 @@ $('grant-all').onclick = async () => grant((await getSettings()).fboOrigins);
 
 $('save-login').onclick = async () => {
   try {
-    await saveFboLogin($('lg-origin').value, { company: $('lg-company').value.trim(), unit: $('lg-unit').value.trim(), user: $('lg-user').value.trim(), password: $('lg-pass').value });
+    await saveFboLogin($('lg-origin').value, { user: $('lg-user').value.trim(), password: $('lg-pass').value });
     $('lg-pass').value = '';
     say('Đã lưu đăng nhập FBO.');
     render();

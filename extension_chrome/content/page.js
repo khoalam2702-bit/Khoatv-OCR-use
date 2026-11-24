@@ -129,16 +129,19 @@
     setNative(el, String(v)); fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
   }
 
-  /* Điền form đăng nhập FBO (Công ty, Tên, Đơn vị, Mật khẩu) rồi bấm "Nhận". p = { company, unit, user, password, submit } */
+  /* Trang hiện tại có đang hiển thị form đăng nhập FBO (ô Tên + ô Mật khẩu) không. Không có = coi như đã đăng nhập. */
+  globalThis.__KHOATV_LOGIN_STATE__ = function () {
+    var user = byId('txtUserName'), pass = byId('txtPassword');
+    var shown = !!(user && pass && (pass.offsetWidth || pass.offsetHeight || pass.getClientRects().length));
+    return { loginPage: shown };
+  };
+
+  /* Điền form đăng nhập FBO (Tên, Mật khẩu) rồi bấm "Nhận"; ô Công ty/Đơn vị giữ nguyên giá trị FBO đang chọn. p = { user, password, submit } */
   globalThis.__KHOATV_LOGIN__ = async function (p) {
     var user = byId('txtUserName'), pass = byId('txtPassword');
     if (!user || !pass) return { ok: false, reason: 'Tab hiện tại không phải trang đăng nhập FBO.' };
-    var ent = byId('cboEntity'), unit = byId('cboUnit'), notes = [];
-    if (ent && p.company && !setSelect(ent, p.company)) notes.push('Không tìm thấy công ty "' + p.company + '"');
-    await wait(500); // danh sách Đơn vị có thể nạp lại theo công ty
+    var notes = [];
     if (p.user) typeInto(user, p.user);
-    await wait(500);
-    if (unit && p.unit && !setSelect(unit, p.unit)) notes.push('Không tìm thấy đơn vị "' + p.unit + '"');
     if (p.password) typeInto(pass, p.password);
     if (p.submit === false) return { ok: true, submitted: false, notes: notes };
     var cands = document.querySelectorAll('button, input[type=button], input[type=submit], a, span, div'), btn = null;
