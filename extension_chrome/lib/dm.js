@@ -50,6 +50,24 @@ export function lookupAddress(dm, text) {
   return out;
 }
 
+/** Phần địa chỉ còn lại sau khi bỏ tỉnh/thành và phường/xã đã tra được (số nhà, tổ, đường, thôn...). Không tra được gì thì giữ nguyên chuỗi. */
+export function addressDetail(dm, text) {
+  const raw = String(text || '').trim();
+  if (!raw) return '';
+  const r = lookupAddress(dm, raw);
+  if (!r.tinh) return raw;
+  const prov = dm.provinces.find((x) => x.ma === r.tinh.ma);
+  const ward = r.xa ? (dm.wardsBy[r.tinh.ma] || []).find((w) => w.ma === r.xa.ma) : null;
+  const keep = raw.split(/[,;]|\s-\s/).map((x) => x.trim()).filter((x) => {
+    const n = norm(x);
+    if (!n) return false;
+    if (prov && strip(n, PROV_PREFIX) === prov.key) return false;
+    if (ward && (n === ward.full || (!WARD_PREFIX.test(n) && n === ward.key))) return false;
+    return true;
+  });
+  return keep.length ? keep.join(', ') : '';
+}
+
 // Cách gọi khác của các nước có trong danh mục, và mã ISO 3 chữ (vùng MRZ của hộ chiếu).
 const NAT_ALIAS = {
   'hoa ky': 'USA', 'my': 'USA', 'united states': 'USA', 'united states of america': 'USA', usa: 'USA',
@@ -75,6 +93,7 @@ export function lookupNationality(dm, text) {
 const ADDR = { thuong_tru: 'noi_thuong_tru', que_quan: 'que_quan' };
 export const DERIVED_LABELS = {
   thuong_tru_tinh_ma: 'Thường trú - Tỉnh/thành', thuong_tru_xa_ma: 'Thường trú - Phường/xã',
+  thuong_tru_chi_tiet: 'Thường trú - Số nhà, tổ', que_quan_chi_tiet: 'Quê quán - Số nhà, tổ',
   que_quan_tinh_ma: 'Quê quán - Tỉnh/thành', que_quan_xa_ma: 'Quê quán - Phường/xã',
   noi_cap_ma: 'Nơi cấp (mã quốc tịch)', noi_cap_visa_ma: 'Nơi cấp thị thực (mã quốc tịch)'
 };
@@ -90,6 +109,7 @@ export function enrichData(docType, data, dm) {
       const r = lookupAddress(dm, out[k]);
       out[p + '_tinh_ma'] = r.tinh ? r.tinh.ma : '';
       out[p + '_xa_ma'] = r.xa ? r.xa.ma : '';
+      out[p + '_chi_tiet'] = addressDetail(dm, out[k]); // số nhà, tổ... cắt từ địa chỉ, điền vào ô địa chỉ chi tiết
     }
   }
   if (docType === 'HO_CHIEU') {

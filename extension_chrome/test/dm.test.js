@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildDm, lookupAddress, lookupNationality, enrichData, norm } from '../lib/dm.js';
+import { buildDm, addressDetail, lookupAddress, lookupNationality, enrichData, norm } from '../lib/dm.js';
 
 const rd = (n) => JSON.parse(fs.readFileSync(new URL('../presets/dm/' + n, import.meta.url), 'utf8'));
 const dm = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json') });
@@ -71,4 +71,18 @@ test('enrichData: CCCD thêm mã tỉnh/xã, Hộ chiếu thêm mã nơi cấp; 
   const h = enrichData('HO_CHIEU', { noi_cap: 'Việt Nam', noi_cap_visa: 'Mỹ' }, dm);
   assert.deepEqual([h.noi_cap_ma, h.noi_cap_visa_ma], ['VN', 'USA']);
   assert.deepEqual(enrichData('GPLX', { a: 1 }, dm), { a: 1 });
+});
+
+test('địa chỉ chi tiết: bỏ tỉnh và phường/xã đã tra được, giữ số nhà/tổ; không tra được thì giữ nguyên', () => {
+  assert.equal(addressDetail(dm, 'Tổ 15 Bình Hiên, Phường Hải Châu, Thành phố Đà Nẵng'), 'Tổ 15 Bình Hiên');
+  assert.equal(addressDetail(dm, 'Tổ 15 Bình Hiên, Hải Châu, Đà Nẵng'), 'Tổ 15 Bình Hiên');
+  assert.equal(addressDetail(dm, 'Thành phố Hà Nội'), '');
+  assert.equal(addressDetail(dm, '12 Nguyễn Trãi, Nơi lạ'), '12 Nguyễn Trãi, Nơi lạ');
+  assert.equal(addressDetail(dm, ''), '');
+});
+
+test('enrichData: CCCD thêm thuong_tru_chi_tiet và que_quan_chi_tiet', () => {
+  const o = enrichData('CCCD', { noi_thuong_tru: 'Tổ 15 Bình Hiên, Phường Hải Châu, Thành phố Đà Nẵng', que_quan: 'Phường Hải Châu, Thành phố Đà Nẵng' }, dm);
+  assert.equal(o.thuong_tru_chi_tiet, 'Tổ 15 Bình Hiên');
+  assert.equal(o.que_quan_chi_tiet, '');
 });

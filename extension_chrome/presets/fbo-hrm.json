@@ -28,8 +28,6 @@
         "Việt Nam": "VN"
       }
     },
-    "que_quan": "[id$=\"_dirExtender_form_que_quan\"]",
-    "noi_thuong_tru": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
     "ngay_cap": {
       "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hl\"]",
       "format": "date"
@@ -46,7 +44,9 @@
     "thuong_tru_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_tinh\"]",
     "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]",
     "thuong_tru_xa_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_xa\"]",
-    "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]"
+    "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]",
+    "thuong_tru_chi_tiet": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
+    "que_quan_chi_tiet": "[id$=\"_dirExtender_form_que_quan\"]"
   },
   "CCCD@UNGVIEN": {
     "so_cccd": "[id$=\"_dirExtender_form_cmnd_so\"]",
@@ -77,8 +77,6 @@
         "Việt Nam": "VN"
       }
     },
-    "que_quan": "[id$=\"_dirExtender_form_que_quan\"]",
-    "noi_thuong_tru": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
     "ngay_cap": {
       "selector": "[id$=\"_dirExtender_form_cmnd_ngay_hl\"]",
       "format": "date"
@@ -95,7 +93,9 @@
     "thuong_tru_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_tinh\"]",
     "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]",
     "thuong_tru_xa_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_xa\"]",
-    "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]"
+    "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]",
+    "thuong_tru_chi_tiet": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
+    "que_quan_chi_tiet": "[id$=\"_dirExtender_form_que_quan\"]"
   },
   "CV_UNGVIEN": {
     "ho_ten": [
