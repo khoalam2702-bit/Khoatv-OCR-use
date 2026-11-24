@@ -5,7 +5,8 @@ import { prepareFile } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
 import { readCccdQr, mergeQr } from './lib/qr.js';
-import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
+import { fillActiveTab, loginFboActiveTab, inspectFormTab } from './lib/fbo.js';
+import { formatInspect, countControls } from './lib/inspectfmt.js';
 import { hasMapping } from './lib/mapping.js';
 import { splitRetry, formatWait } from './lib/quota.js';
 import { FORM_WAIT_MS, FillStopped } from './lib/formcheck.js';
@@ -404,6 +405,23 @@ async function doFill() {
     }
   } finally { stop.hidden = true; stop.onclick = null; if (!done) bar.hidden = true; busy(btn, false); }
 }
+
+/* ---------- Dò form: liệt kê ô của tab đang xem, tự sao chép để dán cho người lập ánh xạ ---------- */
+async function doInspect() {
+  msg('');
+  const b = $('btn-inspect'); b.disabled = true;
+  try {
+    const frames = await inspectFormTab();
+    const text = formatInspect(frames), n = countControls(frames);
+    $('inspect-out').value = text; $('inspect-box').hidden = !n;
+    if (!n) { msg('Không thấy ô nhập nào ở tab đang xem. Mở form FBO ở tab này rồi bấm Dò form lại.'); return; }
+    let copied = true;
+    try { await navigator.clipboard.writeText(text); } catch (e) { copied = false; }
+    msg('Đã dò ' + n + ' ô của form' + (copied ? ' và sao chép vào bộ nhớ tạm. Dán (Ctrl+V) cho Claude.' : '. Chưa tự sao chép được: mở "Kết quả dò form", chọn hết rồi sao chép.'), 'info');
+  } catch (e) { msg(e.message); }
+  finally { b.disabled = false; }
+}
+$('btn-inspect').onclick = doInspect;
 
 /* ---------- Quyền FBO và đăng nhập FBO ---------- */
 async function checkFboPermission() {
