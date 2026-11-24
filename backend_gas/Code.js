@@ -874,10 +874,59 @@ function scanDocument(token, payload) {
   });
 
   const tAi = Date.now();
-  const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {};
-  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (Date.now() - tAi) + 'ms, ' + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
+  // skipAi: extension đã đọc được mã QR trên CCCD và người dùng chọn chế độ nhanh: chỉ lưu tệp gốc, không gọi Gemini.
+  const skipAi = payload.skipAi === true && payload.docType === 'CCCD';
+  const data = skipAi ? {} : (callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {});
+  const tFix = Date.now();
+  if (!skipAi) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
+  const fixMs = Date.now() - tFix;
+  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   return { data: data, fileIds: fileIds, ms: Date.now() - started };
+}
+
+/* ---------- Họ tên mất dấu tiếng Việt ----------
+ * Nếu họ tên (giấy tờ Việt Nam) trả về không có một dấu nào (thường do lấy từ dòng MRZ in hoa không dấu), đọc lại RIÊNG các trường đó
+ * và chỉ nhận kết quả khi bỏ dấu đi thì trùng khít với bản cũ (chỉ thêm dấu, không đổi chữ).
+ */
+const NAME_FIELDS = {
+  CCCD: ['ho_ten'], GPLX: ['ho_ten'], KHAI_SINH: ['ho_ten_khai_sinh', 'ho_ten_cha', 'ho_ten_me'], HO_CHIEU: ['ho_ten']
+};
+function stripDiacritics_(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+}
+function hasViDiacritics_(s) {
+  s = String(s == null ? '' : s);
+  return s.length > 0 && stripDiacritics_(s) !== s;
+}
+function fixNameDiacritics_(docType, type, data, files) {
+  const keys = (NAME_FIELDS[docType] || []).filter(function (k) {
+    const v = data[k];
+    if (typeof v !== 'string' || !v.trim() || hasViDiacritics_(v)) return false;
+    if (docType === 'HO_CHIEU') return /viet/.test(stripDiacritics_(data.quoc_tich).toLowerCase()); // hộ chiếu nước ngoài: tên không dấu là bình thường
+    return true;
+  });
+  if (!keys.length) return data;
+  const sub = {
+    label: type.label,
+    hint: 'CHỈ đọc lại các trường sau và giữ ĐỦ dấu tiếng Việt (ă â ê ô ơ ư đ và dấu thanh sắc huyền hỏi ngã nặng). ' +
+      'Lấy họ tên từ dòng chữ "Họ và tên" in/viết trên giấy tờ (có dấu), KHÔNG lấy từ vùng mã máy đọc MRZ hay mã vạch (in hoa không dấu). ' +
+      'Đây là tên người Việt: không được bỏ dấu, không đổi chữ cái nào ngoài việc thêm dấu.',
+    fields: type.fields.filter(function (f) { return keys.indexOf(f.k) >= 0; })
+  };
+  try {
+    const re = callGemini_(sub, files, { slow: true }) || {};
+    keys.forEach(function (k) {
+      const nv = re[k];
+      if (typeof nv === 'string' && hasViDiacritics_(nv) && stripDiacritics_(nv).toLowerCase().replace(/\s+/g, ' ').trim() === stripDiacritics_(data[k]).toLowerCase().replace(/\s+/g, ' ').trim()) {
+        console.log('Khôi phục dấu ' + k + ': "' + data[k] + '" -> "' + nv + '"');
+        data[k] = nv.trim();
+      }
+    });
+  } catch (e) {
+    console.error('Đọc lại dấu họ tên lỗi, giữ kết quả ban đầu: ' + e.message);
+  }
+  return data;
 }
 
 function rateLimit_(username) {
@@ -906,7 +955,8 @@ function buildSchema_(type) {
   return { type: 'OBJECT', properties: props, required: type.fields.map(function (f) { return f.k; }) };
 }
 
-function callGemini_(type, files) {
+function callGemini_(type, files, opts) {
+  opts = opts || {};
   const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const system =
     'Bạn là bộ máy OCR bóc tách dữ liệu từ tài liệu tiếng Việt. Quy tắc bắt buộc:\n' +
@@ -941,7 +991,7 @@ function callGemini_(type, files) {
   }
   // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
   // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
-  const fast = prop_('GEMINI_FAST', 'on') !== 'off';
+  const fast = prop_('GEMINI_FAST', 'on') !== 'off' && !opts.slow; // opts.slow: lần đọc lại cần chính xác, để Gemini suy nghĩ mặc định
   if (fast) {
     body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
     body.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_HIGH';

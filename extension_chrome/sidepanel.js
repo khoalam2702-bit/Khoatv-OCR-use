@@ -4,6 +4,7 @@ import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOc
 import { prepareFile } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
+import { readCccdQr, mergeQr } from './lib/qr.js';
 import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
 
@@ -130,7 +131,10 @@ function renderFiles() {
   });
 }
 
-function updateScanBtn() { $('btn-scan').disabled = !(state.type && state.files.length); }
+function updateScanBtn() {
+  $('btn-scan').disabled = !(state.type && state.files.length);
+  $('row-qronly').hidden = state.type !== 'CCCD';
+}
 
 async function addFiles(list) {
   msg('');
@@ -160,10 +164,29 @@ async function doScan() {
   const btn = $('btn-scan');
   busy(btn, true, 'Đang quét...');
   try {
-    const r = await api('scanDocument', [{ docType: state.type, files: state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 })) }]);
+    // CCCD: đọc mã QR; dữ liệu QR (số CCCD, họ tên đủ dấu, ngày sinh, giới tính, thường trú, ngày cấp) ghi đè kết quả OCR.
+    // Chế độ "chỉ QR": QR hợp lệ thì không gọi AI (nhanh); QR không đọc được thì tự quay về OCR như thường.
+    const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
+    const qrFirst = state.type === 'CCCD' && $('in-qronly').checked;
+    let qr = null, qrTask = Promise.resolve(null);
+    if (qrFirst) qr = await readCccdQr(state.files).catch(() => null);
+    const qrFirstQr = qr;
+    else if (state.type === 'CCCD') qrTask = readCccdQr(state.files).catch(() => null);
+    const [r, qr2] = await Promise.all([
+      api('scanDocument', [{ docType: state.type, files, skipAi: !!qr }]),
+      qrTask
+    ]);
+    const skipAiUsed = !!qrFirstQr;
+    qr = qr || qr2;
+    r.data = r.data || {};
+    const used = mergeQr(r.data, qr);
+    if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
     state.scan = r;
-    renderReview(r.data || {});
+    renderReview(r.data);
     show('review');
+    if (skipAiUsed) msg('Chế độ chỉ QR: không dùng AI. Đã lấy số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp từ mã QR. Quê quán, nơi sinh, ngày hết hạn hãy tự nhập.', 'info');
+    else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
+    else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
   } catch (e) { msg(e.message); }
   finally { busy(btn, false); updateScanBtn(); }
 }
