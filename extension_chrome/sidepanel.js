@@ -343,6 +343,7 @@ async function doFill() {
   const t = state.config && state.config.types.find((x) => x.code === state.type);
   const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
   const list = (a) => a.map(label).join(', ');
+  const typeName = (code) => { const x = state.config && state.config.types.find((y) => y.code === code); return x ? x.label : code; };
   const cut = (v) => { v = String(v); return v.length > 40 ? v.slice(0, 40) + '…' : v; };
   const ctl = new AbortController(), stop = $('btn-stop');
   stop.hidden = false; stop.disabled = false; stop.onclick = () => { stop.disabled = true; ctl.abort(); };
@@ -362,7 +363,7 @@ async function doFill() {
     confirmPartial: async (x) => confirm('Form FBO đang mở chỉ có ' + x.found + '/' + x.total + ' ô khớp với loại "' + (t ? t.label : state.type) + '".\n\nCó thể bạn đang mở nhầm form, hoặc một số ô nằm ở tab con chưa mở.\n\nVẫn điền các ô tìm thấy?'),
     // Form đang có dữ liệu khác ở trường bắt buộc (vd mở hồ sơ người khác): hỏi trước khi ghi đè
     confirmOverwrite: async (over) => confirm('Form FBO đang có dữ liệu khác:\n\n' +
-      over.map((o) => '• ' + label(o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"').join('\n') +
+      over.map((o) => '• ' + label(o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"' + (o.foreign ? ' (đang là dữ liệu do tool ' + typeName(o.src) + ' điền)' : '')).join('\n') +
       '\n\nGhi đè bằng dữ liệu vừa quét?')
   };
   let done = false;

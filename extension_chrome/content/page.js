@@ -1,5 +1,6 @@
 /* Chạy trong trang FBO (tiêm bằng chrome.scripting, mọi frame). Định nghĩa hai hàm toàn cục, không tự chạy gì.
  *  __KHOATV_FILL__(mapping, data, opts) -> { filled: [k], notFound: [k], empty: [k] }
+ *       opts.src = mã loại tài liệu đang điền: ô được điền sẽ gắn data-khoatv-src; tính thử báo foreign=true khi ô đã do loại khác điền
  *       opts.dry = true: chỉ tính thử, KHÔNG ghi vào form; trả thêm overwrite: [{ k, old, v }] = ô đang có giá trị khác sẽ bị ghi đè
  *  __KHOATV_PROBE__(mapping)       -> { found: [selector] } các ô của ánh xạ đang có trên trang (để chờ form / kiểm tra đúng form)
  *  __KHOATV_INSPECT__()            -> danh sách ô nhập của trang (để lập ánh xạ trường)
@@ -73,6 +74,7 @@
     return v;
   }
 
+  var curSrc = '';
   function setOne(selector, value, spec, touched, dry) {
     var el = document.querySelector(selector);
     if (!el) return 'notFound';
@@ -96,7 +98,8 @@
     if (spec.append && touched.has(el) && el.value) v = el.value + '; ' + v;
     touched.add(el);
     if (el.maxLength > 0 && v.length > el.maxLength) v = v.slice(0, el.maxLength);
-    if (dry) { dry.push({ old: String(el.value || ''), v: v }); return 'ok'; } // chỉ ghi nhận giá trị cũ / mới
+    if (dry) { dry.push({ old: String(el.value || ''), v: v, src: el.getAttribute('data-khoatv-src') || '' }); return 'ok'; } // chỉ ghi nhận giá trị cũ / mới
+    if (curSrc) el.setAttribute('data-khoatv-src', curSrc); // đánh dấu ô do loại tài liệu nào điền, để loại khác điền sau còn hỏi trước khi ghi đè
     try { el.focus(); } catch (e) { /* bỏ qua */ }
     setNative(el, String(v));
     fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
@@ -120,6 +123,7 @@
     var out = { filled: [], notFound: [], empty: [] };
     var touched = new Set();
     var dryOn = !!(opts && opts.dry);
+    curSrc = (opts && opts.src) || '';
     if (dryOn) out.overwrite = [];
     Object.keys(mapping || {}).forEach(function (k) {
       var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
@@ -132,7 +136,7 @@
         if (!spec || !spec.selector) return;
         var r, dry = dryOn ? [] : null;
         try { r = setOne(spec.selector, val, spec, touched, dry); } catch (e) { r = 'notFound'; }
-        if (dry) dry.forEach(function (d) { if (d.old.trim() !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v }); });
+        if (dry) dry.forEach(function (d) { if (d.old.trim() !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v, src: d.src, foreign: !!d.src && d.src !== curSrc }); });
         if (r === 'ok') ok++; else if (r === 'empty') skip++; else miss++;
       });
       if (miss) out.notFound.push(k);
