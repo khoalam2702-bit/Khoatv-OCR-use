@@ -42,7 +42,9 @@
     "loai_giay_to": {
       "selector": "[id$=\"_dirExtender_form_ma_loai_gt\"]",
       "fixed": "02"
-    }
+    },
+    "thuong_tru_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_tinh\"]",
+    "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]"
   },
   "CV_UNGVIEN": {
     "ho_ten": [
@@ -144,6 +146,8 @@
     "ngay_het_han_visa": {
       "selector": "[id$=\"_dirExtender_form_visa_ngay_hh\"]",
       "format": "date"
-    }
+    },
+    "noi_cap_ma": "[id$=\"_dirExtender_form_ho_chieu_noi_cap\"]",
+    "noi_cap_visa_ma": "[id$=\"_dirExtender_form_visa_noi_cap\"]"
   }
 }

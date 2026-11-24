@@ -3,6 +3,7 @@ import { createGasClient, GasError } from './lib/gas.js';
 import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword } from './lib/store.js';
 import { prepareFile } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
+import { DERIVED_LABELS } from './lib/dm.js';
 import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
 
@@ -248,7 +249,7 @@ async function doFill() {
       return;
     }
     const t = state.config && state.config.types.find((x) => x.code === state.type);
-    const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : k; };
+    const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
     const list = (a) => a.map(label).join(', ');
     const parts = ['Đã điền ' + r.filled.length + ' trường' + (r.filled.length ? ' (' + list(r.filled) + ')' : '') + '.'];
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');

@@ -1,4 +1,5 @@
-import { getSettings, getFboProfile } from './store.js';
+import { getSettings, getFboProfile, getDm } from './store.js';
+import { enrichData } from './dm.js';
 
 /** Tab FBO cần thao tác: tab đang xem nếu là trang web; nếu đang ở trang của extension (Cài đặt) hay trang trống thì lấy tab web dùng gần nhất. */
 async function webTab() {
@@ -33,7 +34,7 @@ export async function fillActiveTab(docType, data) {
     results = await chrome.scripting.executeScript({
       target,
       func: (m, d) => globalThis.__KHOATV_FILL__(m, d),
-      args: [mapping, data]
+      args: [mapping, enrichData(docType, data, await getDm())]
     });
   } catch (e) {
     throw new Error('Không truy cập được trang này. Mở form FBO ở tab hiện tại và cấp quyền cho địa chỉ FBO trong Cài đặt. (' + (e && e.message ? e.message : e) + ')');
