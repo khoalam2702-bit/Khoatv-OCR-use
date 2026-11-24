@@ -5,6 +5,8 @@ header { display:flex; gap:8px; align-items:center; padding:8px 10px; background
 header #who { flex:1; color:#6b7280; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 section { padding:10px; }
 h2 { font-size:13.5px; margin:12px 0 6px; color:#374151; text-transform:uppercase; letter-spacing:.03em; }
+/* label { display:block/flex } ghi đè thuộc tính hidden của trình duyệt: phải ép lại để các dòng ẩn thật sự ẩn */
+[hidden] { display:none !important; }
 label { display:block; margin:0 0 8px; font-size:13.5px; color:#374151; }
 input, textarea, select { width:100%; margin-top:3px; padding:6px 8px; border:1px solid var(--b); border-radius:6px; font:inherit; background:#fff; }
 textarea { min-height:56px; resize:vertical; }
