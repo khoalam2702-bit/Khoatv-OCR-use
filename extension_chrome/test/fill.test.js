@@ -164,7 +164,7 @@ test('dry-run: báo ô đang có giá trị khác sẽ bị ghi đè và KHÔNG 
   d.getElementById('ten').value = 'Trần Văn B';
   d.getElementById('dc').value = '';
   const r = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', dia_chi: '#dc', gt: '#gt' }, { ho_ten: 'Nguyễn A', dia_chi: 'Đà Nẵng', gt: 'Nam' }, { dry: true }));
-  assert.deepEqual(r.overwrite, [{ k: 'ho_ten', old: 'Trần Văn B', v: 'Nguyễn A' }]);
+  assert.deepEqual(r.overwrite, [{ k: 'ho_ten', old: 'Trần Văn B', v: 'Nguyễn A', src: '', foreign: false }]);
   assert.equal(d.getElementById('ten').value, 'Trần Văn B');
   assert.equal(d.getElementById('dc').value, '');
   assert.equal(d.getElementById('gt').value, '');
@@ -176,4 +176,16 @@ test('dry-run: cùng giá trị (khác hoa thường, dấu) không tính là gh
   const r = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', n1: { selector: '#dc', append: true, prefix: 'A: ' }, n2: { selector: '#dc', append: true, prefix: 'B: ' } },
     { ho_ten: 'Nguyễn A', n1: 'x', n2: 'y' }, { dry: true }));
   assert.deepEqual(r.overwrite, []);
+});
+
+test('ô do loại tài liệu khác điền: dry-run báo foreign; cùng loại điền lại thì không', () => {
+  const w = page(HTML);
+  const d = w.document;
+  w.__KHOATV_FILL__({ ho_ten: '#ten', dia_chi: '#dc' }, { ho_ten: 'Nguyễn A', dia_chi: 'Đà Nẵng' }, { src: 'CV_UNGVIEN' });
+  assert.equal(d.getElementById('ten').getAttribute('data-khoatv-src'), 'CV_UNGVIEN');
+  const other = plain(w.__KHOATV_FILL__({ ho_ten: '#ten', dia_chi: '#dc' }, { ho_ten: 'Trần B', dia_chi: 'Đà Nẵng' }, { dry: true, src: 'CCCD' }));
+  assert.deepEqual(other.overwrite, [{ k: 'ho_ten', old: 'Nguyễn A', v: 'Trần B', src: 'CV_UNGVIEN', foreign: true }]); // dia_chi cùng giá trị: không tính
+  const same = plain(w.__KHOATV_FILL__({ ho_ten: '#ten' }, { ho_ten: 'Trần B' }, { dry: true, src: 'CV_UNGVIEN' }));
+  assert.equal(same.overwrite[0].foreign, false);
+  assert.equal(d.getElementById('ten').value, 'Nguyễn A'); // dry-run không ghi
 });

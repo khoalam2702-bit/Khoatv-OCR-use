@@ -98,13 +98,13 @@ export async function fillActiveTab(docType, data, opts) {
     const call = (extra, what, abortSig) => step(chrome.scripting.executeScript({ target, func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
     // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
     progress({ phase: 'check' });
-    const dry = await call({ dry: true }, 'kiểm tra dữ liệu có sẵn trên form', sig);
+    const dry = await call({ dry: true, src: docType }, 'kiểm tra dữ liệu có sẵn trên form', sig);
     const over = importantOverwrites(dry.flatMap((r) => (r.result && r.result.overwrite) || []), opts.required);
     if (over.length && opts.confirmOverwrite && !(await opts.confirmOverwrite(over))) return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total };
     // 2) điền thật
     await guard(); // người dùng có thể đã chuyển trang trong lúc đọc hộp xác nhận
     progress({ phase: 'fill' });
-    results = await call(null, 'điền form'); // lệnh điền thật chạy tức thì trong trang, không hủy giữa chừng
+    results = await call({ src: docType }, 'điền form'); // lệnh điền thật chạy tức thì trong trang, không hủy giữa chừng
   } catch (e) {
     if (e instanceof FillStopped || (e && /Tab FBO không phản hồi|Tab FBO đã/.test(e.message))) throw e;
     throw new Error('Không truy cập được trang này. Mở form FBO ở tab hiện tại và cấp quyền cho địa chỉ FBO trong Cài đặt. (' + (e && e.message ? e.message : e) + ')');

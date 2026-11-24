@@ -18,10 +18,10 @@ test('withTimeout: quá hạn thì lỗi, kịp hạn thì trả kết quả', a
   assert.equal(await withTimeout(Promise.resolve(7), 50, 'x'), 7);
   await assert.rejects(withTimeout(new Promise(() => {}), 20, 'Hết thời gian chờ'), /Hết thời gian chờ/);
 });
-test('importantOverwrites chỉ giữ trường bắt buộc', () => {
-  const l = [{ k: 'ho_ten', old: 'a', v: 'b' }, { k: 'dia_chi', old: 'c', v: 'd' }];
-  assert.deepEqual(importantOverwrites(l, ['ho_ten', 'so_cccd']), [l[0]]);
-  assert.deepEqual(importantOverwrites(l, []), []);
+test('importantOverwrites: giữ ô bắt buộc và ô do loại khác điền', () => {
+  const l = [{ k: 'ho_ten', old: 'a', v: 'b' }, { k: 'dia_chi', old: 'c', v: 'd' }, { k: 'dia_chi', old: 'e', v: 'f', foreign: true }];
+  assert.deepEqual(importantOverwrites(l, ['ho_ten', 'so_cccd']), [l[0], l[2]]);
+  assert.deepEqual(importantOverwrites(l, []), [l[2]]);
 });
 
 import { abortable, FillStopped } from '../lib/formcheck.js';

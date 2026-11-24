@@ -30,10 +30,11 @@ export function withTimeout(promise, ms, message) {
   return Promise.race([promise, t]).finally(() => clearTimeout(timer));
 }
 
-/** Chỉ giữ ô bị ghi đè thuộc trường bắt buộc (số giấy tờ, họ tên...): ô mặc định của FBO không làm phiền người dùng. */
+/** Ô bị ghi đè cần hỏi người dùng: ô do loại tài liệu KHÁC vừa điền (foreign), hoặc trường bắt buộc đang có giá trị khác.
+ *  Ô mặc định của FBO (chưa ai điền, không bắt buộc) không làm phiền. */
 export function importantOverwrites(list, required) {
   const req = new Set(required || []);
-  return (list || []).filter((o) => req.has(o.k));
+  return (list || []).filter((o) => o.foreign || req.has(o.k));
 }
 
 /** Người dùng bấm Dừng. */
