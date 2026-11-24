@@ -566,6 +566,26 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     var b64 = c.toDataURL('image/jpeg', JPEG_Q).split(',')[1];
     return { mimeType: 'image/jpeg', base64: b64, name: name || 'camera.jpg', bytes: Math.round(b64.length * 0.75) };
   }
+  // Biển số: chữ rất to, thu ảnh về cạnh dài 1280px trước khi gửi cho nhanh (ảnh đang hiển thị không đổi)
+  function shrinkOne(f, maxEdge) {
+    return new Promise(function (resolve) {
+      if (f.mimeType === 'application/pdf') { resolve(f); return; }
+      var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, maxEdge / Math.max(img.naturalWidth, img.naturalHeight));
+        if (k >= 1) { resolve(f); return; }
+        var c = document.createElement('canvas');
+        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        var b64 = c.toDataURL('image/jpeg', 0.85).split(',')[1];
+        resolve({ mimeType: 'image/jpeg', base64: b64, name: f.name, bytes: Math.round(b64.length * 0.75) });
+      };
+      img.onerror = function () { resolve(f); };
+      img.src = 'data:' + f.mimeType + ';base64,' + f.base64;
+    });
+  }
+  function shrinkAll(files, maxEdge) { return Promise.all(files.map(function (f) { return shrinkOne(f, maxEdge); })); }
+
   function readImage(f) {
     return new Promise(function (resolve) {
       var url = URL.createObjectURL(f), img = new Image();
@@ -841,7 +861,9 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     var btn = $('btnScan'), n = S.files.length;
     var label = btn.textContent;
     setBusy(btn, true, 'Đang quét ' + n + ' tệp, vui lòng chờ');
-    rpc('scanDocument', [S.token, { docType: S.type.code, files: S.files.map(function (f) { return { mimeType: f.mimeType, base64: f.base64 }; }) }])
+    (S.type.code === 'BIEN_SO_XE' ? shrinkAll(S.files, 1280) : Promise.resolve(S.files)).then(function (list) {
+      return rpc('scanDocument', [S.token, { docType: S.type.code, files: list.map(function (f) { return { mimeType: f.mimeType, base64: f.base64 }; }) }]);
+    })
       .then(function (r) {
         S.scan = { fileIds: r.fileIds, saved: false };
         renderForm($('form'), S.type, r.data || {}, 'f_');
