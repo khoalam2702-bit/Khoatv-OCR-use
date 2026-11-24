@@ -49,3 +49,31 @@ export function abortable(promise, signal) {
     promise.then((v) => { signal.removeEventListener('abort', onAbort); resolve(v); }, (e) => { signal.removeEventListener('abort', onAbort); reject(e); });
   });
 }
+
+/** Nhãn form theo hậu tố biến thể ("CCCD@UNGVIEN"); không hậu tố = form mặc định. */
+export const FORM_LABELS = { '': 'Hồ sơ nhân viên', UNGVIEN: 'Hồ sơ ứng viên' };
+export const formLabel = (variant) => (variant in FORM_LABELS ? FORM_LABELS[variant] : variant);
+
+/** Các ánh xạ của một loại tài liệu: bản mặc định (khoá = loại) và các biến thể theo form (khoá = "LOẠI@FORM"). */
+export function mappingVariants(mappings, docType) {
+  const out = [];
+  Object.keys(mappings || {}).forEach((k) => {
+    if (k === docType) out.push({ variant: '', key: k, mapping: mappings[k] });
+    else if (k.indexOf(docType + '@') === 0) out.push({ variant: k.slice(docType.length + 1), key: k, mapping: mappings[k] });
+  });
+  return out.filter((c) => c.mapping && typeof c.mapping === 'object' && Object.keys(c.mapping).length > 0)
+    .sort((a, b) => (a.variant === '' ? -1 : b.variant === '' ? 1 : 0)); // mặc định đứng đầu: hòa điểm thì chọn mặc định
+}
+
+/** Nhận diện form đang mở: chọn biến thể thấy nhiều ô nhất (found = danh sách selector thấy trên trang). Hòa thì lấy bản mặc định. */
+export function pickVariant(variants, found) {
+  const seen = new Set(found || []);
+  let best = null;
+  variants.forEach((c) => {
+    const sels = mappingSelectors(c.mapping);
+    const n = sels.filter((x) => seen.has(x)).length;
+    const cand = { ...c, found: n, total: sels.length };
+    if (!best || n > best.found) best = cand;
+  });
+  return best;
+}

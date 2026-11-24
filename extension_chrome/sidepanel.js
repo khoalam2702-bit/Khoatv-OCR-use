@@ -353,6 +353,7 @@ async function doFill() {
       const sec = p.elapsed != null ? ' ' + Math.floor(p.elapsed / 1000) + 's' : '';
       if (p.phase === 'tab') { btn.textContent = 'Đang chọn tab FBO...'; info.textContent = 'Điền vào tab: "' + cut(p.title) + '". Hãy giữ nguyên tab này đến khi xong.'; }
       else if (p.phase === 'login') btn.textContent = 'Kiểm tra đăng nhập...';
+      else if (p.phase === 'form') { if (p.label) info.textContent += ' Nhận diện form: ' + p.label + '.'; }
       else if (p.phase === 'wait') btn.textContent = 'Chờ form FBO...' + sec + ' (thấy ' + p.found + '/' + p.total + ' ô)';
       else if (p.phase === 'check') btn.textContent = 'Kiểm tra dữ liệu có sẵn...';
       else if (p.phase === 'fill') btn.textContent = 'Đang điền...';
@@ -386,7 +387,7 @@ async function doFill() {
     const parts = ['Đã điền ' + r.filled.length + '/' + r.total + ' trường (' + Math.round(r.filled.length * 100 / (r.total || 1)) + '%)' + (r.filled.length ? ': ' + list(r.filled) : '') + '.'];
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
-    parts.push('Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
+    parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
     if (r.away) parts.push('Lưu ý: đã điền vào tab "' + cut(r.tabTitle) + '", không phải tab bạn đang xem. Quay lại tab đó để kiểm tra.');
     info.textContent = parts.join(' ');
     info.className = r.status === 'FILLED' && !r.away ? 'ok' : 'warn';

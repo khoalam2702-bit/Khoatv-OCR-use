@@ -1,6 +1,6 @@
 import { getSettings, getFboProfile, getDm } from './store.js';
 import { enrichData } from './dm.js';
-import { FORM_WAIT_MS, POLL_MS, STEP_TIMEOUT_MS, STABLE_POLLS, mappingSelectors, classifyForm, withTimeout, importantOverwrites, abortable, FillStopped } from './formcheck.js';
+import { FORM_WAIT_MS, POLL_MS, STEP_TIMEOUT_MS, STABLE_POLLS, mappingSelectors, classifyForm, withTimeout, importantOverwrites, abortable, FillStopped, mappingVariants, pickVariant, formLabel } from './formcheck.js';
 
 /** Tab FBO cần thao tác: tab đang xem nếu là trang web; nếu đang ở trang của extension (Cài đặt) hay trang trống thì lấy tab web dùng gần nhất. */
 async function webTab() {
@@ -35,23 +35,25 @@ const step = (p, what, signal) => abortable(withTimeout(p, STEP_TIMEOUT_MS, STEP
  * Dò (mọi frame) cho tới khi form hiện đủ ô, hoặc số ô thấy được đã ổn định (không tăng thêm), hoặc hết FORM_WAIT_MS.
  * Số ô ổn định > 0 nghĩa là form đã vẽ xong phần có sẵn; các ô ở tab chưa mở có thể chưa có trong trang, không chờ thêm vô ích.
  */
-async function waitForForm(target, mapping, onProgress, signal) {
-  const total = mappingSelectors(mapping).length;
+async function waitForForm(target, variants, onProgress, signal) {
+  // Dò một lần cho hợp của mọi biến thể rồi chọn biến thể khớp nhất với form đang mở (nhận diện form)
+  const union = {};
+  variants.forEach((c) => Object.keys(c.mapping).forEach((k) => { union[c.key + '|' + k] = c.mapping[k]; }));
   const t0 = Date.now();
-  let found = 0, state = 'NO_FORM', last = -1, stable = 0;
+  let best = null, state = 'NO_FORM', last = -1, stable = 0;
   for (;;) {
-    const res = await step(chrome.scripting.executeScript({ target, func: (m) => globalThis.__KHOATV_PROBE__(m), args: [mapping] }), 'dò các ô của form', signal);
+    const res = await step(chrome.scripting.executeScript({ target, func: (m) => globalThis.__KHOATV_PROBE__(m), args: [union] }), 'dò các ô của form', signal);
     const seen = new Set();
     res.forEach((r) => r.result && r.result.found.forEach((x) => seen.add(x))); // mỗi frame chỉ thấy ô của frame đó
-    found = seen.size;
-    state = classifyForm(found, total);
-    stable = found === last ? stable + 1 : 0; last = found;
+    best = pickVariant(variants, [...seen]);
+    state = classifyForm(best.found, best.total);
+    stable = best.found === last ? stable + 1 : 0; last = best.found;
     const elapsed = Date.now() - t0;
-    if (state === 'READY' || elapsed >= FORM_WAIT_MS || (found > 0 && stable >= STABLE_POLLS)) break;
-    if (onProgress) onProgress({ phase: 'wait', elapsed, limit: FORM_WAIT_MS, found, total });
+    if (state === 'READY' || elapsed >= FORM_WAIT_MS || (best.found > 0 && stable >= STABLE_POLLS)) break;
+    if (onProgress) onProgress({ phase: 'wait', elapsed, limit: FORM_WAIT_MS, found: best.found, total: best.total });
     await abortable(sleep(POLL_MS), signal);
   }
-  return { state, found, total };
+  return { state, found: best.found, total: best.total, variant: best.variant, mapping: best.mapping };
 }
 
 /**
@@ -63,10 +65,11 @@ async function waitForForm(target, mapping, onProgress, signal) {
 export async function fillActiveTab(docType, data, opts) {
   opts = opts || {};
   const { fboMappings } = await getSettings();
-  const mapping = fboMappings && fboMappings[docType];
+  const variants = mappingVariants(fboMappings, docType);
+  let mapping = variants.length ? variants[0].mapping : null;
   const blank = { filled: [], notFound: [], empty: [], total: 0 };
   if (!mapping || !Object.keys(mapping).length) return { ...blank, status: 'NO_MAPPING' };
-  const total = Object.keys(mapping).length;
+  let total = Object.keys(mapping).length;
   const progress = (p) => { if (opts.onProgress) opts.onProgress(p); };
   const tab = await webTab();
   const target = { tabId: tab.id, allFrames: true };
@@ -81,7 +84,10 @@ export async function fillActiveTab(docType, data, opts) {
     await guard();
     if (await step(needsLogin(tab.id), 'kiểm tra đăng nhập', sig)) return { ...blank, total, status: 'NOT_LOGGED_IN' };
     await step(chrome.scripting.executeScript({ target, files: ['content/page.js'] }), 'nạp công cụ điền', sig);
-    form = await waitForForm(target, mapping, progress, sig);
+    form = await waitForForm(target, variants, progress, sig);
+    mapping = form.mapping; // ánh xạ của form đã nhận diện
+    total = Object.keys(mapping).length;
+    progress({ phase: 'form', variant: form.variant, label: variants.length > 1 ? formLabel(form.variant) : '' });
     if (form.state === 'NO_FORM') return { ...blank, total, status: 'NO_FORM', found: form.found, selectors: form.total };
     const partial = form.state !== 'READY'; // thấy một phần ô: có thể là form khác loại, hoặc tab chưa mở nên chưa có ô
     if (partial && opts.confirmPartial && !(await opts.confirmPartial({ found: form.found, total: form.total }))) {
@@ -116,7 +122,7 @@ export async function fillActiveTab(docType, data, opts) {
   // Người dùng đang xem tab khác lúc điền xong: kết quả vẫn ở tab cũ, báo rõ để không tưởng đã điền vào tab đang xem
   let away = false;
   try { const [cur] = await chrome.tabs.query({ active: true, currentWindow: true }); away = !!cur && cur.id !== tabInfo.id; } catch (e) { away = false; }
-  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away };
+  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, formName: variants.length > 1 ? formLabel(form.variant) : '' };
 }
 
 /** Tab web (http/https) vừa dùng gần nhất: trang Cài đặt tự nó là tab đang mở, nên không thể dùng "tab active". */

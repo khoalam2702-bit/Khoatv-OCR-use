@@ -34,3 +34,22 @@ test('abortable: dừng ngay khi bấm Dừng, kể cả promise chưa xong', as
   assert.equal(await abortable(Promise.resolve(5), new AbortController().signal), 5);
   assert.equal(await abortable(Promise.resolve(6), undefined), 6);
 });
+
+import { mappingVariants, pickVariant, formLabel } from '../lib/formcheck.js';
+import fs from 'node:fs';
+const PRESET = JSON.parse(fs.readFileSync(new URL('../presets/fbo-hrm.json', import.meta.url), 'utf8'));
+test('mappingVariants: bản mặc định đứng đầu, gom biến thể theo hậu tố', () => {
+  const v = mappingVariants(PRESET, 'CCCD');
+  assert.deepEqual(v.map((x) => x.variant), ['', 'UNGVIEN']);
+  assert.deepEqual(mappingVariants(PRESET, 'GPLX').map((x) => x.variant), ['']);
+  assert.deepEqual(mappingVariants(PRESET, 'KHONG_CO'), []);
+});
+test('pickVariant: nhận diện form nhân viên và form ứng viên từ ô thấy được', () => {
+  const v = mappingVariants(PRESET, 'CCCD');
+  const common = mappingSelectors(v[0].mapping).filter((s) => !/_ho_nv"|_ten_nv"/.test(s));
+  const nv = pickVariant(v, [...common, '[id$="_dirExtender_form_ho_nv"]', '[id$="_dirExtender_form_ten_nv"]']);
+  const uv = pickVariant(v, [...common, '[id$="_dirExtender_form_ho_uv"]', '[id$="_dirExtender_form_ten_uv"]']);
+  assert.equal(nv.variant, ''); assert.equal(uv.variant, 'UNGVIEN');
+  assert.equal(pickVariant(v, common).variant, ''); // hòa điểm: chọn bản mặc định
+});
+test('formLabel', () => { assert.equal(formLabel('UNGVIEN'), 'Hồ sơ ứng viên'); assert.equal(formLabel(''), 'Hồ sơ nhân viên'); });
