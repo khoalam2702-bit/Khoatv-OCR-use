@@ -1,5 +1,6 @@
 import { getSettings, getFboProfile, getDm } from './store.js';
 import { enrichData } from './dm.js';
+import { FORM_WAIT_MS, POLL_MS, FILL_TIMEOUT_MS, mappingSelectors, classifyForm, withTimeout, importantOverwrites } from './formcheck.js';
 
 /** Tab FBO cần thao tác: tab đang xem nếu là trang web; nếu đang ở trang của extension (Cài đặt) hay trang trống thì lấy tab web dùng gần nhất. */
 async function webTab() {
@@ -18,25 +19,65 @@ async function needsLogin(tabId) {
   return res.some((r) => r.result && r.result.loginPage);
 }
 
-/** Điền dữ liệu vào form FBO ở tab đang mở. Ánh xạ trường do người dùng khai ở trang Cài đặt (chưa có thì báo, không đoán). */
-export async function fillActiveTab(docType, data) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Dò (mọi frame) cho tới khi form hiện đủ ô hoặc hết FORM_WAIT_MS. Trả { state, found, total }. */
+async function waitForForm(target, mapping, onProgress) {
+  const total = mappingSelectors(mapping).length;
+  const t0 = Date.now();
+  let found = 0, state = 'NO_FORM';
+  for (;;) {
+    const res = await chrome.scripting.executeScript({ target, func: (m) => globalThis.__KHOATV_PROBE__(m), args: [mapping] });
+    const seen = new Set();
+    res.forEach((r) => r.result && r.result.found.forEach((x) => seen.add(x))); // mỗi frame chỉ thấy ô của frame đó
+    found = seen.size;
+    state = classifyForm(found, total);
+    const elapsed = Date.now() - t0;
+    if (state === 'READY' || elapsed >= FORM_WAIT_MS) break;
+    if (onProgress) onProgress({ phase: 'wait', elapsed, limit: FORM_WAIT_MS });
+    await sleep(POLL_MS);
+  }
+  return { state, found, total };
+}
+
+/**
+ * Điền dữ liệu vào form FBO ở tab đang mở (dùng chung mọi loại tài liệu). Ánh xạ cố định trong presets/fbo-hrm.json.
+ * opts: { required: [mã trường bắt buộc], onProgress({phase,...}), confirmOverwrite(list) -> Promise<boolean> }
+ * status: FILLED | ERROR | NOT_LOGGED_IN | NO_MAPPING | NO_FORM | WRONG_FORM | CANCELLED
+ */
+export async function fillActiveTab(docType, data, opts) {
+  opts = opts || {};
   const { fboMappings } = await getSettings();
   const mapping = fboMappings && fboMappings[docType];
-  if (!mapping || !Object.keys(mapping).length) {
-    return { status: 'NO_MAPPING', filled: [], notFound: [], empty: [] };
-  }
+  const blank = { filled: [], notFound: [], empty: [], total: 0 };
+  if (!mapping || !Object.keys(mapping).length) return { ...blank, status: 'NO_MAPPING' };
+  const total = Object.keys(mapping).length;
   const tab = await webTab();
   const target = { tabId: tab.id, allFrames: true };
+  const progress = (p) => { if (opts.onProgress) opts.onProgress(p); };
   let results;
   try {
-    if (await needsLogin(tab.id)) return { status: 'NOT_LOGGED_IN', filled: [], notFound: [], empty: [] };
+    if (await needsLogin(tab.id)) return { ...blank, total, status: 'NOT_LOGGED_IN' };
     await chrome.scripting.executeScript({ target, files: ['content/page.js'] });
-    results = await chrome.scripting.executeScript({
-      target,
-      func: (m, d) => globalThis.__KHOATV_FILL__(m, d),
-      args: [mapping, enrichData(docType, data, await getDm())]
-    });
+    const form = await waitForForm(target, mapping, progress);
+    if (form.state !== 'READY') return { ...blank, total, status: form.state, found: form.found, selectors: form.total };
+
+    const run = async () => {
+      const enriched = enrichData(docType, data, await getDm());
+      const call = (extra) => chrome.scripting.executeScript({ target, func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] });
+      // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
+      const dry = await call({ dry: true });
+      const over = importantOverwrites(dry.flatMap((r) => (r.result && r.result.overwrite) || []), opts.required);
+      if (over.length && opts.confirmOverwrite && !(await opts.confirmOverwrite(over))) return { cancelled: true };
+      // 2) điền thật
+      progress({ phase: 'fill' });
+      return { results: await call(null) };
+    };
+    const out = await withTimeout(run(), FILL_TIMEOUT_MS, 'Hết thời gian chờ (' + FILL_TIMEOUT_MS / 1000 + ' giây) khi điền form FBO. Kiểm tra tab FBO có đang treo hoặc tải chậm không rồi thử lại.');
+    if (out.cancelled) return { ...blank, total, status: 'CANCELLED' };
+    results = out.results;
   } catch (e) {
+    if (e && /Hết thời gian chờ/.test(e.message)) throw e;
     throw new Error('Không truy cập được trang này. Mở form FBO ở tab hiện tại và cấp quyền cho địa chỉ FBO trong Cài đặt. (' + (e && e.message ? e.message : e) + ')');
   }
   const filled = new Set(), notFound = new Set(), empty = new Set();
@@ -49,7 +90,7 @@ export async function fillActiveTab(docType, data) {
   }
   filled.forEach((k) => notFound.delete(k)); // mỗi frame chỉ điền được ô của frame đó
   const status = filled.size > 0 && notFound.size === 0 ? 'FILLED' : 'ERROR';
-  return { status, filled: [...filled], notFound: [...notFound], empty: [...empty] };
+  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty] };
 }
 
 /** Tab web (http/https) vừa dùng gần nhất: trang Cài đặt tự nó là tab đang mở, nên không thể dùng "tab active". */

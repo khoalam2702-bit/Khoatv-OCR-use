@@ -8,6 +8,7 @@ import { readCccdQr, mergeQr } from './lib/qr.js';
 import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
 import { splitRetry, formatWait } from './lib/quota.js';
+import { FORM_WAIT_MS } from './lib/formcheck.js';
 
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
@@ -246,7 +247,7 @@ function renderReview(data) {
     if (f.type === 'number') el.inputMode = 'decimal';
     label.appendChild(el); form.appendChild(label);
   }
-  $('after-save').hidden = true; $('review-actions').hidden = false; $('fill-info').textContent = '';
+  $('after-save').hidden = true; $('review-actions').hidden = false; $('fill-info').textContent = ''; $('fill-progress').hidden = true;
   setFormDisabled(false);
 }
 
@@ -295,34 +296,60 @@ function thisPeriod() {
 /* ---------- Bước 4: điền FBO ---------- */
 async function doFill() {
   msg('');
-  const btn = $('btn-fill'), info = $('fill-info');
-  busy(btn, true, 'Đang điền...');
-  info.textContent = '';
+  const btn = $('btn-fill'), info = $('fill-info'), bar = $('fill-progress');
+  busy(btn, true, 'Đang kiểm tra form FBO...');
+  info.textContent = ''; info.className = 'hint';
+  bar.hidden = false; bar.removeAttribute('value'); // thanh chạy không xác định trong lúc chờ form
+  const t = state.config && state.config.types.find((x) => x.code === state.type);
+  const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
+  const list = (a) => a.map(label).join(', ');
+  const cut = (v) => { v = String(v); return v.length > 40 ? v.slice(0, 40) + '…' : v; };
+  const opts = {
+    required: t ? t.required : [],
+    onProgress: (p) => {
+      if (p.phase === 'wait') btn.textContent = 'Chờ form FBO... ' + Math.floor(p.elapsed / 1000) + '/' + p.limit / 1000 + ' giây';
+      else if (p.phase === 'fill') btn.textContent = 'Đang điền...';
+    },
+    // Form đang có dữ liệu khác ở trường bắt buộc (vd mở hồ sơ người khác): hỏi trước khi ghi đè
+    confirmOverwrite: async (over) => confirm('Form FBO đang có dữ liệu khác:\n\n' +
+      over.map((o) => '• ' + label(o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"').join('\n') +
+      '\n\nGhi đè bằng dữ liệu vừa quét?')
+  };
+  let done = false;
   try {
-    const r = await fillActiveTab(state.type, state.saved.data);
+    const r = await fillActiveTab(state.type, state.saved.data, opts);
     if (r.status === 'NOT_LOGGED_IN') {
       info.textContent = 'Tab FBO đang ở trang đăng nhập. Bấm "Đăng nhập FBO" (hoặc tự đăng nhập), rồi bấm Điền vào FBO lại.';
-      info.className = 'warn';
-      return;
+      info.className = 'warn'; return;
     }
     if (r.status === 'NO_MAPPING') {
       info.textContent = 'Chưa khai báo ánh xạ trường FBO cho loại này. Mở Cài đặt để khai báo.';
       return;
     }
-    const t = state.config && state.config.types.find((x) => x.code === state.type);
-    const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
-    const list = (a) => a.map(label).join(', ');
-    const parts = ['Đã điền ' + r.filled.length + ' trường' + (r.filled.length ? ' (' + list(r.filled) + ')' : '') + '.'];
+    if (r.status === 'NO_FORM') {
+      info.textContent = 'Chưa thấy form FBO ở tab hiện tại (đã chờ ' + FORM_WAIT_MS / 1000 + ' giây). Mở đúng form (ví dụ Thêm nhân viên) hoặc chờ trang tải xong, rồi bấm Điền vào FBO lại.';
+      info.className = 'warn'; return;
+    }
+    if (r.status === 'WRONG_FORM') {
+      info.textContent = 'Form đang mở không khớp loại "' + (t ? t.label : state.type) + '" (chỉ thấy ' + r.found + '/' + r.selectors + ' ô cần điền). Mở đúng form rồi bấm lại. Chưa điền gì.';
+      info.className = 'warn'; return;
+    }
+    if (r.status === 'CANCELLED') {
+      info.textContent = 'Đã hủy: không ghi đè dữ liệu đang có trên form FBO.';
+      info.className = 'warn'; return;
+    }
+    const parts = ['Đã điền ' + r.filled.length + '/' + r.total + ' trường (' + Math.round(r.filled.length * 100 / (r.total || 1)) + '%)' + (r.filled.length ? ': ' + list(r.filled) : '') + '.'];
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
     info.textContent = parts.join(' ');
     info.className = r.status === 'FILLED' ? 'ok' : 'warn';
+    bar.max = r.total || 1; bar.value = r.filled.length; done = true; // thanh hiện tỉ lệ đã điền, giữ lại để NSD xem
     try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
     catch (e) { info.textContent += ' (Chưa cập nhật được trạng thái đồng bộ: ' + e.message + ')'; }
   } catch (e) {
     info.textContent = e.message; info.className = 'warn';
     try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
-  } finally { busy(btn, false); }
+  } finally { if (!done) bar.hidden = true; busy(btn, false); }
 }
 
 /* ---------- Quyền FBO và đăng nhập FBO ---------- */

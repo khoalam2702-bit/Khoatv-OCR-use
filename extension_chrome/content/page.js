@@ -1,5 +1,7 @@
 /* Chạy trong trang FBO (tiêm bằng chrome.scripting, mọi frame). Định nghĩa hai hàm toàn cục, không tự chạy gì.
- *  __KHOATV_FILL__(mapping, data)  -> { filled: [k], notFound: [k], empty: [k] }
+ *  __KHOATV_FILL__(mapping, data, opts) -> { filled: [k], notFound: [k], empty: [k] }
+ *       opts.dry = true: chỉ tính thử, KHÔNG ghi vào form; trả thêm overwrite: [{ k, old, v }] = ô đang có giá trị khác sẽ bị ghi đè
+ *  __KHOATV_PROBE__(mapping)       -> { found: [selector] } các ô của ánh xạ đang có trên trang (để chờ form / kiểm tra đúng form)
  *  __KHOATV_INSPECT__()            -> danh sách ô nhập của trang (để lập ánh xạ trường)
  * mapping: { "<mã trường OCR>": "<css selector>" | { selector, map?, format?, transform? } | [ nhiều mục như trên ] }
  *   map:    { "Nam": "1", "Nữ": "0" }  đổi giá trị OCR sang giá trị ô chọn
@@ -71,7 +73,7 @@
     return v;
   }
 
-  function setOne(selector, value, spec, touched) {
+  function setOne(selector, value, spec, touched, dry) {
     var el = document.querySelector(selector);
     if (!el) return 'notFound';
     var v = spec.fixed !== undefined ? String(spec.fixed) : transform(value, spec.transform);
@@ -79,6 +81,7 @@
     if (spec.format === 'date' && !DATE_RE.test(v)) return 'empty'; // vd "Không thời hạn": bỏ qua, không điền
     v = mapValue(spec.map, v, spec.contains);
     if (v === '') return 'empty';
+    if (dry && (el.tagName === 'SELECT' || el.type === 'radio' || el.type === 'checkbox')) return 'ok'; // tính thử: không đổi ô chọn
     if (el.tagName === 'SELECT') return setSelect(el, v) ? 'ok' : 'notFound';
     if (el.type === 'radio') return setRadio(selector, v) ? 'ok' : 'notFound';
     if (el.type === 'checkbox') {
@@ -87,11 +90,13 @@
     }
     if (el.type === 'date' || spec.format === 'iso') v = dmyToIso(v);
     v = String(v);
+    if (dry && spec.append) return 'ok'; // ô dồn nhiều trường (Ghi chú): luôn nối thêm, không tính là ghi đè
     if (spec.prefix) v = spec.prefix + v;
     // append: nhiều trường OCR dồn vào cùng một ô (ví dụ Ghi chú), cách nhau bằng "; "
     if (spec.append && touched.has(el) && el.value) v = el.value + '; ' + v;
     touched.add(el);
     if (el.maxLength > 0 && v.length > el.maxLength) v = v.slice(0, el.maxLength);
+    if (dry) { dry.push({ old: String(el.value || ''), v: v }); return 'ok'; } // chỉ ghi nhận giá trị cũ / mới
     try { el.focus(); } catch (e) { /* bỏ qua */ }
     setNative(el, String(v));
     fire(el, 'input'); fire(el, 'change'); fire(el, 'blur');
@@ -99,9 +104,23 @@
     return 'ok';
   }
 
-  globalThis.__KHOATV_FILL__ = function (mapping, data) {
+  globalThis.__KHOATV_PROBE__ = function (mapping) {
+    var found = {};
+    Object.keys(mapping || {}).forEach(function (k) {
+      (Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]]).forEach(function (sp) {
+        var sel = typeof sp === 'string' ? sp : sp && sp.selector;
+        if (!sel) return;
+        try { if (document.querySelector(sel)) found[sel] = 1; } catch (e) { /* selector sai: coi như không thấy */ }
+      });
+    });
+    return { found: Object.keys(found) };
+  };
+
+  globalThis.__KHOATV_FILL__ = function (mapping, data, opts) {
     var out = { filled: [], notFound: [], empty: [] };
     var touched = new Set();
+    var dryOn = !!(opts && opts.dry);
+    if (dryOn) out.overwrite = [];
     Object.keys(mapping || {}).forEach(function (k) {
       var specs = Array.isArray(mapping[k]) ? mapping[k] : [mapping[k]];
       var val = data ? data[k] : null;
@@ -111,8 +130,9 @@
       specs.forEach(function (spec) {
         if (typeof spec === 'string') spec = { selector: spec };
         if (!spec || !spec.selector) return;
-        var r;
-        try { r = setOne(spec.selector, val, spec, touched); } catch (e) { r = 'notFound'; }
+        var r, dry = dryOn ? [] : null;
+        try { r = setOne(spec.selector, val, spec, touched, dry); } catch (e) { r = 'notFound'; }
+        if (dry) dry.forEach(function (d) { if (d.old.trim() !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v }); });
         if (r === 'ok') ok++; else if (r === 'empty') skip++; else miss++;
       });
       if (miss) out.notFound.push(k);
