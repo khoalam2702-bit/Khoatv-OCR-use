@@ -1,5 +1,4 @@
 // Cài đặt và tài khoản đã lưu, tất cả ở storage.local của extension (không đồng bộ lên tài khoản Chrome).
-import { effectiveMappings } from './mapping.js';
 import { mergeConfig, sanitizeConfig, fetchRemoteConfig, fetchLinkFromIndex, normalizeOrigin } from './appconfig.js';
 import { createVault, idbKeyProvider } from './vault.js';
 
@@ -29,13 +28,12 @@ export async function refreshRemoteConfig() {
 }
 
 export async function getSettings() {
-  const s = await chrome.storage.local.get({ gasUrl: '', userFboOrigins: [], fboMappingsUser: {}, remoteConfig: {} });
+  const s = await chrome.storage.local.get({ gasUrl: '', userFboOrigins: [], remoteConfig: {} });
   const cfg = mergeConfig({ shipped: await packaged('config.json'), remote: s.remoteConfig, user: { fboOrigins: s.userFboOrigins } });
   return {
     gasUrl: cfg.gasUrl, gasSource: cfg.source,
     fboOrigins: cfg.fboOrigins, userFboOrigins: s.userFboOrigins,
-    fboMappingsUser: s.fboMappingsUser,
-    fboMappings: effectiveMappings(await getPreset(), s.fboMappingsUser)
+    fboMappings: await getPreset() // ánh xạ cố định trong source, không cho người dùng sửa
   };
 }
 export async function setSettings(patch) { await chrome.storage.local.set(patch); }
