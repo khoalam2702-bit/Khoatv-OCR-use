@@ -267,14 +267,14 @@ function setScanStage(stage) {
   else if (stage === 'ai') { scanProg.t0 = Date.now(); scanProg.expected = expectedMs(scanHist()); } // bắt đầu đếm lại cho bước gọi AI
   tickScan();
 }
-function stopScanProgress(success) {
+function stopScanProgress(success, detail) {
   clearInterval(scanProg.timer); scanProg.timer = null; scanProg.btn = null;
   const bar = $('scan-progress'), info = $('scan-info');
   if (success) {
     const total = Date.now() - scanProg.t0;
     if (scanProg.stage === 'ai') { try { localStorage.setItem(SCAN_HIST_KEY, JSON.stringify(pushDuration(scanHist(), total))); } catch (e) { /* bỏ qua */ } }
-    bar.value = 100; info.textContent = 'Quét xong sau ' + (total / 1000).toFixed(1) + ' giây.';
-    setTimeout(() => { if (!scanProg.timer) { bar.hidden = true; info.hidden = true; } }, 1500);
+    bar.value = 100; info.textContent = 'Quét xong sau ' + (total / 1000).toFixed(1) + ' giây.' + (detail ? ' ' + detail : '');
+    setTimeout(() => { if (!scanProg.timer) { bar.hidden = true; info.hidden = true; } }, detail ? 6000 : 1500);
   } else { bar.hidden = true; info.hidden = true; }
 }
 
@@ -313,7 +313,8 @@ async function doScan() {
     if (skipAiUsed) msg('Chế độ chỉ QR: không dùng AI. Đã lấy số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp từ mã QR. Quê quán, nơi sinh, ngày hết hạn hãy tự nhập.', 'info');
     else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
     else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
-    stopScanProgress(true);
+    const tm = r && r.timing;
+    stopScanProgress(true, tm ? '(lưu tệp ' + (tm.driveMs / 1000).toFixed(1) + 's, AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ')' : '');
   } catch (e) {
     stopScanProgress(false);
     const r = splitRetry(e.message);

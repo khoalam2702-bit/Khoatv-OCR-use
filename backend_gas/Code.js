@@ -874,6 +874,7 @@ function scanDocument(token, payload) {
   });
   if (total > LIMITS.MAX_TOTAL_BYTES) throw new Error('Tổng dung lượng các tệp quá lớn (tối đa 24 MB).');
   rateLimit_(me.username);
+  resetFetchStats_();
 
   const blobs = items.map(function (it) {
     try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
@@ -904,7 +905,9 @@ function scanDocument(token, payload) {
   if (payload.docType === 'CAN_DIEN_TU') fixScaleReading_(data);
   if (payload.docType === 'BIEN_SO_XE') fixPlateReading_(data);
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
-  return { data: data, fileIds: fileIds, ms: Date.now() - started };
+  const timing = { driveMs: tAi - tDrive, aiMs: tFix - tAi, calls: FETCH_STATS_.calls, retries: FETCH_STATS_.retries, waitMs: FETCH_STATS_.waitMs, codes: FETCH_STATS_.codes.slice(0, 8) };
+  console.log('scanDocument timing ' + JSON.stringify(timing));
+  return { data: data, fileIds: fileIds, ms: Date.now() - started, timing: timing };
 }
 
 /* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe từ chuỗi biển số ---------- */
@@ -1962,21 +1965,30 @@ function retryAfterSec_(bodyText, nowMs) {
 /** Dấu hiệu gắn cuối thông báo lỗi để giao diện đếm ngược; giao diện sẽ cắt dấu hiệu này khi hiển thị. */
 function retryMarker_(sec) { return ' [[RETRY_AFTER:' + Math.max(1, Math.round(sec)) + ']]'; }
 
-/** UrlFetch có thử lại luỹ thừa cho lỗi 429 / 5xx / lỗi mạng. */
-function fetchRetry_(url, options, no429Retry) {
+/** Thống kê một lượt quét (số lần gọi, số lần thử lại, thời gian chờ) để biết chậm ở đâu. */
+let FETCH_STATS_ = { calls: 0, retries: 0, waitMs: 0, fetchMs: 0, codes: [] };
+function resetFetchStats_() { FETCH_STATS_ = { calls: 0, retries: 0, waitMs: 0, fetchMs: 0, codes: [] }; }
+
+/** UrlFetch có thử lại luỹ thừa cho lỗi 429 / 5xx / lỗi mạng. failover: còn khoá khác để thử thì gặp 429/5xx trả về ngay, không chờ thử lại cùng khoá. */
+function fetchRetry_(url, options, failover) {
   let lastErr = null;
   for (let i = 0; i < 4; i++) {
+    const t0 = Date.now();
     try {
       const resp = UrlFetchApp.fetch(url, options);
       const code = resp.getResponseCode();
+      FETCH_STATS_.calls++; FETCH_STATS_.fetchMs += Date.now() - t0; FETCH_STATS_.codes.push(code);
       if (code !== 429 && code < 500) return resp;
-      if (code === 429 && no429Retry) return resp;
+      if (failover) return resp;
       if (i === 3) return resp;
     } catch (e) {
+      FETCH_STATS_.calls++; FETCH_STATS_.fetchMs += Date.now() - t0; FETCH_STATS_.codes.push('err');
       lastErr = e;
-      if (i === 3) throw new Error('Không kết nối được dịch vụ ngoài: ' + e.message);
+      if (i === 3 || (failover && i >= 1)) throw new Error('Không kết nối được dịch vụ ngoài: ' + e.message);
     }
-    Utilities.sleep(Math.pow(2, i) * 1000 + Math.floor(Math.random() * 500));
+    const wait = Math.pow(2, i) * 1000 + Math.floor(Math.random() * 500);
+    FETCH_STATS_.retries++; FETCH_STATS_.waitMs += wait;
+    Utilities.sleep(wait);
   }
   throw lastErr || new Error('Lỗi kết nối.');
 }
