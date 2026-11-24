@@ -144,13 +144,20 @@ const DOC_TYPES = {
   },
   CAN_DIEN_TU: {
     label: 'Màn hình cân điện tử', uniqueKey: null, required: ['khoi_luong', 'don_vi'],
-    hint: 'Ảnh màn hình LED/LCD 7 đoạn của cân điện tử (có thể kèm phiếu cân). Đọc từng chữ số và vị trí dấu thập phân thật cẩn thận; ' +
-      'khoi_luong là số kg (hoặc số theo don_vi); don_vi là kg, g, tấn hoặc lb; ' +
-      'don_gia là giá tiền trên mỗi đơn vị và so_tien là thành tiền CHỈ khi ảnh / phiếu có ghi, nếu không có thì trả null, không tự tính; ' +
-      'trang_thai là Gross, Net, Stable nếu màn hình có hiển thị. ' +
-      'Nếu có chữ số bị chói hoặc đứt nét không chắc chắn, mô tả rõ trong ghi_chu_can.',
-    fields: [f_('khoi_luong', 'Khối lượng (số kg)', 'number'), f_('don_vi', 'Đơn vị'), m_('don_gia', 'Đơn giá'), m_('so_tien', 'Số tiền'),
-      f_('trang_thai', 'Trạng thái'), f_('ghi_chu_can', 'Ghi chú cân', 'long')]
+    hint: 'Ảnh cân điện tử (cân siêu thị, cân tính tiền in tem, cân bàn), có thể là ảnh chụp cả máy kèm nền cửa hàng. ' +
+      'CHỈ đọc các ô số trên màn hình LED/LCD của cân; bỏ qua logo, biển hiệu, tem nhãn, bàn phím và nền. ' +
+      'Tự nhận diện bố cục (người dùng không chọn loại cân). Thường có 4 ô theo thứ tự: Trừ bì (Tare) · Khối lượng (Weight / Net / Trọng lượng) · Đơn giá (Unit price / Price / Change) · Thành tiền (Total / Total price). ' +
+      'Nhãn có thể bằng tiếng Việt hoặc tiếng Anh, bị mờ hoặc lệch so với số: khi đó dựa vào VỊ TRÍ ô và ký hiệu đơn vị (số đi kèm "kg" là khối lượng). ' +
+      'Không nhầm ô Trừ bì (Tare) với khối lượng; không lấy dòng ngày giờ hay số lượng (pcs) làm khối lượng. ' +
+      'khoi_luong là số kg cân được (số thập phân; đọc thật cẩn thận từng chữ số và vị trí dấu chấm thập phân); don_vi là kg, g, tấn hoặc lb. ' +
+      'don_gia là đơn giá và so_tien là thành tiền, đúng như màn hình hiển thị; nếu cân không có ô giá hoặc thành tiền thì trả null, không tự tính. ' +
+      'Ba trường man_hinh_khoi_luong, man_hinh_don_gia, man_hinh_thanh_tien: chép NGUYÊN VĂN chuỗi ký tự đang hiện trong ô tương ứng, giữ cả dấu chấm/phẩy và số 0 (ví dụ "0.58", "260.000", "150.800"); null nếu ô đó không có. ' +
+      'Kiểm tra chéo: khối lượng × đơn giá phải xấp xỉ thành tiền; nếu lệch thì đọc lại từng chữ số. ' +
+      'trang_thai là Gross, Net, Stable nếu màn hình có hiển thị. Chữ số bị chói hoặc đứt nét không chắc chắn thì mô tả rõ trong ghi_chu_can.',
+    fields: [f_('khoi_luong', 'Khối lượng (số kg)', 'number'), f_('don_vi', 'Đơn vị'), m_('don_gia', 'Đơn giá'), m_('so_tien', 'Thành tiền'),
+      f_('trang_thai', 'Trạng thái'), f_('ghi_chu_can', 'Ghi chú cân', 'long')],
+    // Trường phụ chỉ dùng để đối chiếu dấu chấm/phẩy: gửi cho AI nhưng không lưu và không hiện trên form.
+    aux: [f_('man_hinh_khoi_luong', 'Chuỗi hiển thị ở ô khối lượng'), f_('man_hinh_don_gia', 'Chuỗi hiển thị ở ô đơn giá'), f_('man_hinh_thanh_tien', 'Chuỗi hiển thị ở ô thành tiền')]
   },
   BIEN_SO_XE: {
     label: 'Biển số xe', uniqueKey: null, required: ['bien_so_day_du'],
@@ -887,8 +894,72 @@ function scanDocument(token, payload) {
   if (!skipAi) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
   const fixMs = Date.now() - tFix;
   console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
+  if (payload.docType === 'CAN_DIEN_TU') fixScaleReading_(data);
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   return { data: data, fileIds: fileIds, ms: Date.now() - started };
+}
+
+/* ---------- Cân điện tử: đối chiếu khối lượng × đơn giá = thành tiền ----------
+ * Màn hình cân dùng dấu chấm cho cả số thập phân (0.58 kg) lẫn phân cách hàng nghìn (260.000 đ), tuỳ hãng, nên chỉ đọc số là không đủ.
+ * Hệ thống thử các cách hiểu của chuỗi AI chép nguyên văn và chọn cách khiến khối lượng × đơn giá khớp thành tiền.
+ */
+function scaleCandidates_(raw, thousandsFirst) {
+  const s = String(raw == null ? '' : raw).replace(/[^\d.,]/g, '');
+  if (!/\d/.test(s)) return [];
+  const t = s.replace(/,/g, '.');
+  const lastDot = t.lastIndexOf('.');
+  const decStr = lastDot < 0 ? t : t.slice(0, lastDot).replace(/\./g, '') + '.' + t.slice(lastDot + 1);
+  const dec = { v: Number(decStr), d: lastDot < 0 ? 0 : t.length - lastDot - 1 };
+  const out = [dec];
+  if (/^\d{1,3}([.,]\d{3})+$/.test(s)) {
+    const thou = { v: Number(s.replace(/[.,]/g, '')), d: 0 };
+    if (thousandsFirst) out.unshift(thou); else out.push(thou);
+  }
+  return out.filter(function (c) { return isFinite(c.v); });
+}
+
+function scaleConsistent_(w, p, t) {
+  // Sai số cho phép: làm tròn thành tiền, làm tròn khối lượng, và ~0,6% do cân làm tròn theo từng bước
+  const tol = Math.abs(t.v) * 0.006 + 0.5 * Math.pow(10, -t.d) + Math.abs(p.v) * 0.5 * Math.pow(10, -w.d);
+  return Math.abs(w.v * p.v - t.v) <= tol;
+}
+
+function scaleNote_(data, note) {
+  const cur = typeof data.ghi_chu_can === 'string' ? data.ghi_chu_can.trim() : '';
+  if (cur.indexOf(note) < 0) data.ghi_chu_can = cur ? cur + ' ' + note : note;
+}
+
+function fixScaleReading_(data) {
+  const rawW = data.man_hinh_khoi_luong, rawP = data.man_hinh_don_gia, rawT = data.man_hinh_thanh_tien;
+  delete data.man_hinh_khoi_luong; delete data.man_hinh_don_gia; delete data.man_hinh_thanh_tien;
+  const num = function (v) { return v === null || v === undefined || v === '' || !isFinite(Number(v)) ? null : Number(v); };
+  // Không có chuỗi nguyên văn thì dùng số AI đã đọc
+  const wc = scaleCandidates_(rawW, false), pc = scaleCandidates_(rawP, true), tc = scaleCandidates_(rawT, true);
+  const asCand = function (v) { return v === null ? [] : [{ v: v, d: (String(v).split('.')[1] || '').length }]; };
+  const W = wc.length ? wc : asCand(num(data.khoi_luong));
+  const P = pc.length ? pc : asCand(num(data.don_gia));
+  const T = tc.length ? tc : asCand(num(data.so_tien));
+  if (W.length) data.khoi_luong = W[0].v;
+  if (!P.length && !T.length) return data;
+  if (W.length && P.length && T.length) {
+    const unitKg = !data.don_vi || /^kg$/i.test(String(data.don_vi).trim());
+    for (let i = 0; i < P.length; i++) {
+      for (let j = 0; j < T.length; j++) {
+        if (scaleConsistent_(W[0], P[i], T[j])) {
+          data.don_gia = P[i].v; data.so_tien = T[j].v;
+          if (data.don_gia === 0 && data.so_tien === 0) scaleNote_(data, 'Màn hình đang hiện đơn giá 0 (cân chưa nhập giá).');
+          return data;
+        }
+      }
+    }
+    // Không cách hiểu nào khớp: giữ số AI đọc và báo người dùng đối chiếu (đơn vị khác kg thì bỏ qua cảnh báo vì giá có thể tính theo đơn vị khác)
+    if (unitKg) scaleNote_(data, 'Cảnh báo: khối lượng × đơn giá khác thành tiền, hãy đối chiếu lại với màn hình cân.');
+    return data;
+  }
+  // Chỉ có một trong hai ô giá: lấy cách hiểu ưu tiên của chuỗi hiển thị
+  if (P.length && pc.length) data.don_gia = P[0].v;
+  if (T.length && tc.length) data.so_tien = T[0].v;
+  return data;
 }
 
 /* ---------- Họ tên mất dấu tiếng Việt ----------
@@ -947,7 +1018,8 @@ function rateLimit_(username) {
 
 function buildSchema_(type) {
   const props = {};
-  type.fields.forEach(function (f) {
+  const all = type.fields.concat(type.aux || []);
+  all.forEach(function (f) {
     if (f.type === 'items') {
       const itemProps = {};
       ITEM_FIELDS.forEach(function (c) {
@@ -958,7 +1030,7 @@ function buildSchema_(type) {
       props[f.k] = { type: f.type === 'number' ? 'NUMBER' : 'STRING', nullable: true, description: f.label };
     }
   });
-  return { type: 'OBJECT', properties: props, required: type.fields.map(function (f) { return f.k; }) };
+  return { type: 'OBJECT', properties: props, required: all.map(function (f) { return f.k; }) };
 }
 
 function callGemini_(type, files, opts) {
