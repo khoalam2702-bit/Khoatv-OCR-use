@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "KhoaTV OCR - Điền form FBO",
+  "name": "Tool OCR - điền form FBO",
   "description": "Quét CCCD, hộ chiếu, GPLX, giấy khai sinh, CV, cân điện tử, biển số xe bằng OCR và điền vào form FAST Business Online.",
   "version": "0.1.0",
   "minimum_chrome_version": "114",
-  "action": { "default_title": "Mở OCR" },
+  "action": { "default_title": "Tool OCR - điền form FBO" },
   "side_panel": { "default_path": "sidepanel.html" },
   "options_page": "options.html",
   "background": { "service_worker": "background.js", "type": "module" },
