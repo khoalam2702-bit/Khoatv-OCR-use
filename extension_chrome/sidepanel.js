@@ -141,7 +141,6 @@ function renderFiles() {
 /* ---------- Hết hạn mức Gemini: cảnh báo + đếm ngược, tự ẩn khi hết giờ chờ ---------- */
 const QUOTA_KEY = 'ocrQuotaUntil';
 let quotaUntil = 0, quotaTimer = null;
-const quotaActive = () => quotaUntil > Date.now();
 function hhmm(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
 function renderQuota() {
   const bar = $('quota-bar');
@@ -152,8 +151,8 @@ function renderQuota() {
     bar.hidden = true; bar.textContent = ''; updateScanBtn(); return; // hết giờ chờ: ẩn thông báo, mở lại nút Quét
   }
   bar.textContent = '';
-  const t = document.createElement('div'); t.textContent = '⚠ Gemini đã hết hạn mức quét. Chưa thể quét bằng AI cho đến khi hạn mức được đặt lại.';
-  const c = document.createElement('div'); c.append('Còn phải chờ: ');
+  const t = document.createElement('div'); t.textContent = '⚠ Các khóa AI (Gemini) đang tạm hết hạn mức. Hệ thống tự dùng khóa dự phòng; bạn vẫn có thể bấm Quét để thử lại.';
+  const c = document.createElement('div'); c.append('Nếu vẫn báo lỗi, dự kiến dùng lại được sau: ');
   const b = document.createElement('b'); b.textContent = formatWait(left); c.append(b, ' (khoảng ' + hhmm(quotaUntil) + ' ' + (new Date(quotaUntil).toDateString() === new Date().toDateString() ? 'hôm nay' : 'ngày mai') + ').');
   bar.append(t, c); bar.hidden = false;
 }
@@ -163,13 +162,20 @@ function startQuotaWait(seconds) {
   clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000);
   renderQuota(); updateScanBtn();
 }
+/** Quét AI thành công: xoá thông báo hết hạn mức còn sót lại (kể cả bản nhớ từ lần trước). */
+function clearQuotaWait() {
+  clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
+  try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* bỏ qua */ }
+  const bar = $('quota-bar'); bar.hidden = true; bar.textContent = '';
+}
 function restoreQuotaWait() {
   let v = 0; try { v = Number(localStorage.getItem(QUOTA_KEY)) || 0; } catch (e) { v = 0; }
   if (v > Date.now()) { quotaUntil = v; clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000); renderQuota(); }
 }
 
 function updateScanBtn() {
-  $('btn-scan').disabled = !(state.type && state.files.length) || quotaActive();
+  // Bộ đếm hạn mức chỉ là thông báo: không khoá nút Quét, vì máy chủ tự thử lần lượt các khoá dự phòng và báo lại thời gian chờ chính xác.
+  $('btn-scan').disabled = !(state.type && state.files.length);
   $('row-qronly').hidden = state.type !== 'CCCD';
   $('row-relation').hidden = state.type !== 'KHAI_SINH';
 }
@@ -284,6 +290,7 @@ async function doScan() {
       qrTask
     ]);
     qr = qr || qr2;
+    if (!skipAiUsed) clearQuotaWait(); // AI trả kết quả được thì hạn mức không còn là vấn đề
     r.data = r.data || {};
     const used = mergeQr(r.data, qr);
     if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
