@@ -64,6 +64,7 @@ async function api(action, args, retried) {
 async function logout(message, keepPassword) {
   try { if (state.auth) await call('logout', [state.auth.token]); } catch { /* bỏ qua */ }
   state.auth = null; await setAuth(null);
+  $('btn-inspect').hidden = true; $('inspect-box').hidden = true;
   if (!keepPassword) await forgetOcrPassword();
   $('who').textContent = ''; $('btn-fbo-login').hidden = true;
   await showLogin(message);
@@ -106,6 +107,7 @@ async function loadConfig() {
 
 async function enter() {
   $('who').textContent = state.auth.me.name + ' (' + state.auth.me.username + ')';
+  $('btn-inspect').hidden = state.auth.me.role !== 'ADMIN'; // "Dò form" chỉ dành cho quản trị viên (người lập ánh xạ)
   $('btn-fbo-login').hidden = false;
   await loadConfig();
   checkFboPermission();
