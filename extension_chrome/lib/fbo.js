@@ -146,6 +146,20 @@ export async function inspectActiveTab() {
   }
 }
 
+/** Dò các ô nhập của tab đang xem (mọi frame, kể cả ô ở tab con đang ẩn). Dùng từ Side Panel nên tab FBO vẫn hiện bên cạnh. */
+export async function inspectFormTab() {
+  const tab = await webTab();
+  const target = { tabId: tab.id, allFrames: true };
+  try {
+    await chrome.scripting.executeScript({ target, files: ['content/page.js'] });
+    const res = await withTimeout(chrome.scripting.executeScript({ target, func: () => globalThis.__KHOATV_INSPECT__() }), STEP_TIMEOUT_MS, 'Tab FBO không phản hồi sau ' + STEP_TIMEOUT_MS / 1000 + ' giây khi dò form.');
+    return res.map((r) => r.result).filter((r) => r && r.controls.length);
+  } catch (e) {
+    if (/Tab FBO không phản hồi/.test(e.message)) throw e;
+    throw new Error('Không truy cập được tab này. Cấp quyền cho địa chỉ FBO ở Cài đặt, mục 1. (' + (e && e.message ? e.message : e) + ')');
+  }
+}
+
 /** Đăng nhập FBO ở tab đang mở. Chỉ đăng nhập khi tab đang hiện form đăng nhập; đã đăng nhập rồi thì bỏ qua (không cần tài khoản đã lưu). */
 export async function loginFboActiveTab() {
   const tab = await webTab();
