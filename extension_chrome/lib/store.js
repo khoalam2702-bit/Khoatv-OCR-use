@@ -1,6 +1,7 @@
 // Cài đặt và tài khoản đã lưu, tất cả ở storage.local của extension (không đồng bộ lên tài khoản Chrome).
 import { mergeConfig, sanitizeConfig, fetchRemoteConfig, fetchLinkFromIndex, normalizeOrigin } from './appconfig.js';
 import { createVault, idbKeyProvider } from './vault.js';
+import { buildDm } from './dm.js';
 
 const vault = createVault({ getKey: idbKeyProvider() });
 const memo = {};
@@ -12,6 +13,12 @@ async function packaged(name) {
 
 /** Mẫu ánh xạ FBO đi kèm extension (presets/fbo-hrm.json). */
 export const getPreset = () => packaged('presets/fbo-hrm.json');
+
+/** Danh mục tỉnh/thành, phường/xã, quốc tịch của FBO đi kèm extension (presets/dm/*.json). */
+export async function getDm() {
+  const [tinh, xa, quocTich] = await Promise.all([packaged('presets/dm/tinh.json'), packaged('presets/dm/xa.json'), packaged('presets/dm/quoc-tich.json')]);
+  return buildDm({ tinh: Array.isArray(tinh) ? tinh : [], xa: Array.isArray(xa) ? xa : [], quocTich: Array.isArray(quocTich) ? quocTich : [] });
+}
 
 /** Cấu hình trung tâm: lấy từ Web Admin (admin nhập 1 lần ở Vercel), lưu đệm để mở panel là dùng ngay. */
 export async function refreshRemoteConfig() {

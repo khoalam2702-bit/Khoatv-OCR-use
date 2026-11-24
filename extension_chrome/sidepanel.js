@@ -3,8 +3,11 @@ import { createGasClient, GasError } from './lib/gas.js';
 import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword } from './lib/store.js';
 import { prepareFile } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
+import { DERIVED_LABELS } from './lib/dm.js';
+import { readCccdQr, mergeQr } from './lib/qr.js';
 import { fillActiveTab, loginFboActiveTab } from './lib/fbo.js';
 import { hasMapping } from './lib/mapping.js';
+import { splitRetry, formatWait } from './lib/quota.js';
 
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
@@ -18,6 +21,7 @@ function show(view) {
 }
 function msg(text, kind) {
   const el = $('msg');
+  text = splitRetry(text).text; // không bao giờ hiện dấu hiệu chờ thô
   el.hidden = !text; el.textContent = text || ''; el.className = 'msg' + (kind === 'info' ? ' info' : '');
 }
 function busy(btn, on, label) {
@@ -129,7 +133,40 @@ function renderFiles() {
   });
 }
 
-function updateScanBtn() { $('btn-scan').disabled = !(state.type && state.files.length); }
+/* ---------- Hết hạn mức Gemini: cảnh báo + đếm ngược, tự ẩn khi hết giờ chờ ---------- */
+const QUOTA_KEY = 'ocrQuotaUntil';
+let quotaUntil = 0, quotaTimer = null;
+const quotaActive = () => quotaUntil > Date.now();
+function hhmm(ms) { const d = new Date(ms); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+function renderQuota() {
+  const bar = $('quota-bar');
+  const left = Math.ceil((quotaUntil - Date.now()) / 1000);
+  if (left <= 0) {
+    clearInterval(quotaTimer); quotaTimer = null; quotaUntil = 0;
+    try { localStorage.removeItem(QUOTA_KEY); } catch (e) { /* bỏ qua */ }
+    bar.hidden = true; bar.textContent = ''; updateScanBtn(); return; // hết giờ chờ: ẩn thông báo, mở lại nút Quét
+  }
+  bar.textContent = '';
+  const t = document.createElement('div'); t.textContent = '⚠ Gemini đã hết hạn mức quét. Chưa thể quét bằng AI cho đến khi hạn mức được đặt lại.';
+  const c = document.createElement('div'); c.append('Còn phải chờ: ');
+  const b = document.createElement('b'); b.textContent = formatWait(left); c.append(b, ' (khoảng ' + hhmm(quotaUntil) + ' ' + (new Date(quotaUntil).toDateString() === new Date().toDateString() ? 'hôm nay' : 'ngày mai') + ').');
+  bar.append(t, c); bar.hidden = false;
+}
+function startQuotaWait(seconds) {
+  quotaUntil = Date.now() + Math.max(1, seconds) * 1000;
+  try { localStorage.setItem(QUOTA_KEY, String(quotaUntil)); } catch (e) { /* bỏ qua */ }
+  clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000);
+  renderQuota(); updateScanBtn();
+}
+function restoreQuotaWait() {
+  let v = 0; try { v = Number(localStorage.getItem(QUOTA_KEY)) || 0; } catch (e) { v = 0; }
+  if (v > Date.now()) { quotaUntil = v; clearInterval(quotaTimer); quotaTimer = setInterval(renderQuota, 1000); renderQuota(); }
+}
+
+function updateScanBtn() {
+  $('btn-scan').disabled = !(state.type && state.files.length) || quotaActive();
+  $('row-qronly').hidden = state.type !== 'CCCD';
+}
 
 async function addFiles(list) {
   msg('');
@@ -159,11 +196,36 @@ async function doScan() {
   const btn = $('btn-scan');
   busy(btn, true, 'Đang quét...');
   try {
-    const r = await api('scanDocument', [{ docType: state.type, files: state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 })) }]);
+    // CCCD: đọc mã QR; dữ liệu QR (số CCCD, họ tên đủ dấu, ngày sinh, giới tính, thường trú, ngày cấp) ghi đè kết quả OCR.
+    // Chế độ "chỉ QR": QR hợp lệ thì không gọi AI (nhanh); QR không đọc được thì tự quay về OCR như thường.
+    const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
+    const qrFirst = state.type === 'CCCD' && $('in-qronly').checked;
+    let qr = null, qrTask = Promise.resolve(null);
+    if (qrFirst) {
+      qr = await readCccdQr(state.files).catch(() => null);
+    } else if (state.type === 'CCCD') {
+      qrTask = readCccdQr(state.files).catch(() => null);
+    }
+    const skipAiUsed = !!qr; // chỉ true ở chế độ chỉ QR khi QR hợp lệ: backend không gọi AI
+    const [r, qr2] = await Promise.all([
+      api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
+      qrTask
+    ]);
+    qr = qr || qr2;
+    r.data = r.data || {};
+    const used = mergeQr(r.data, qr);
+    if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
     state.scan = r;
-    renderReview(r.data || {});
+    renderReview(r.data);
     show('review');
-  } catch (e) { msg(e.message); }
+    if (skipAiUsed) msg('Chế độ chỉ QR: không dùng AI. Đã lấy số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp từ mã QR. Quê quán, nơi sinh, ngày hết hạn hãy tự nhập.', 'info');
+    else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
+    else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
+  } catch (e) {
+    const r = splitRetry(e.message);
+    if (r.seconds) { startQuotaWait(r.seconds); msg(''); } // hết hạn mức: banner đếm ngược thay cho thông báo lỗi
+    else msg(r.text);
+  }
   finally { busy(btn, false); updateScanBtn(); }
 }
 
@@ -248,7 +310,7 @@ async function doFill() {
       return;
     }
     const t = state.config && state.config.types.find((x) => x.code === state.type);
-    const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : k; };
+    const label = (k) => { const f = t && t.fields.find((x) => x.k === k); return f ? f.label : (DERIVED_LABELS[k] || k); };
     const list = (a) => a.map(label).join(', ');
     const parts = ['Đã điền ' + r.filled.length + ' trường' + (r.filled.length ? ' (' + list(r.filled) + ')' : '') + '.'];
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
@@ -318,6 +380,7 @@ document.addEventListener('paste', (e) => {
 
 /* ---------- Khởi động ---------- */
 (async function init() {
+  restoreQuotaWait();
   await refreshRemoteConfig(); // link Apps Script nằm ở Web Admin (Vercel); lấy mới mỗi lần mở, lỗi mạng thì dùng bản đã lưu
   const { gasUrl } = await getSettings();
   if (!gasUrl) { show('login'); msg('Chưa lấy được địa chỉ máy chủ OCR từ Web Admin. Kiểm tra mạng, hoặc liên hệ quản trị viên (biến GAS_WEB_APP_URL trên Vercel).'); return; }

@@ -2,7 +2,9 @@
  * OCR đa tài liệu: Google Apps Script + Gemini Vision + Google Sheets + Google Drive
  *
  * Script Properties (Project Settings > Script Properties):
- *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API
+ *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API chính. ADMIN đổi được ở trang quản trị > Cài đặt AI (không cần vào Script Properties)
+ *   GEMINI_API_KEY_BACKUP (tuỳ chọn) Khoá dự phòng: tự dùng khi khoá chính hết hạn mức (429) hoặc bị từ chối (403)
+ *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
  *
@@ -76,10 +78,11 @@ const DOC_TYPES = {
   },
   HO_CHIEU: {
     label: 'Hộ chiếu', uniqueKey: 'so_ho_chieu', required: ['so_ho_chieu', 'ho_ten'],
-    hint: 'Trang thông tin hộ chiếu. Đối chiếu vùng MRZ ở cuối trang để kiểm tra số hộ chiếu và ngày tháng.',
+    hint: 'Trang thông tin hộ chiếu. Đối chiếu vùng MRZ ở cuối trang để kiểm tra số hộ chiếu và ngày tháng. Nơi cấp (noi_cap) và Nơi cấp thị thực (noi_cap_visa): ghi TÊN NƯỚC cấp bằng tiếng Việt (ví dụ Việt Nam, Mỹ, Nhật Bản, Anh), lấy từ mã quốc gia cấp ở vùng MRZ hoặc từ trang; không ghi tên cơ quan. Các trường thị thực (visa) chỉ điền khi tệp có trang/tem visa; không có thì trả null, không lấy từ trang thông tin hộ chiếu.',
     fields: [f_('so_ho_chieu', 'Số hộ chiếu'), f_('ho_ten', 'Họ và tên'), f_('quoc_tich', 'Quốc tịch'), f_('ngay_sinh', 'Ngày sinh'),
       f_('noi_sinh', 'Nơi sinh'), f_('gioi_tinh', 'Giới tính'), f_('so_dinh_danh', 'Số định danh'), f_('ngay_cap', 'Ngày cấp'),
-      f_('ngay_het_han', 'Ngày hết hạn'), f_('co_quan_cap', 'Cơ quan cấp')]
+      f_('ngay_het_han', 'Ngày hết hạn'), f_('co_quan_cap', 'Cơ quan cấp'), f_('noi_cap', 'Nơi cấp (nước cấp)'),
+      f_('so_visa', 'Số thị thực (Visa)'), f_('ngay_cap_visa', 'Ngày cấp thị thực'), f_('noi_cap_visa', 'Nơi cấp thị thực'), f_('ngay_het_han_visa', 'Ngày hết hạn thị thực')]
   },
   GPLX: {
     label: 'Giấy phép lái xe', uniqueKey: 'so_gplx', required: ['so_gplx', 'ho_ten', 'hang_gplx'],
@@ -231,7 +234,11 @@ const API_ACTIONS = {
   createUser: { fn: function (a) { return createUser(a[0], a[1]); } },
   updateUser: { fn: function (a) { return updateUser(a[0], a[1], a[2]); } },
   resetUserPassword: { fn: function (a) { return resetUserPassword(a[0], a[1]); } },
-  deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } }
+  deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } },
+  // cấu hình AI (chỉ ADMIN)
+  getAiConfig: { fn: function (a) { return getAiConfig(a[0]); } },
+  setAiConfig: { fn: function (a) { return setAiConfig(a[0], a[1]); } },
+  testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } }
 };
 
 /** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
@@ -873,10 +880,59 @@ function scanDocument(token, payload) {
   });
 
   const tAi = Date.now();
-  const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {};
-  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (Date.now() - tAi) + 'ms, ' + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
+  // skipAi: extension đã đọc được mã QR trên CCCD và người dùng chọn chế độ nhanh: chỉ lưu tệp gốc, không gọi Gemini.
+  const skipAi = payload.skipAi === true && payload.docType === 'CCCD';
+  const data = skipAi ? {} : (callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {});
+  const tFix = Date.now();
+  if (!skipAi) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
+  const fixMs = Date.now() - tFix;
+  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   return { data: data, fileIds: fileIds, ms: Date.now() - started };
+}
+
+/* ---------- Họ tên mất dấu tiếng Việt ----------
+ * Nếu họ tên (giấy tờ Việt Nam) trả về không có một dấu nào (thường do lấy từ dòng MRZ in hoa không dấu), đọc lại RIÊNG các trường đó
+ * và chỉ nhận kết quả khi bỏ dấu đi thì trùng khít với bản cũ (chỉ thêm dấu, không đổi chữ).
+ */
+const NAME_FIELDS = {
+  CCCD: ['ho_ten'], GPLX: ['ho_ten'], KHAI_SINH: ['ho_ten_khai_sinh', 'ho_ten_cha', 'ho_ten_me'], HO_CHIEU: ['ho_ten']
+};
+function stripDiacritics_(s) {
+  return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+}
+function hasViDiacritics_(s) {
+  s = String(s == null ? '' : s);
+  return s.length > 0 && stripDiacritics_(s) !== s;
+}
+function fixNameDiacritics_(docType, type, data, files) {
+  const keys = (NAME_FIELDS[docType] || []).filter(function (k) {
+    const v = data[k];
+    if (typeof v !== 'string' || !v.trim() || hasViDiacritics_(v)) return false;
+    if (docType === 'HO_CHIEU') return /viet/.test(stripDiacritics_(data.quoc_tich).toLowerCase()); // hộ chiếu nước ngoài: tên không dấu là bình thường
+    return true;
+  });
+  if (!keys.length) return data;
+  const sub = {
+    label: type.label,
+    hint: 'CHỈ đọc lại các trường sau và giữ ĐỦ dấu tiếng Việt (ă â ê ô ơ ư đ và dấu thanh sắc huyền hỏi ngã nặng). ' +
+      'Lấy họ tên từ dòng chữ "Họ và tên" in/viết trên giấy tờ (có dấu), KHÔNG lấy từ vùng mã máy đọc MRZ hay mã vạch (in hoa không dấu). ' +
+      'Đây là tên người Việt: không được bỏ dấu, không đổi chữ cái nào ngoài việc thêm dấu.',
+    fields: type.fields.filter(function (f) { return keys.indexOf(f.k) >= 0; })
+  };
+  try {
+    const re = callGemini_(sub, files, { slow: true }) || {};
+    keys.forEach(function (k) {
+      const nv = re[k];
+      if (typeof nv === 'string' && hasViDiacritics_(nv) && stripDiacritics_(nv).toLowerCase().replace(/\s+/g, ' ').trim() === stripDiacritics_(data[k]).toLowerCase().replace(/\s+/g, ' ').trim()) {
+        console.log('Khôi phục dấu ' + k + ': "' + data[k] + '" -> "' + nv + '"');
+        data[k] = nv.trim();
+      }
+    });
+  } catch (e) {
+    console.error('Đọc lại dấu họ tên lỗi, giữ kết quả ban đầu: ' + e.message);
+  }
+  return data;
 }
 
 function rateLimit_(username) {
@@ -905,7 +961,8 @@ function buildSchema_(type) {
   return { type: 'OBJECT', properties: props, required: type.fields.map(function (f) { return f.k; }) };
 }
 
-function callGemini_(type, files) {
+function callGemini_(type, files, opts) {
+  opts = opts || {};
   const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
   const system =
     'Bạn là bộ máy OCR bóc tách dữ liệu từ tài liệu tiếng Việt. Quy tắc bắt buộc:\n' +
@@ -929,34 +986,45 @@ function callGemini_(type, files) {
     generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type), temperature: 0 }
   };
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-  function post_() {
+  const keys = geminiKeys_();
+  function post_(key) {
     return fetchRetry_(url, {
       method: 'post',
       contentType: 'application/json',
-      headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+      headers: { 'x-goog-api-key': key },
       payload: JSON.stringify(body),
       muteHttpExceptions: true
-    });
+    }, keys.length > 1); // có khoá dự phòng: gặp 429 chuyển khoá ngay, không chờ thử lại
   }
   // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
   // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
-  const fast = prop_('GEMINI_FAST', 'on') !== 'off';
+  const fast = prop_('GEMINI_FAST', 'on') !== 'off' && !opts.slow; // opts.slow: lần đọc lại cần chính xác, để Gemini suy nghĩ mặc định
   if (fast) {
     body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
     body.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
   }
-  let resp = post_();
-  if (fast && resp.getResponseCode() === 400) {
+  let keyIdx = 0;
+  let resp = post_(keys[0]);
+  if (fast && resp.getResponseCode() === 400 && !isBadKey_(resp)) {
     console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
     delete body.generationConfig.thinkingConfig;
     delete body.generationConfig.mediaResolution;
-    resp = post_();
+    resp = post_(keys[0]);
+  }
+  // Khoá chính hết hạn mức (429) hoặc bị từ chối (403 / khoá sai): thử khoá dự phòng
+  const c0 = resp.getResponseCode();
+  if ((c0 === 429 || c0 === 403 || isBadKey_(resp)) && keys.length > 1) {
+    console.error('Khoá Gemini chính lỗi ' + c0 + ', chuyển khoá dự phòng: ' + resp.getContentText().slice(0, 300));
+    keyIdx = 1;
+    resp = post_(keys[1]);
   }
   const code = resp.getResponseCode();
   if (code !== 200) {
-    console.error('Gemini ' + code + ': ' + resp.getContentText().slice(0, 800));
+    console.error('Gemini ' + code + ' (khoá ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + '): ' + resp.getContentText().slice(0, 800));
+    if (isBadKey_(resp)) throw new Error('Khoá Gemini API không hợp lệ hoặc đã bị thu hồi. Quản trị viên vào Cài đặt AI để cập nhật khoá.');
+    if (code === 403) throw new Error('Khoá Gemini API bị từ chối (403): chưa bật API hoặc khoá bị giới hạn. Quản trị viên kiểm tra khoá ở Cài đặt AI.');
     if (code === 404) throw new Error('Model Gemini "' + model + '" không tồn tại hoặc đã ngừng. Kiểm tra Script Property GEMINI_MODEL.');
-    if (code === 429) throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.');
+    if (code === 429) throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
     throw new Error('Gemini trả lỗi ' + code + '. Xem nhật ký Apps Script để biết chi tiết.');
   }
   const json = JSON.parse(resp.getContentText());
@@ -973,6 +1041,111 @@ function callGemini_(type, files) {
   } catch (e) {
     throw new Error('Kết quả AI bị cắt giữa chừng (tài liệu quá dài?). Hãy thử lại với ít trang hơn.');
   }
+}
+
+/* ============================ CẤU HÌNH AI (chỉ ADMIN) ============================
+ * Khoá lưu trong Script Properties, không bao giờ trả về giao diện: chỉ trả 4 ký tự cuối để nhận biết.
+ * Khoá mới được thử gọi Gemini 1 lần trước khi lưu; thử thất bại thì không lưu gì. */
+
+const AI_TIERS = ['free', 'paid'];
+
+function keyHint_(k) { k = String(k || ''); return k ? '••••' + k.slice(-4) : ''; }
+
+function checkKeyFormat_(k) {
+  k = String(k || '').trim();
+  if (!/^[A-Za-z0-9_\-]{20,120}$/.test(k)) throw new Error('Khoá API không đúng định dạng (20–120 ký tự chữ, số, gạch, không có khoảng trắng).');
+  return k;
+}
+
+function checkModelName_(m) {
+  m = String(m || '').trim();
+  if (!/^[A-Za-z0-9._\-]{3,60}$/.test(m)) throw new Error('Tên model không hợp lệ.');
+  return m;
+}
+
+/** Thử 1 yêu cầu nhỏ (chỉ văn bản). Trả { ok, warn, message }: 429 = khoá hợp lệ nhưng đang hết hạn mức. */
+function testGeminiKey_(key, model) {
+  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  const resp = fetchRetry_(url, {
+    method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': key },
+    payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'ping' }] }], generationConfig: { maxOutputTokens: 8 } }),
+    muteHttpExceptions: true
+  }, true);
+  const code = resp.getResponseCode();
+  if (code === 200) return { ok: true, warn: false, message: 'Khoá dùng được.' };
+  if (code === 429) return { ok: true, warn: true, message: 'Khoá hợp lệ nhưng đang hết hạn mức (429). Gói miễn phí thường bị như vậy; bật thanh toán để dùng khoá trả phí.' };
+  if (isBadKey_(resp)) return { ok: false, warn: false, message: 'Khoá không hợp lệ hoặc đã bị thu hồi.' };
+  if (code === 403) return { ok: false, warn: false, message: 'Khoá bị từ chối (403): chưa bật Generative Language API hoặc khoá bị giới hạn.' };
+  if (code === 404) return { ok: false, warn: false, message: 'Model "' + model + '" không tồn tại hoặc khoá không được dùng model này.' };
+  return { ok: false, warn: false, message: 'Gemini trả lỗi ' + code + '.' };
+}
+
+function aiConfigView_() {
+  const p = PropertiesService.getScriptProperties();
+  const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
+  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
+  const tier = String(p.getProperty('GEMINI_TIER') || '').trim();
+  return {
+    model: prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL),
+    defaultModel: DEFAULTS.GEMINI_MODEL,
+    tier: AI_TIERS.indexOf(tier) >= 0 ? tier : '',
+    main: { set: !!main, hint: keyHint_(main) },
+    backup: { set: !!bak, hint: keyHint_(bak) }
+  };
+}
+
+function getAiConfig(token) {
+  requireAdmin_(token);
+  return aiConfigView_();
+}
+
+/**
+ * patch: { apiKey?, backupKey?, clearBackup?, model?, tier? }. Chỉ trường có mặt mới đổi.
+ * Khoá mới được thử trước; chỉ lưu khi mọi khoá mới đều dùng được (hết hạn mức 429 vẫn tính là hợp lệ).
+ */
+function setAiConfig(token, patch) {
+  const admin = requireAdmin_(token);
+  patch = patch || {};
+  const model = patch.model !== undefined && String(patch.model).trim() !== '' ? checkModelName_(patch.model) : prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
+  const newMain = patch.apiKey !== undefined && String(patch.apiKey).trim() !== '' ? checkKeyFormat_(patch.apiKey) : '';
+  const newBak = patch.backupKey !== undefined && String(patch.backupKey).trim() !== '' ? checkKeyFormat_(patch.backupKey) : '';
+  if (patch.tier !== undefined && patch.tier !== '' && AI_TIERS.indexOf(patch.tier) < 0) throw new Error('Gói không hợp lệ (free hoặc paid).');
+  const tested = [];
+  [['Khoá chính', newMain], ['Khoá dự phòng', newBak]].forEach(function (x) {
+    if (!x[1]) return;
+    const r = testGeminiKey_(x[1], model);
+    if (!r.ok) throw new Error(x[0] + ': ' + r.message + ' Chưa lưu thay đổi nào.');
+    tested.push(x[0] + (r.warn ? ' (hết hạn mức tạm thời)' : ''));
+  });
+  const p = PropertiesService.getScriptProperties();
+  const changed = [];
+  if (newMain) { p.setProperty('GEMINI_API_KEY', newMain); changed.push('khoa_chinh ' + keyHint_(newMain)); }
+  if (newBak) { p.setProperty('GEMINI_API_KEY_BACKUP', newBak); changed.push('khoa_du_phong ' + keyHint_(newBak)); }
+  else if (patch.clearBackup === true) { p.deleteProperty('GEMINI_API_KEY_BACKUP'); changed.push('xoa_khoa_du_phong'); }
+  if (model !== prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL)) { p.setProperty('GEMINI_MODEL', model); changed.push('model=' + model); }
+  if (patch.tier !== undefined) {
+    if (patch.tier) p.setProperty('GEMINI_TIER', patch.tier); else p.deleteProperty('GEMINI_TIER');
+    changed.push('goi=' + (patch.tier || 'chua_chon'));
+  }
+  if (changed.length) audit_(admin.username, 'DOI_CAU_HINH_AI', 'GEMINI', changed.join('; ')); // chỉ ghi 4 ký tự cuối, không ghi khoá
+  const view = aiConfigView_();
+  view.tested = tested;
+  return view;
+}
+
+/** Kiểm tra khoá đang dùng (chính và dự phòng) với model hiện tại. */
+function testAiConfig(token) {
+  requireAdmin_(token);
+  const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
+  const p = PropertiesService.getScriptProperties();
+  const out = [];
+  [['main', 'Khoá chính', 'GEMINI_API_KEY'], ['backup', 'Khoá dự phòng', 'GEMINI_API_KEY_BACKUP']].forEach(function (x) {
+    const k = String(p.getProperty(x[2]) || '').trim();
+    if (!k) { out.push({ slot: x[0], label: x[1], set: false }); return; }
+    const r = testGeminiKey_(k, model);
+    out.push({ slot: x[0], label: x[1], set: true, hint: keyHint_(k), ok: r.ok, warn: r.warn, message: r.message });
+  });
+  return out;
 }
 
 /* ============================ BƯỚC 2: LƯU & QUẢN LÝ BẢN GHI ============================ */
@@ -1510,6 +1683,25 @@ function clean_(v, type) {
 
 /* ============================ TIỆN ÍCH ============================ */
 
+/** Khoá Gemini theo thứ tự thử: khoá chính, rồi khoá dự phòng (nếu có và khác khoá chính). */
+function geminiKeys_() {
+  const p = PropertiesService.getScriptProperties();
+  const main = String(p.getProperty('GEMINI_API_KEY') || '').trim();
+  const bak = String(p.getProperty('GEMINI_API_KEY_BACKUP') || '').trim();
+  const out = [];
+  if (main) out.push(main);
+  if (bak && bak !== main) out.push(bak);
+  if (!out.length) throw new Error('Chưa cấu hình Script Property: GEMINI_API_KEY');
+  return out;
+}
+
+/** Phản hồi Gemini cho biết khoá sai / bị thu hồi (HTTP 400 API_KEY_INVALID hoặc 'API key not valid'). */
+function isBadKey_(resp) {
+  if (resp.getResponseCode() !== 400) return false;
+  const t = resp.getContentText();
+  return t.indexOf('API_KEY_INVALID') >= 0 || /API key not valid|API key expired/i.test(t);
+}
+
 function prop_(key, fallback) {
   const v = PropertiesService.getScriptProperties().getProperty(key);
   if (v) return v.trim();
@@ -1521,14 +1713,47 @@ function hash_(s) {
   return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s)).slice(0, 32);
 }
 
+/** Số giây còn lại đến 0h giờ Thái Bình Dương: lúc Gemini đặt lại hạn mức theo ngày (RPD). */
+function secondsToPacificMidnight_(nowMs) {
+  const t = Utilities.formatDate(new Date(nowMs), 'America/Los_Angeles', 'H:m:s').split(':');
+  return 86400 - (Number(t[0]) * 3600 + Number(t[1]) * 60 + Number(t[2]));
+}
+
+/**
+ * Đọc thời gian phải chờ từ thân lỗi 429 của Gemini (giây).
+ * Ưu tiên RetryInfo.retryDelay; hết hạn mức theo ngày (PerDay) thì chờ đến 0h giờ Thái Bình Dương;
+ * không có thông tin thì mặc định 60 giây (hạn mức theo phút).
+ */
+function retryAfterSec_(bodyText, nowMs) {
+  let info = null;
+  try { info = JSON.parse(bodyText); } catch (e) { info = null; }
+  const details = (info && info.error && info.error.details) || [];
+  let delay = 0, daily = false;
+  details.forEach(function (d) {
+    if (d && d.retryDelay) {
+      const m = /^(\d+(?:\.\d+)?)s$/.exec(String(d.retryDelay));
+      if (m) delay = Math.max(delay, Math.ceil(Number(m[1])));
+    }
+    (d && d.violations || []).forEach(function (v) {
+      if (/PerDay/i.test(String(v.quotaId || '') + ' ' + String(v.quotaMetric || ''))) daily = true;
+    });
+  });
+  if (daily) return secondsToPacificMidnight_(nowMs);
+  return delay > 0 ? delay : 60;
+}
+
+/** Dấu hiệu gắn cuối thông báo lỗi để giao diện đếm ngược; giao diện sẽ cắt dấu hiệu này khi hiển thị. */
+function retryMarker_(sec) { return ' [[RETRY_AFTER:' + Math.max(1, Math.round(sec)) + ']]'; }
+
 /** UrlFetch có thử lại luỹ thừa cho lỗi 429 / 5xx / lỗi mạng. */
-function fetchRetry_(url, options) {
+function fetchRetry_(url, options, no429Retry) {
   let lastErr = null;
   for (let i = 0; i < 4; i++) {
     try {
       const resp = UrlFetchApp.fetch(url, options);
       const code = resp.getResponseCode();
       if (code !== 429 && code < 500) return resp;
+      if (code === 429 && no429Retry) return resp;
       if (i === 3) return resp;
     } catch (e) {
       lastErr = e;

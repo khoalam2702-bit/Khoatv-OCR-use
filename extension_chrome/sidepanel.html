@@ -15,6 +15,7 @@
     <button id="btn-logout" class="link" hidden>Đăng xuất</button>
   </header>
   <div id="msg" class="msg" hidden></div>
+  <div id="quota-bar" class="msg warn" role="status" hidden></div>
   <div id="perm-bar" class="msg info" hidden><span id="perm-text">Cần cấp quyền để điền form FBO.</span> <button id="btn-perm" class="primary">Cấp quyền FBO</button></div>
 
   <section id="view-login" hidden>
@@ -33,6 +34,7 @@
     <input id="in-files" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple hidden>
     <ul id="files" class="files"></ul>
     <p id="limit-hint" class="hint"></p>
+    <label class="chk" id="row-qronly" hidden><input id="in-qronly" type="checkbox"> CCCD: chỉ đọc mã QR (nhanh, không dùng AI). Quê quán, nơi sinh, ngày hết hạn tự nhập.</label>
     <button id="btn-scan" class="primary" disabled>Quét</button>
   </section>
 
@@ -53,6 +55,7 @@
     </div>
   </section>
 
+  <script src="lib/vendor/jsqr.js"></script>
   <script type="module" src="sidepanel.js"></script>
 </body>
 </html>
