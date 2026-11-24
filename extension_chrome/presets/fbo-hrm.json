@@ -44,7 +44,9 @@
       "fixed": "02"
     },
     "thuong_tru_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_tinh\"]",
-    "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]"
+    "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]",
+    "thuong_tru_xa_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_xa\"]",
+    "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]"
   },
   "CV_UNGVIEN": {
     "ho_ten": [
