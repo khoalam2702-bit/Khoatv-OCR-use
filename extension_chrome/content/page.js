@@ -157,6 +157,17 @@
     });
   };
 
+  /** Chẩn đoán: liệt kê các ô có id chứa chuỗi cho trước (tag, id, loại, giá trị, có đang hiện không) để biết ô thật của form. */
+  globalThis.__KHOATV_DIAG__ = function (needles) {
+    var re = new RegExp((needles || []).join('|'), 'i'), out = [];
+    Array.prototype.forEach.call(document.querySelectorAll('[id]'), function (el) {
+      if (out.length >= 14 || !re.test(el.id)) return;
+      var vis = !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+      out.push(el.tagName.toLowerCase() + (el.type ? '[' + el.type + ']' : '') + '#' + el.id.replace(/^.*_dirExtender_form_/, '…') + (vis ? '' : ' (ẩn)') + (el.value ? '="' + String(el.value).slice(0, 20) + '"' : ''));
+    });
+    return out;
+  };
+
   function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function byId(suffix) { return document.querySelector('[id$="' + suffix + '"]'); }
   function typeInto(el, v) {
