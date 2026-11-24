@@ -1,7 +1,8 @@
 // Chờ form FBO, kiểm tra đúng form và giới hạn thời gian cho bước "Điền vào FBO". Không dùng API của Chrome nên kiểm thử được bằng Node.
 export const FORM_WAIT_MS = 10000;   // chờ form xuất hiện / tải xong
 export const POLL_MS = 500;          // chu kỳ dò form
-export const FILL_TIMEOUT_MS = 20000; // tối đa cho một lần điền (kể cả dò ghi đè)
+export const STEP_TIMEOUT_MS = 15000; // tối đa cho MỖI lần gọi vào tab (kiểm tra đăng nhập, dò, tính thử, điền); không tính lúc người dùng đọc hộp xác nhận
+export const STABLE_POLLS = 2;       // số lần dò liên tiếp không thấy thêm ô nào (≈1 giây) thì thôi chờ
 export const MIN_MATCH = 0.5;        // form đúng loại khi thấy ít nhất 50% số ô của ánh xạ
 
 /** Danh sách selector (không trùng) của một ánh xạ. */

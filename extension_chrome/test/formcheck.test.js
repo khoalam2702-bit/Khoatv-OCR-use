@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mappingSelectors, classifyForm, withTimeout, importantOverwrites, FORM_WAIT_MS, FILL_TIMEOUT_MS } from '../lib/formcheck.js';
+import { mappingSelectors, classifyForm, withTimeout, importantOverwrites, FORM_WAIT_MS, STEP_TIMEOUT_MS, STABLE_POLLS } from '../lib/formcheck.js';
 
-test('giới hạn thời gian đúng như đã báo', () => { assert.equal(FORM_WAIT_MS, 10000); assert.equal(FILL_TIMEOUT_MS, 20000); });
+test('giới hạn thời gian đúng như đã báo', () => { assert.equal(FORM_WAIT_MS, 10000); assert.equal(STEP_TIMEOUT_MS, 15000); assert.equal(STABLE_POLLS, 2); });
 test('mappingSelectors: gộp mọi dạng, bỏ trùng', () => {
   assert.deepEqual(mappingSelectors({ a: '#x', b: { selector: '#y' }, c: ['#x', { selector: '#z' }], d: { fixed: '1' } }).sort(), ['#x', '#y', '#z']);
   assert.deepEqual(mappingSelectors(null), []);
