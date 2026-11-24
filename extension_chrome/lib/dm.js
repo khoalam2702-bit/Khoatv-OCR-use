@@ -72,11 +72,10 @@ export function lookupNationality(dm, text) {
   return (hits.find((x) => !/^Q/.test(x.ma)) || hits[0]).ma;
 }
 
-const ADDR = { thuong_tru: 'noi_thuong_tru', que_quan: 'que_quan', noi_sinh: 'noi_sinh' };
+const ADDR = { thuong_tru: 'noi_thuong_tru', que_quan: 'que_quan' };
 export const DERIVED_LABELS = {
   thuong_tru_tinh_ma: 'Thường trú - Tỉnh/thành', thuong_tru_xa_ma: 'Thường trú - Phường/xã',
   que_quan_tinh_ma: 'Quê quán - Tỉnh/thành', que_quan_xa_ma: 'Quê quán - Phường/xã',
-  noi_sinh_tinh_ma: 'Nơi sinh - Tỉnh/thành', noi_sinh_xa_ma: 'Nơi sinh - Phường/xã',
   noi_cap_ma: 'Nơi cấp (mã quốc tịch)', noi_cap_visa_ma: 'Nơi cấp thị thực (mã quốc tịch)'
 };
 
@@ -85,6 +84,8 @@ export function enrichData(docType, data, dm) {
   const out = { ...(data || {}) };
   if (!dm) return out;
   if (docType === 'CCCD') {
+    // Nơi sinh chỉ có một ô chữ: thẻ không in Nơi sinh thì gom thông tin nơi chốn trên thẻ (Quê quán) vào ô này.
+    if (!String(out.noi_sinh == null ? '' : out.noi_sinh).trim() && out.que_quan) out.noi_sinh = out.que_quan;
     for (const [p, k] of Object.entries(ADDR)) {
       const r = lookupAddress(dm, out[k]);
       out[p + '_tinh_ma'] = r.tinh ? r.tinh.ma : '';

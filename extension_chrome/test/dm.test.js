@@ -65,7 +65,8 @@ test('enrichData: CCCD thêm mã tỉnh/xã, Hộ chiếu thêm mã nơi cấp; 
   const r = enrichData('CCCD', src, dm);
   assert.equal(r.thuong_tru_tinh_ma, '01'); assert.equal(r.thuong_tru_xa_ma, '00004');
   assert.equal(r.que_quan_tinh_ma, '96'); assert.equal(r.que_quan_xa_ma, '');
-  assert.equal(r.noi_sinh_tinh_ma, '');
+  assert.equal(r.noi_sinh, 'Cà Mau'); // thẻ không có Nơi sinh: lấy Quê quán
+  assert.equal(enrichData('CCCD', { noi_sinh: 'Hà Nội', que_quan: 'Cà Mau' }, dm).noi_sinh, 'Hà Nội');
   assert.equal(src.thuong_tru_tinh_ma, undefined);
   const h = enrichData('HO_CHIEU', { noi_cap: 'Việt Nam', noi_cap_visa: 'Mỹ' }, dm);
   assert.deepEqual([h.noi_cap_ma, h.noi_cap_visa_ma], ['VN', 'USA']);
