@@ -3,7 +3,7 @@
  *
  * Script Properties (Project Settings > Script Properties):
  *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API chính. ADMIN đổi được ở trang quản trị > Cài đặt AI (không cần vào Script Properties)
- *   GEMINI_API_KEY_BACKUP (tuỳ chọn) Khoá dự phòng: tự dùng khi khoá chính hết hạn mức (429) hoặc bị từ chối (403)
+ *   GEMINI_API_KEY_BACKUP (tuỳ chọn) Khoá dự phòng: tự dùng khi khoá chính hết hạn mức (429), bị từ chối (403) hoặc lỗi máy chủ (5xx). Khoá vừa lỗi được cho "nghỉ" (tối đa 30 phút) để các lần quét sau dùng thẳng khoá còn lại
  *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
@@ -987,6 +987,12 @@ function callGemini_(type, files, opts) {
   };
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
   const keys = geminiKeys_();
+  // Khoá đang "nghỉ" (vừa hết hạn mức/bị từ chối) được bỏ qua để khỏi tốn lượt gọi; hết khoá khả dụng thì báo ngay, không gọi mạng.
+  const split = splitKeysByCooldown_(keys);
+  if (!split.ready.length) {
+    throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(split.minWaitSec));
+  }
+  const ready = split.ready;
   function post_(key) {
     return fetchRetry_(url, {
       method: 'post',
@@ -994,7 +1000,7 @@ function callGemini_(type, files, opts) {
       headers: { 'x-goog-api-key': key },
       payload: JSON.stringify(body),
       muteHttpExceptions: true
-    }, keys.length > 1); // có khoá dự phòng: gặp 429 chuyển khoá ngay, không chờ thử lại
+    }, ready.length > 1); // còn khoá khác để thử: gặp 429 chuyển khoá ngay, không chờ thử lại
   }
   // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
   // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
@@ -1003,20 +1009,28 @@ function callGemini_(type, files, opts) {
     body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
     body.generationConfig.mediaResolution = 'MEDIA_RESOLUTION_HIGH';
   }
-  let keyIdx = 0;
-  let resp = post_(keys[0]);
-  if (fast && resp.getResponseCode() === 400 && !isBadKey_(resp)) {
-    console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
-    delete body.generationConfig.thinkingConfig;
-    delete body.generationConfig.mediaResolution;
-    resp = post_(keys[0]);
-  }
-  // Khoá chính hết hạn mức (429) hoặc bị từ chối (403 / khoá sai): thử khoá dự phòng
-  const c0 = resp.getResponseCode();
-  if ((c0 === 429 || c0 === 403 || isBadKey_(resp)) && keys.length > 1) {
-    console.error('Khoá Gemini chính lỗi ' + c0 + ', chuyển khoá dự phòng: ' + resp.getContentText().slice(0, 300));
-    keyIdx = 1;
-    resp = post_(keys[1]);
+  let resp = null, keyIdx = 0, used = null;
+  for (let i = 0; i < ready.length; i++) {
+    keyIdx = keys.indexOf(ready[i]);
+    used = ready[i];
+    resp = post_(used);
+    if (fast && resp.getResponseCode() === 400 && !isBadKey_(resp)) {
+      console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
+      delete body.generationConfig.thinkingConfig;
+      delete body.generationConfig.mediaResolution;
+      resp = post_(used);
+    }
+    const c = resp.getResponseCode();
+    if (c === 200) break;
+    // Hết hạn mức (429), bị từ chối (403 / khoá sai) hoặc lỗi máy chủ (5xx): cho khoá này nghỉ rồi thử khoá kế tiếp (nếu có)
+    if (c === 429 || c === 403 || c >= 500 || isBadKey_(resp)) {
+      markKeyCooldown_(used, cooldownSecFor_(resp, c));
+      if (i < ready.length - 1) {
+        console.error('Khoá Gemini ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + ' lỗi ' + c + ', chuyển khoá kế tiếp: ' + resp.getContentText().slice(0, 300));
+        continue;
+      }
+    }
+    break;
   }
   const code = resp.getResponseCode();
   if (code !== 200) {
@@ -1127,6 +1141,7 @@ function setAiConfig(token, patch) {
     if (patch.tier) p.setProperty('GEMINI_TIER', patch.tier); else p.deleteProperty('GEMINI_TIER');
     changed.push('goi=' + (patch.tier || 'chua_chon'));
   }
+  if (changed.length) clearKeyCooldowns_();
   if (changed.length) audit_(admin.username, 'DOI_CAU_HINH_AI', 'GEMINI', changed.join('; ')); // chỉ ghi 4 ký tự cuối, không ghi khoá
   const view = aiConfigView_();
   view.tested = tested;
@@ -1693,6 +1708,58 @@ function geminiKeys_() {
   if (bak && bak !== main) out.push(bak);
   if (!out.length) throw new Error('Chưa cấu hình Script Property: GEMINI_API_KEY');
   return out;
+}
+
+/* ---- Khoá Gemini "nghỉ" (cooldown): nhớ khoá vừa lỗi để lần quét sau dùng thẳng khoá còn dùng được ---- */
+const KEY_COOLDOWN_MAX_SEC = 1800; // tối đa 30 phút: lỡ hạn mức đã được nâng/đặt lại sớm thì tối đa 30 phút sau tự thử lại
+
+function cooldownCacheKey_(key) { return 'gkcd_' + hash_(key); }
+
+/** Số giây khoá nên nghỉ theo mã lỗi: 429 theo thời gian Gemini báo; 403/khoá sai 10 phút; 5xx 30 giây. */
+function cooldownSecFor_(resp, code) {
+  let sec;
+  if (code === 429) sec = retryAfterSec_(resp.getContentText(), Date.now());
+  else if (code >= 500) sec = 30;
+  else sec = 600;
+  return Math.max(5, Math.min(KEY_COOLDOWN_MAX_SEC, Math.round(sec)));
+}
+
+function markKeyCooldown_(key, sec) {
+  try {
+    CacheService.getScriptCache().put(cooldownCacheKey_(key), String(Date.now() + sec * 1000), Math.max(5, Math.min(21600, Math.round(sec))));
+  } catch (e) { /* không có cache: bỏ qua, vẫn chạy như cũ */ }
+}
+
+/** Xoá trạng thái nghỉ của mọi khoá (gọi khi ADMIN đổi khoá/gói ở Cài đặt AI). */
+function clearKeyCooldowns_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    geminiKeysSafe_().forEach(function (k) { cache.remove(cooldownCacheKey_(k)); });
+  } catch (e) { /* bỏ qua */ }
+}
+
+function geminiKeysSafe_() {
+  try { return geminiKeys_(); } catch (e) { return []; }
+}
+
+/** Tách khoá thành nhóm sẵn sàng (giữ thứ tự chính -> dự phòng) và nhóm đang nghỉ; minWaitSec = thời gian chờ ngắn nhất nếu mọi khoá đều nghỉ. */
+function splitKeysByCooldown_(keys) {
+  const now = Date.now();
+  const ready = [];
+  let minWait = 0;
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { cache = null; }
+  keys.forEach(function (k) {
+    let until = 0;
+    if (cache) { try { until = Number(cache.get(cooldownCacheKey_(k)) || 0); } catch (e) { until = 0; } }
+    if (until > now) {
+      const w = Math.ceil((until - now) / 1000);
+      minWait = minWait === 0 ? w : Math.min(minWait, w);
+    } else {
+      ready.push(k);
+    }
+  });
+  return { ready: ready, minWaitSec: Math.max(1, minWait) };
 }
 
 /** Phản hồi Gemini cho biết khoá sai / bị thu hồi (HTTP 400 API_KEY_INVALID hoặc 'API key not valid'). */
