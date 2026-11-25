@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import { buildDm, addressDetail, lookupAddress, lookupNationality, enrichData, norm } from '../lib/dm.js';
 
 const rd = (n) => JSON.parse(fs.readFileSync(new URL('../presets/dm/' + n, import.meta.url), 'utf8'));
-const dm = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json') });
+const dm = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json') }); // không có bảng đơn vị cũ
+const dmOld = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json'), diaChiCu: rd('dia-chi-cu.json') });
 
 test('danh mục đóng gói đủ: 34 tỉnh/thành, 3320 phường/xã, 14 quốc tịch', () => {
   assert.equal(rd('tinh.json').length, 34);
@@ -27,7 +28,7 @@ test('địa chỉ: tỉnh + phường/xã khớp danh mục -> mã', () => {
 });
 
 test('địa chỉ: chỉ có tỉnh, tỉnh viết tắt hoặc không dấu phẩy', () => {
-  assert.deepEqual(lookupAddress(dm, 'TP Hồ Chí Minh'), { tinh: { ma: '79', ten: 'Thành phố Hồ Chí Minh' }, xa: null, legacy: false, provKey: 'ho chi minh' });
+  assert.deepEqual(lookupAddress(dm, 'TP Hồ Chí Minh'), { tinh: { ma: '79', ten: 'Thành phố Hồ Chí Minh' }, xa: null, cu: false, provKey: 'ho chi minh', used: [0], candidates: [] });
   assert.equal(lookupAddress(dm, 'Cà Mau').tinh.ma, '96');
   assert.equal(lookupAddress(dm, 'Đất Mũi Cà Mau').tinh.ma, '96');
 });
@@ -36,8 +37,8 @@ test('địa chỉ: tỉnh/xã không có trong danh mục thì để trống, k
   const old = lookupAddress(dm, 'Phường Bến Nghé, Quận 1, Thành phố Hồ Chí Minh');
   assert.equal(old.tinh.ma, '79');
   assert.equal(old.xa, null); // đơn vị cũ không có trong danh mục mới
-  assert.deepEqual(lookupAddress(dm, 'Abc, Xyz'), { tinh: null, xa: null, legacy: false, provKey: '' });
-  assert.deepEqual(lookupAddress(dm, ''), { tinh: null, xa: null, legacy: false, provKey: '' });
+  assert.deepEqual(lookupAddress(dm, 'Abc, Xyz'), { tinh: null, xa: null, cu: false, provKey: '', used: [], candidates: [] });
+  assert.deepEqual(lookupAddress(dm, ''), { tinh: null, xa: null, cu: false, provKey: '', used: [], candidates: [] });
 });
 
 test('địa chỉ: xã loại khác (Xã/Phường) không bị nhận nhầm', () => {
@@ -117,8 +118,47 @@ test('tỉnh cũ đã sáp nhập: quy đổi sang tỉnh mới, xã/phường c
 });
 test('tên tỉnh còn trong danh mục thì khớp như cũ, không bị quy đổi nhầm', () => {
   const r = lookupAddress(dm, 'Tổ 15 Bình Hiên, Hải Châu, Đà Nẵng');
-  assert.equal(r.tinh.ma, '48'); assert.equal(r.legacy, false);
+  assert.equal(r.tinh.ma, '48'); assert.equal(r.cu, false);
   const q = lookupAddress(dm, 'Xã X, Huyện Hòa Bình, Hà Nội'); // huyện Hòa Bình không phải tỉnh Hòa Bình
-  assert.equal(q.tinh.ma, '01'); assert.equal(q.legacy, false);
+  assert.equal(q.tinh.ma, '01'); assert.equal(q.cu, false);
   assert.equal(lookupAddress(dm, 'Abc, Xyz').tinh, null);
+});
+
+test('bảng đơn vị cũ: xã/huyện/tỉnh cũ -> tỉnh + xã mới (đúng mã danh mục FBO), cắt phần còn lại vào ô chữ', () => {
+  const w = (ma) => dmOld.wardsBy[ma];
+  const cases = [
+    ['Thôn 3, Xã Đại Hồng, Huyện Đại Lộc, Tỉnh Quảng Nam', '48', 'Xã Hà Nha', 'Thôn 3'],
+    ['Tổ 5, Thị trấn Ba Đồn, Thị xã Ba Đồn, Quảng Bình', '44', 'Phường Ba Đồn', 'Tổ 5'],
+    ['12 Lê Duẩn, Phường Hải Châu 1, Quận Hải Châu, Thành phố Đà Nẵng', '48', 'Phường Hải Châu', '12 Lê Duẩn'], // số La Mã/số thường
+    ['Phường 5, Quận 3, TP Hồ Chí Minh', '79', 'Phường Bàn Cờ', '']
+  ];
+  for (const [addr, tinh, xa, detail] of cases) {
+    const r = lookupAddress(dmOld, addr);
+    assert.equal(r.tinh && r.tinh.ma, tinh, addr);
+    assert.equal(r.xa && r.xa.ten, xa, addr);
+    assert.ok(r.cu, addr);
+    assert.ok(w(tinh).some((x) => x.ma === r.xa.ma && x.ten === xa), 'mã xã nằm trong danh mục của đúng tỉnh mới');
+    assert.equal(addressDetail(dmOld, addr), detail, addr);
+  }
+});
+test('bảng đơn vị cũ: xã cũ bị chia cho nhiều xã mới -> không chọn, chỉ gợi ý; xã không có trong bảng -> chỉ tỉnh', () => {
+  const r = lookupAddress(dmOld, 'Xã Cam Hiệp Bắc, Huyện Cam Lâm, Tỉnh Khánh Hòa');
+  assert.equal(r.tinh.ma, '56'); assert.equal(r.xa, null);
+  assert.ok(r.candidates.length >= 2);
+  const e = enrichData('CCCD', { noi_thuong_tru: 'Xã Cam Hiệp Bắc, Huyện Cam Lâm, Tỉnh Khánh Hòa' }, dmOld, {});
+  assert.equal(e.thuong_tru_xa_ma, ''); assert.ok(e.thuong_tru_xa_goi_y.includes(' / '));
+  const z = lookupAddress(dmOld, 'Xóm 1, Xã Zzz, Huyện Đại Lộc, Quảng Nam');
+  assert.equal(z.tinh.ma, '48'); assert.equal(z.xa, null); assert.deepEqual(z.candidates, []);
+  assert.equal(addressDetail(dmOld, 'Xóm 1, Xã Zzz, Huyện Đại Lộc, Quảng Nam'), 'Xóm 1, Xã Zzz, Huyện Đại Lộc');
+});
+test('bảng đơn vị cũ: địa chỉ 2 cấp theo danh mục mới vẫn khớp như cũ; tên tỉnh trùng (Khánh Hòa) có huyện -> theo đơn vị cũ', () => {
+  const r = lookupAddress(dmOld, 'Phường Hải Châu, Đà Nẵng');
+  assert.equal(r.xa.ten, 'Phường Hải Châu'); assert.equal(r.cu, false);
+  const k = lookupAddress(dmOld, 'Xã Cam Lâm, Tỉnh Khánh Hòa');
+  assert.equal(k.cu, false); assert.equal(k.tinh.ma, '56');
+});
+test('bảng đơn vị cũ: "Bà Rịa - Vũng Tàu" có gạch ngang trong tên không bị cắt đôi', () => {
+  const r = lookupAddress(dmOld, 'Xã Bình Ba, Huyện Châu Đức, Bà Rịa - Vũng Tàu');
+  assert.equal(r.tinh.ma, '79'); assert.ok(r.cu);
+  assert.equal(addressDetail(dmOld, 'Số 1, Xã Bình Ba, Huyện Châu Đức, Bà Rịa - Vũng Tàu'), 'Số 1');
 });

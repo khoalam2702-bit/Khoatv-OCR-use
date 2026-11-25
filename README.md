@@ -79,6 +79,12 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 
 Kiểm thử: `cd extension_chrome && npm ci && npm test`.
 
+### Địa chỉ cũ → tỉnh/xã mới (sáp nhập 01/7/2025)
+
+Thẻ CCCD cấp trước 2025 in địa chỉ 3 cấp cũ (xã/huyện/tỉnh). Extension quy đổi sang tỉnh + phường/xã mới của danh mục FBO bằng `extension_chrome/presets/dm/dia-chi-cu.json` (12.216 dòng nghị quyết; xã cũ nhập trọn vào 1 xã mới thì tự chọn, xã cũ bị chia cho nhiều xã mới thì để trống và ghi gợi ý, không đoán). Áp dụng cho mọi loại có địa chỉ tách ô: Thường trú/Quê quán của CCCD (cả form nhân viên lẫn ứng viên) và Địa chỉ của CV ứng viên. Sinh lại bảng: `node tools/build-dia-chi-cu.mjs <thư mục data của dorabot-io/sap-nhap-2025>`.
+
+Nguồn dữ liệu: Dorabot (dorabot.io/dia-chi/sap-nhap), chép từ nghị quyết của Ủy ban Thường vụ Quốc hội, giấy phép [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.vi).
+
 ## Cổng API (`doPost`)
 
 Dùng cho Web Admin Next.js và Extension. Gửi `POST` tới URL Web App, `Content-Type: text/plain` (tránh preflight CORS), thân JSON:
