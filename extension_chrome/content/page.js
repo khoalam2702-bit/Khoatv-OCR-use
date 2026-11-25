@@ -112,10 +112,17 @@
     return (ac.prefix || '') + n;
   }
 
+  /** Nhiều ô cùng khớp một selector (vd bản ẩn của form ở trang nền): ưu tiên ô đang hiện, không có thì lấy ô đầu tiên. */
+  function pick(selector) {
+    var all = document.querySelectorAll(selector);
+    for (var i = 0; i < all.length; i++) { var e = all[i]; if (e.offsetWidth || e.offsetHeight || e.getClientRects().length) return e; }
+    return all.length ? all[0] : null;
+  }
+
   var curSrc = '';
   function setOne(selector, value, spec, touched, dry) {
     selector = R(selector);
-    var el = document.querySelector(selector);
+    var el = pick(selector);
     if (!el) return 'notFound';
     if (spec.autoCode && String(el.value || '').trim()) return 'empty'; // dòng đã có mã: giữ nguyên
     var v = spec.autoCode ? nextCode(el, spec.autoCode) : spec.fixed !== undefined ? String(spec.fixed) : transform(value, spec.transform);
@@ -194,7 +201,7 @@
   globalThis.__KHOATV_READ__ = function (selectors) {
     return (selectors || []).map(function (sel) {
       var el = null;
-      try { el = document.querySelector(R(sel)); } catch (e) { /* selector sai */ }
+      try { el = pick(R(sel)); } catch (e) { /* selector sai */ }
       return { sel: sel, found: !!el, value: el ? String(el.value || '') : '' };
     });
   };
