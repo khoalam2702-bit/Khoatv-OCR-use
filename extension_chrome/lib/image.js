@@ -1,4 +1,4 @@
-const MAX_SIDE = 2400;
+const MAX_SIDE = 1600;
 const QUALITY = 0.92;
 
 function blobToBase64(blob) {
@@ -10,7 +10,7 @@ function blobToBase64(blob) {
   });
 }
 
-/** Ảnh: nén JPEG chất lượng 0.92 qua canvas (cạnh dài tối đa 2400px). PDF: giữ nguyên. Trả { mimeType, base64, bytes, name }. */
+/** Ảnh: nén JPEG chất lượng 0.92 qua canvas (cạnh dài tối đa 1600px). PDF: giữ nguyên. Trả { mimeType, base64, bytes, name }. */
 export async function prepareFile(file) {
   if (file.type === 'application/pdf') {
     const base64 = await blobToBase64(file);

@@ -896,36 +896,26 @@ function scanCore_(me, payload, anon) {
   });
 
   const tDrive = Date.now();
-  let fileIds = [];
-  if (!anon) {
-    const now = new Date();
-    const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss') + '_' + Utilities.getUuid().slice(0, 6);
-    const lock = LockService.getScriptLock();
-    lock.waitLock(20000);
-    let folder;
-    try { folder = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]); } finally { lock.releaseLock(); }
-    fileIds = items.map(function (it, i) {
-      const name = 'RAW_' + payload.docType + '_' + stamp + (items.length > 1 ? '_' + (i + 1) : '') + '.' + it.ext;
-      const file = folder.createFile(Utilities.newBlob(blobs[i], it.mimeType, name));
-      file.setDescription('Quét bởi ' + me.username);
-      return file.getId();
-    });
-  }
+  const now = new Date();
+  const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss') + '_' + Utilities.getUuid().slice(0, 6);
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let folder;
+  try { folder = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]); } finally { lock.releaseLock(); }
+  const t0 = Date.now();
+  const fileIds = items.map(function (it, i) {
+    const name = 'RAW_' + payload.docType + '_' + stamp + (items.length > 1 ? '_' + (i + 1) : '') + '.' + it.ext;
+    const file = folder.createFile(Utilities.newBlob(blobs[i], it.mimeType, name));
+    file.setDescription('Quét bởi ' + me.username);
+    return file.getId();
+  });
 
-  const tAi = Date.now();
-  // skipAi: extension đã đọc được mã QR trên CCCD và người dùng chọn chế độ nhanh: chỉ lưu tệp gốc, không gọi Gemini.
-  const skipAi = payload.skipAi === true && payload.docType === 'CCCD';
-  const data = skipAi ? {} : (callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {});
-  const tFix = Date.now();
-  if (!skipAi) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
-  const fixMs = Date.now() - tFix;
-  console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
-  if (payload.docType === 'CAN_DIEN_TU') fixScaleReading_(data);
-  if (payload.docType === 'BIEN_SO_XE') fixPlateReading_(data);
+  const t1 = Date.now();
+  const data = callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {};
+  const t2 = Date.now();
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
-  const timing = { driveMs: tAi - tDrive, aiMs: tFix - tAi, calls: FETCH_STATS_.calls, retries: FETCH_STATS_.retries, waitMs: FETCH_STATS_.waitMs, codes: FETCH_STATS_.codes.slice(0, 8) };
-  console.log('scanDocument timing ' + JSON.stringify(timing));
-  return { data: data, fileIds: fileIds, ms: Date.now() - started, timing: timing };
+  console.log('scan ' + payload.docType + ' drive=' + (t1 - t0) + 'ms ai=' + (t2 - t1) + 'ms total=' + (Date.now() - started) + 'ms');
+  return { data: data, fileIds: fileIds, ms: Date.now() - started, msDrive: t1 - t0, msAi: t2 - t1 };
 }
 
 /* ---------- Quét không cần tài khoản (Extension) ----------
@@ -1209,53 +1199,29 @@ function callGemini_(type, files, opts) {
     }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type), temperature: 0 }
   };
+  // Đọc giấy tờ không cần suy luận sâu: mặc định thinking mức thấp cho nhanh. GEMINI_THINKING = off để tắt, hoặc minimal/low/medium/high.
+  const think = String(prop_('GEMINI_THINKING', 'low') || '').toLowerCase();
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-  const keys = geminiKeys_();
-  // Khoá đang "nghỉ" (vừa hết hạn mức/bị từ chối) được bỏ qua để khỏi tốn lượt gọi; hết khoá khả dụng thì báo ngay, không gọi mạng.
-  const split = splitKeysByCooldown_(keys);
-  if (!split.ready.length) {
-    throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(split.minWaitSec));
-  }
-  const ready = split.ready;
-  function post_(key) {
+  const post = function (b) {
     return fetchRetry_(url, {
       method: 'post',
       contentType: 'application/json',
-      headers: { 'x-goog-api-key': key },
-      payload: JSON.stringify(body),
+      headers: { 'x-goog-api-key': prop_('GEMINI_API_KEY') },
+      payload: JSON.stringify(b),
       muteHttpExceptions: true
-    }, ready.length > 1); // còn khoá khác để thử: gặp 429 chuyển khoá ngay, không chờ thử lại
-  }
-  // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
-  // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
-  const fast = prop_('GEMINI_FAST', 'on') !== 'off' && !opts.slow; // opts.slow: lần đọc lại cần chính xác, để Gemini suy nghĩ mặc định
-  if (fast) {
-    body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
-    body.generationConfig.mediaResolution = (type.ai && type.ai.resolution) || 'MEDIA_RESOLUTION_HIGH';
-    if (type.ai && type.ai.maxTokens) body.generationConfig.maxOutputTokens = type.ai.maxTokens;
-  }
-  let resp = null, keyIdx = 0, used = null;
-  for (let i = 0; i < ready.length; i++) {
-    keyIdx = keys.indexOf(ready[i]);
-    used = ready[i];
-    resp = post_(used);
-    if (fast && resp.getResponseCode() === 400 && !isBadKey_(resp)) {
-      console.error('Gemini 400 với cấu hình nhanh, gọi lại cấu hình mặc định: ' + resp.getContentText().slice(0, 400));
+    });
+  };
+  let resp;
+  if (think && think !== 'off') {
+    body.generationConfig.thinkingConfig = { thinkingLevel: think };
+    resp = post(body);
+    if (resp.getResponseCode() === 400) { // model không hỗ trợ cấu hình này: bỏ đi và gọi lại
+      console.error('Gemini từ chối thinkingConfig: ' + resp.getContentText().slice(0, 300));
       delete body.generationConfig.thinkingConfig;
-      delete body.generationConfig.mediaResolution;
-      resp = post_(used);
+      resp = post(body);
     }
-    const c = resp.getResponseCode();
-    if (c === 200) break;
-    // Hết hạn mức (429), bị từ chối (403 / khoá sai) hoặc lỗi máy chủ (5xx): cho khoá này nghỉ rồi thử khoá kế tiếp (nếu có)
-    if (c === 429 || c === 403 || c >= 500 || isBadKey_(resp)) {
-      markKeyCooldown_(used, cooldownSecFor_(resp, c));
-      if (i < ready.length - 1) {
-        console.error('Khoá Gemini ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + ' lỗi ' + c + ', chuyển khoá kế tiếp: ' + resp.getContentText().slice(0, 300));
-        continue;
-      }
-    }
-    break;
+  } else {
+    resp = post(body);
   }
   const code = resp.getResponseCode();
   if (code !== 200) {
