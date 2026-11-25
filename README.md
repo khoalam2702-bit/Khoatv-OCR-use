@@ -75,6 +75,8 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 - **Đăng nhập FBO đã lưu** theo từng địa chỉ (Cài đặt, mục 3): nút "Đăng nhập FBO" ở Side Panel điền Công ty, Tên, Đơn vị, Mật khẩu và bấm Nhận ở tab hiện tại.
 - Địa chỉ FBO trong cấu hình chỉ cần cấp quyền một lần (banner "Cấp quyền FBO" ở Side Panel).
 
+**Không cần tài khoản OCR.** Màn hình đầu của Side Panel có nút "Dùng không cần tài khoản": quét qua action `scanAnonymous` (không token), **không** lưu Drive/Sheets/Web Admin, kết quả chỉ giữ ở `chrome.storage.session` (đóng trình duyệt là mất). Chế độ này không có bước Lưu: nút "Điền vào FBO" hiện ngay, không hỏi lưu. Hạn mức khai báo ở Web Admin → Cài đặt → "Quét không cần tài khoản": số lần / ngày / thiết bị (mặc định 10, mã thiết bị là UUID extension tự sinh) và tổng chung mỗi ngày (mặc định 500, chặn việc đổi mã thiết bị); nhập 0 để tắt. Lưu ở Script Properties `ANON_DAILY_LIMIT`, `ANON_GLOBAL_DAILY`; bộ đếm ở `ANON_USAGE`, đặt lại 0 giờ giờ Việt Nam. Quét lỗi không bị tính lượt.
+
 Kiểm thử: `cd extension_chrome && npm ci && npm test`.
 
 ## Cổng API (`doPost`)

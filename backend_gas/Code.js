@@ -238,6 +238,8 @@ const API_ACTIONS = {
   changeMyPassword: { fn: function (a) { return changeMyPassword(a[0], a[1], a[2]); } },
   // bản ghi OCR
   scanDocument: { fn: function (a) { return scanDocument(a[0], a[1]); } },
+  // quét không cần tài khoản (Extension): không token, có hạn mức theo ngày / thiết bị
+  scanAnonymous: { fn: function (a) { return scanAnonymous(a[0], a[1]); } },
   saveRecord: { fn: function (a, client) { return saveRecord(a[0], a[1], a[2], a[3], { source: client }); } },
   listRecords: { fn: function (a) { return listRecords(a[0], a[1], a[2], a[3]); } },
   getRawFile: { fn: function (a) { return getRawFile(a[0], a[1], a[2], a[3]); } },
@@ -254,7 +256,10 @@ const API_ACTIONS = {
   // cấu hình AI (chỉ ADMIN)
   getAiConfig: { fn: function (a) { return getAiConfig(a[0]); } },
   setAiConfig: { fn: function (a) { return setAiConfig(a[0], a[1]); } },
-  testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } }
+  testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } },
+  // hạn mức quét không cần tài khoản (chỉ ADMIN)
+  getAnonConfig: { fn: function (a) { return getAnonConfig(a[0]); } },
+  setAnonConfig: { fn: function (a) { return setAnonConfig(a[0], a[1]); } }
 };
 
 /** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
@@ -292,7 +297,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), plateProvinces: PLATE_PROVINCES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), anonPerDay: anonSettings_().perDevice, plateProvinces: PLATE_PROVINCES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
@@ -853,9 +858,17 @@ function canViewAll_(me) {
  * payload = { docType, files: [{ mimeType, base64 }, ...] }  (tối đa LIMITS.MAX_FILES tệp)
  */
 function scanDocument(token, payload) {
-  const started = Date.now();
   const me = auth_(token);
   if (!me.perms.perm_add) throw new Error('Tài khoản của bạn không có quyền thêm bản ghi.');
+  return scanCore_(me, payload, false);
+}
+
+/**
+ * Lõi quét dùng chung cho tài khoản đăng nhập và quét không cần tài khoản (anon = true).
+ * anon: KHÔNG lưu tệp gốc lên Drive và không ghi Sheets; chỉ gọi Gemini rồi trả kết quả (fileIds = []).
+ */
+function scanCore_(me, payload, anon) {
+  const started = Date.now();
   payload = payload || {};
   const type = DOC_TYPES[payload.docType];
   if (!type) throw new Error('Loại tài liệu không hợp lệ.');
@@ -883,18 +896,21 @@ function scanDocument(token, payload) {
   });
 
   const tDrive = Date.now();
-  const now = new Date();
-  const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss') + '_' + Utilities.getUuid().slice(0, 6);
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  let folder;
-  try { folder = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]); } finally { lock.releaseLock(); }
-  const fileIds = items.map(function (it, i) {
-    const name = 'RAW_' + payload.docType + '_' + stamp + (items.length > 1 ? '_' + (i + 1) : '') + '.' + it.ext;
-    const file = folder.createFile(Utilities.newBlob(blobs[i], it.mimeType, name));
-    file.setDescription('Quét bởi ' + me.username);
-    return file.getId();
-  });
+  let fileIds = [];
+  if (!anon) {
+    const now = new Date();
+    const stamp = Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmmss') + '_' + Utilities.getUuid().slice(0, 6);
+    const lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    let folder;
+    try { folder = pathFolder_([DIRS.RAW, Utilities.formatDate(now, TZ, 'yyyy')]); } finally { lock.releaseLock(); }
+    fileIds = items.map(function (it, i) {
+      const name = 'RAW_' + payload.docType + '_' + stamp + (items.length > 1 ? '_' + (i + 1) : '') + '.' + it.ext;
+      const file = folder.createFile(Utilities.newBlob(blobs[i], it.mimeType, name));
+      file.setDescription('Quét bởi ' + me.username);
+      return file.getId();
+    });
+  }
 
   const tAi = Date.now();
   // skipAi: extension đã đọc được mã QR trên CCCD và người dùng chọn chế độ nhanh: chỉ lưu tệp gốc, không gọi Gemini.
@@ -910,6 +926,88 @@ function scanDocument(token, payload) {
   const timing = { driveMs: tAi - tDrive, aiMs: tFix - tAi, calls: FETCH_STATS_.calls, retries: FETCH_STATS_.retries, waitMs: FETCH_STATS_.waitMs, codes: FETCH_STATS_.codes.slice(0, 8) };
   console.log('scanDocument timing ' + JSON.stringify(timing));
   return { data: data, fileIds: fileIds, ms: Date.now() - started, timing: timing };
+}
+
+/* ---------- Quét không cần tài khoản (Extension) ----------
+ * Không đăng nhập, không lưu Drive, không ghi Sheets: chỉ OCR rồi trả kết quả cho extension tự giữ trong phiên.
+ * Hạn mức khai báo ở Web Admin (Cài đặt): ANON_DAILY_LIMIT = số lần / ngày / thiết bị (mặc định 10, 0 = tắt),
+ * ANON_GLOBAL_DAILY = tổng số lần / ngày của mọi thiết bị (mặc định 500, chặn việc tự đổi mã thiết bị để lách hạn mức).
+ * Bộ đếm lưu ở Script Property ANON_USAGE (JSON), tự đặt lại khi sang ngày (giờ Việt Nam).
+ */
+const ANON_DEFAULTS = { PER_DEVICE: 10, GLOBAL: 500, MAX_DEVICES: 400 };
+
+function anonNum_(key, fallback) {
+  const v = PropertiesService.getScriptProperties().getProperty(key);
+  if (v === null || v === undefined || String(v).trim() === '') return fallback;
+  const n = Math.floor(Number(v));
+  return isFinite(n) && n >= 0 ? n : fallback;
+}
+function anonSettings_() {
+  return { perDevice: anonNum_('ANON_DAILY_LIMIT', ANON_DEFAULTS.PER_DEVICE), global: anonNum_('ANON_GLOBAL_DAILY', ANON_DEFAULTS.GLOBAL) };
+}
+function anonToday_() { return Utilities.formatDate(new Date(), TZ, 'yyyyMMdd'); }
+function anonReadUsage_() {
+  const day = anonToday_();
+  let u = null;
+  try { u = JSON.parse(PropertiesService.getScriptProperties().getProperty('ANON_USAGE') || 'null'); } catch (e) { u = null; }
+  if (!u || u.day !== day || typeof u.dev !== 'object' || !u.dev) u = { day: day, total: 0, dev: {} };
+  return u;
+}
+/** Giữ chỗ một lượt quét cho thiết bị. Trả { used, limit }; hết hạn mức thì throw. Gọi trong khoá. */
+function anonReserve_(deviceKey, st) {
+  const u = anonReadUsage_();
+  const used = Number(u.dev[deviceKey] || 0);
+  if (used >= st.perDevice) throw new Error('Thiết bị này đã dùng hết ' + st.perDevice + ' lượt quét không cần tài khoản trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
+  if (u.total >= st.global) throw new Error('Quét không cần tài khoản đã đạt giới hạn chung của hệ thống trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
+  if (used === 0 && Object.keys(u.dev).length >= ANON_DEFAULTS.MAX_DEVICES) throw new Error('Quét không cần tài khoản đang quá tải trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
+  u.dev[deviceKey] = used + 1; u.total += 1;
+  PropertiesService.getScriptProperties().setProperty('ANON_USAGE', JSON.stringify(u));
+  return { used: used + 1, limit: st.perDevice };
+}
+function anonRelease_(deviceKey) {
+  const u = anonReadUsage_();
+  if (u.dev[deviceKey]) { u.dev[deviceKey] -= 1; if (u.dev[deviceKey] <= 0) delete u.dev[deviceKey]; u.total = Math.max(0, u.total - 1); }
+  PropertiesService.getScriptProperties().setProperty('ANON_USAGE', JSON.stringify(u));
+}
+
+/** deviceId do extension tự sinh (UUID). Không có tài khoản nên chỉ dùng để đếm hạn mức. */
+function scanAnonymous(deviceId, payload) {
+  const st = anonSettings_();
+  if (st.perDevice <= 0 || st.global <= 0) throw new Error('Quét không cần tài khoản đang tắt. Hãy đăng nhập tài khoản OCR.');
+  const id = String(deviceId || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) throw new Error('Mã thiết bị không hợp lệ. Tải lại extension rồi thử lại.');
+  const key = hash_('anon|' + id).slice(0, 12);
+  let quota;
+  withLock_(function () { quota = anonReserve_(key, st); });
+  try {
+    const r = scanCore_({ username: 'anon_' + key, perms: {} }, payload, true); // scanCore_ đã áp rateLimit_ theo username
+    r.anon = quota;
+    return r;
+  } catch (e) {
+    withLock_(function () { anonRelease_(key); }); // quét lỗi thì không tính lượt
+    throw e;
+  }
+}
+
+function getAnonConfig(token) {
+  requireAdmin_(token);
+  const st = anonSettings_(), u = anonReadUsage_();
+  return { perDevice: st.perDevice, global: st.global, defaults: { perDevice: ANON_DEFAULTS.PER_DEVICE, global: ANON_DEFAULTS.GLOBAL }, today: { total: u.total, devices: Object.keys(u.dev).length } };
+}
+/** patch: { perDevice?, global? } số nguyên >= 0. perDevice = 0 hoặc global = 0 tắt quét không cần tài khoản. */
+function setAnonConfig(token, patch) {
+  const admin = requireAdmin_(token);
+  patch = patch || {};
+  const p = PropertiesService.getScriptProperties();
+  const changed = [];
+  [['perDevice', 'ANON_DAILY_LIMIT', 1000], ['global', 'ANON_GLOBAL_DAILY', 100000]].forEach(function (x) {
+    if (patch[x[0]] === undefined || patch[x[0]] === null || patch[x[0]] === '') return;
+    const n = Number(patch[x[0]]);
+    if (!isFinite(n) || n < 0 || Math.floor(n) !== n || n > x[2]) throw new Error('Giá trị phải là số nguyên từ 0 đến ' + x[2] + '.');
+    p.setProperty(x[1], String(n)); changed.push(x[0] + '=' + n);
+  });
+  if (changed.length) audit_(admin.username, 'DOI_HAN_MUC_AN_DANH', 'ANON', changed.join('; '));
+  return getAnonConfig(token);
 }
 
 /* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe / đối tượng từ chuỗi biển số và màu biển ---------- */
