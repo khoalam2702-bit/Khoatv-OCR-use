@@ -231,3 +231,14 @@ test('lưới: tính thử không coi mặt nạ ngày trống là dữ liệu c
   const r = plain(w.__KHOATV_FILL__(GMAP, { ten: 'X', ngay_sinh: '01/02/2020' }, { dry: true }));
   assert.deepEqual(r.overwrite, []);
 });
+
+test('nhiều ô cùng khớp selector: điền và đọc lại đúng ô đang hiện, không phải bản ẩn đứng trước', () => {
+  const w = page('<input id="a_dia_chi"><input id="b_dia_chi">');
+  const [hidden, shown] = [w.document.getElementById('a_dia_chi'), w.document.getElementById('b_dia_chi')];
+  Object.defineProperty(shown, 'offsetWidth', { value: 100 }); // jsdom không bố cục: giả lập ô đang hiện
+  const m = { dia_chi: '[id$="_dia_chi"]' };
+  const r = plain(w.__KHOATV_FILL__(m, { dia_chi: 'Tổ 15' }, {}));
+  assert.deepEqual(r.filled, ['dia_chi']);
+  assert.equal(shown.value, 'Tổ 15'); assert.equal(hidden.value, '');
+  assert.equal(plain(w.__KHOATV_READ__(['[id$="_dia_chi"]']))[0].value, 'Tổ 15');
+});

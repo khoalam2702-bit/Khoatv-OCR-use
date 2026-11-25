@@ -43,3 +43,6 @@ button.danger:hover { background:#b91c1c; }
 .limits-box > summary { cursor:pointer; font-size:12.5px; color:#4b5563; user-select:none; }
 .limits-box[open] > summary { margin-bottom:4px; }
 .limits { margin:0; padding-left:18px; font-size:12.5px; line-height:1.45; } .limits li { margin:2px 0; }
+
+#fill-info { white-space: pre-line; line-height: 1.5; }
+#fill-info.ok, #fill-info.warn { font-weight: 500; }

@@ -152,6 +152,7 @@ export async function fillActiveTab(docType, data, opts) {
     v.empty.forEach((k) => empty.add(k));
   }
   filled.forEach((k) => notFound.delete(k)); // mỗi frame chỉ điền được ô của frame đó
+  empty.forEach((k) => notFound.delete(k)); // một khung đã thấy ô nhưng không có giá trị để điền: không phải "không thấy ô"
   const status = filled.size > 0 && notFound.size === 0 ? 'FILLED' : 'ERROR';
   // Người dùng đang xem tab khác lúc điền xong: kết quả vẫn ở tab cũ, báo rõ để không tưởng đã điền vào tab đang xem
   let away = false;
