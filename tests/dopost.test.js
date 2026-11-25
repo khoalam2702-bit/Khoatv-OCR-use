@@ -1,5 +1,5 @@
 const vm = require('vm'), fs = require('fs'), assert = require('assert');
-const ctx = { console, ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ text: t, setMimeType() { return this; } }) } };
+const ctx = { console, PropertiesService: { getScriptProperties: () => ({ getProperty: () => null }) }, ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ text: t, setMimeType() { return this; } }) } };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'backend_gas', 'Code.js'), 'utf8'), ctx);
 const post = (b, raw) => JSON.parse(vm.runInContext('doPost', ctx)({ postData: { contents: raw !== undefined ? raw : JSON.stringify(b) } }).text);
@@ -12,6 +12,8 @@ assert.strictEqual(post({ action: 'constructor' }).error, 'Hành động không 
 assert.strictEqual(post({ action: 'setup' }).error, 'Hành động không hợp lệ.');
 assert.strictEqual(post({ action: 'doGet' }).ok, false);
 assert.strictEqual(post({ action: 'getAppConfig' }).data.types.length, 12);
+assert.strictEqual(post({ action: 'getAppConfig' }).data.anonPerDay, 10); // chưa khai báo: mặc định 10 lượt / ngày / thiết bị
+assert.strictEqual(post({ action: 'scanAnonymous', args: [] }).ok, false); // quét không tài khoản chỉ lỗi nghiệp vụ, không lộ hàm nội bộ
 assert.deepStrictEqual(post({ action: 'login', args: ['a', 'ok'] }), { ok: true, data: { token: 't' } });
 assert.deepStrictEqual(post({ action: 'login', args: ['a', 'bad'] }), { ok: false, error: 'Sai' });
 // saveRecord chạy đúng MỘT lần và nhận source từ client

@@ -871,7 +871,8 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
         note.className = 'note';
         note.textContent = 'AI có thể đọc sai. Hãy đối chiếu với tài liệu gốc trước khi lưu. Ô viền đỏ là trường bắt buộc còn trống.' +
           (n > 1 ? ' Kết quả đã gộp từ ' + n + ' tệp.' : '');
-        $('resMeta').textContent = (r.ms / 1000).toFixed(1) + ' giây';
+        var tm = r.timing;
+        $('resMeta').textContent = (r.ms / 1000).toFixed(1) + ' giây' + (tm ? ' (lưu tệp ' + (tm.driveMs / 1000).toFixed(1) + 's, AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ')' : '');
         $('resMeta').classList.remove('hidden');
         $('resEmpty').classList.add('hidden'); $('resBody').classList.remove('hidden');
         S.busy = false; btn.textContent = label; refresh();

@@ -161,16 +161,18 @@ const DOC_TYPES = {
   },
   BIEN_SO_XE: {
     label: 'Biển số xe', uniqueKey: null, required: ['bien_so_day_du'],
-    hint: 'Biển số xe Việt Nam NỀN TRẮNG (cá nhân), chữ đen dập nổi. Bỏ qua con dấu chìm, họa tiết gợn sóng, viền, khung biển và nền ảnh. ' +
-      'Có 2 kiểu: biển DÀI 1 dòng của ô tô (ví dụ 51F-970.22) và biển VUÔNG 2 dòng của xe máy (dòng trên 99-E1, dòng dưới 222.68). ' +
-      'bien_so_day_du: ghép đủ các dòng thành một chuỗi, ô tô dạng "51F-970.22", xe máy dạng "99-E1 222.68". ' +
-      'Giữ nguyên dấu gạch ngang và dấu chấm. Mã tỉnh (2 ký tự đầu) và dãy số cuối là CHỮ SỐ (không nhầm O với 0, I với 1, B với 8); ' +
-      'ký tự sau mã tỉnh là chữ cái seri (xe máy có thêm một chữ số sau chữ, ví dụ E1, B1). Dãy số cuối có 4 số hoặc 5 số (dạng 970.22). ' +
-      'loai_phuong_tien: "Ô tô" hoặc "Xe máy". mau_bien: "Trắng" nếu nền trắng, nếu là màu khác thì ghi đúng màu (Vàng, Xanh, Đỏ).',
+    hint: 'Biển số xe Việt Nam, chữ và số dập nổi. Nhận diện MÀU NỀN biển: nền trắng (cá nhân, tổ chức, chữ đen), nền vàng (kinh doanh vận tải, chữ đen), ' +
+      'nền xanh dương (cơ quan nhà nước, chữ trắng), nền đỏ (quân đội, chữ trắng). Bỏ qua con dấu / quân hiệu chìm, họa tiết gợn sóng, viền, khung biển và nền ảnh. ' +
+      'Có 2 kiểu: biển DÀI 1 dòng (ví dụ 51F-970.22) và biển VUÔNG 2 dòng (dòng trên 99-E1, dòng dưới 222.68). ' +
+      'bien_so_day_du: ghép đủ các dòng thành một chuỗi, biển 1 dòng dạng "51F-970.22", biển 2 dòng dạng "99-E1 222.68". Giữ nguyên dấu gạch ngang và dấu chấm. ' +
+      'Biển trắng / vàng / xanh: mã tỉnh (2 ký tự đầu) và dãy số cuối là CHỮ SỐ (không nhầm O với 0, I với 1, B với 8); ký tự sau mã tỉnh là chữ cái seri ' +
+      '(có thể 2 chữ như LD, NG, NN, DA, KT, MĐ; xe máy có thêm một chữ số sau chữ, ví dụ E1, B1); dãy số cuối có 4 số hoặc 5 số (dạng 970.22). ' +
+      'Biển đỏ quân đội: KHÔNG có mã tỉnh, gồm 2 chữ cái rồi 4 hoặc 5 chữ số (ví dụ "QH 12-34"), chép đúng như in trên biển. ' +
+      'loai_phuong_tien: "Ô tô" hoặc "Xe máy". mau_bien: một trong "Trắng", "Vàng", "Xanh", "Đỏ".',
     fields: [f_('bien_so_day_du', 'Biển số đầy đủ'), f_('ma_tinh_thanh', 'Mã tỉnh/thành'), f_('ten_tinh_thanh', 'Tên tỉnh/thành'), f_('seri_dang_ky', 'Seri đăng ký'),
-      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển')],
-    // Mã tỉnh, seri, tên tỉnh do hệ thống tự tách / tra từ biển số: không bắt AI sinh ra (ít chữ cần sinh hơn → nhanh hơn).
-    aiSkip: ['ma_tinh_thanh', 'ten_tinh_thanh', 'seri_dang_ky'],
+      f_('loai_phuong_tien', 'Loại phương tiện'), f_('mau_bien', 'Màu biển'), f_('doi_tuong_su_dung', 'Đối tượng sử dụng')],
+    // Mã tỉnh, seri, tên tỉnh, đối tượng sử dụng do hệ thống tự tách / tra từ biển số và màu biển: không bắt AI sinh ra (ít chữ cần sinh hơn → nhanh hơn).
+    aiSkip: ['ma_tinh_thanh', 'ten_tinh_thanh', 'seri_dang_ky', 'doi_tuong_su_dung'],
     // Chữ trên biển rất to: độ phân giải ảnh vừa là đủ, nhanh hơn mức cao; đầu ra ngắn.
     ai: { resolution: 'MEDIA_RESOLUTION_MEDIUM', maxTokens: 256 }
   }
@@ -236,6 +238,8 @@ const API_ACTIONS = {
   changeMyPassword: { fn: function (a) { return changeMyPassword(a[0], a[1], a[2]); } },
   // bản ghi OCR
   scanDocument: { fn: function (a) { return scanDocument(a[0], a[1]); } },
+  // quét không cần tài khoản (Extension): không token, có hạn mức theo ngày / thiết bị
+  scanAnonymous: { fn: function (a) { return scanAnonymous(a[0], a[1]); } },
   saveRecord: { fn: function (a, client) { return saveRecord(a[0], a[1], a[2], a[3], { source: client }); } },
   listRecords: { fn: function (a) { return listRecords(a[0], a[1], a[2], a[3]); } },
   getRawFile: { fn: function (a) { return getRawFile(a[0], a[1], a[2], a[3]); } },
@@ -252,7 +256,10 @@ const API_ACTIONS = {
   // cấu hình AI (chỉ ADMIN)
   getAiConfig: { fn: function (a) { return getAiConfig(a[0]); } },
   setAiConfig: { fn: function (a) { return setAiConfig(a[0], a[1]); } },
-  testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } }
+  testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } },
+  // hạn mức quét không cần tài khoản (chỉ ADMIN)
+  getAnonConfig: { fn: function (a) { return getAnonConfig(a[0]); } },
+  setAnonConfig: { fn: function (a) { return setAnonConfig(a[0], a[1]); } }
 };
 
 /** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
@@ -290,7 +297,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), plateProvinces: PLATE_PROVINCES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), anonPerDay: anonSettings_().perDevice, plateProvinces: PLATE_PROVINCES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
@@ -851,9 +858,17 @@ function canViewAll_(me) {
  * payload = { docType, files: [{ mimeType, base64 }, ...] }  (tối đa LIMITS.MAX_FILES tệp)
  */
 function scanDocument(token, payload) {
-  const started = Date.now();
   const me = auth_(token);
   if (!me.perms.perm_add) throw new Error('Tài khoản của bạn không có quyền thêm bản ghi.');
+  return scanCore_(me, payload, false);
+}
+
+/**
+ * Lõi quét dùng chung cho tài khoản đăng nhập và quét không cần tài khoản (anon = true).
+ * anon: KHÔNG lưu tệp gốc lên Drive và không ghi Sheets; chỉ gọi Gemini rồi trả kết quả (fileIds = []).
+ */
+function scanCore_(me, payload, anon) {
+  const started = Date.now();
   payload = payload || {};
   const type = DOC_TYPES[payload.docType];
   if (!type) throw new Error('Loại tài liệu không hợp lệ.');
@@ -874,6 +889,7 @@ function scanDocument(token, payload) {
   });
   if (total > LIMITS.MAX_TOTAL_BYTES) throw new Error('Tổng dung lượng các tệp quá lớn (tối đa 24 MB).');
   rateLimit_(me.username);
+  resetFetchStats_();
 
   const blobs = items.map(function (it) {
     try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
@@ -902,26 +918,125 @@ function scanDocument(token, payload) {
   return { data: data, fileIds: fileIds, ms: Date.now() - started, msDrive: t1 - t0, msAi: t2 - t1 };
 }
 
-/* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe từ chuỗi biển số ---------- */
-function fixPlateReading_(data) {
-  const raw = data.bien_so_day_du;
-  if (typeof raw !== 'string' || !raw.trim()) return data;
-  const s = raw.toUpperCase().replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim();
-  const m = /^(\d{2})\s*-?\s*([A-Z]{1,2}\d?)\s*[-.\s]\s*(\d{3}[.\s]?\d{2}|\d{4})$/.exec(s);
-  if (!m) {
-    const p = /^(\d{2})/.exec(s);
-    if (p && !data.ma_tinh_thanh) data.ma_tinh_thanh = p[1];
-    if (!data.mau_bien) data.mau_bien = 'Trắng';
-    return data;
+/* ---------- Quét không cần tài khoản (Extension) ----------
+ * Không đăng nhập, không lưu Drive, không ghi Sheets: chỉ OCR rồi trả kết quả cho extension tự giữ trong phiên.
+ * Hạn mức khai báo ở Web Admin (Cài đặt): ANON_DAILY_LIMIT = số lần / ngày / thiết bị (mặc định 10, 0 = tắt),
+ * ANON_GLOBAL_DAILY = tổng số lần / ngày của mọi thiết bị (mặc định 500, chặn việc tự đổi mã thiết bị để lách hạn mức).
+ * Bộ đếm lưu ở Script Property ANON_USAGE (JSON), tự đặt lại khi sang ngày (giờ Việt Nam).
+ */
+const ANON_DEFAULTS = { PER_DEVICE: 10, GLOBAL: 500, MAX_DEVICES: 400 };
+
+function anonNum_(key, fallback) {
+  const v = PropertiesService.getScriptProperties().getProperty(key);
+  if (v === null || v === undefined || String(v).trim() === '') return fallback;
+  const n = Math.floor(Number(v));
+  return isFinite(n) && n >= 0 ? n : fallback;
+}
+function anonSettings_() {
+  return { perDevice: anonNum_('ANON_DAILY_LIMIT', ANON_DEFAULTS.PER_DEVICE), global: anonNum_('ANON_GLOBAL_DAILY', ANON_DEFAULTS.GLOBAL) };
+}
+function anonToday_() { return Utilities.formatDate(new Date(), TZ, 'yyyyMMdd'); }
+function anonReadUsage_() {
+  const day = anonToday_();
+  let u = null;
+  try { u = JSON.parse(PropertiesService.getScriptProperties().getProperty('ANON_USAGE') || 'null'); } catch (e) { u = null; }
+  if (!u || u.day !== day || typeof u.dev !== 'object' || !u.dev) u = { day: day, total: 0, dev: {} };
+  return u;
+}
+/** Giữ chỗ một lượt quét cho thiết bị. Trả { used, limit }; hết hạn mức thì throw. Gọi trong khoá. */
+function anonReserve_(deviceKey, st) {
+  const u = anonReadUsage_();
+  const used = Number(u.dev[deviceKey] || 0);
+  if (used >= st.perDevice) throw new Error('Thiết bị này đã dùng hết ' + st.perDevice + ' lượt quét không cần tài khoản trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
+  if (u.total >= st.global) throw new Error('Quét không cần tài khoản đã đạt giới hạn chung của hệ thống trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
+  if (used === 0 && Object.keys(u.dev).length >= ANON_DEFAULTS.MAX_DEVICES) throw new Error('Quét không cần tài khoản đang quá tải trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
+  u.dev[deviceKey] = used + 1; u.total += 1;
+  PropertiesService.getScriptProperties().setProperty('ANON_USAGE', JSON.stringify(u));
+  return { used: used + 1, limit: st.perDevice };
+}
+function anonRelease_(deviceKey) {
+  const u = anonReadUsage_();
+  if (u.dev[deviceKey]) { u.dev[deviceKey] -= 1; if (u.dev[deviceKey] <= 0) delete u.dev[deviceKey]; u.total = Math.max(0, u.total - 1); }
+  PropertiesService.getScriptProperties().setProperty('ANON_USAGE', JSON.stringify(u));
+}
+
+/** deviceId do extension tự sinh (UUID). Không có tài khoản nên chỉ dùng để đếm hạn mức. */
+function scanAnonymous(deviceId, payload) {
+  const st = anonSettings_();
+  if (st.perDevice <= 0 || st.global <= 0) throw new Error('Quét không cần tài khoản đang tắt. Hãy đăng nhập tài khoản OCR.');
+  const id = String(deviceId || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) throw new Error('Mã thiết bị không hợp lệ. Tải lại extension rồi thử lại.');
+  const key = hash_('anon|' + id).slice(0, 12);
+  let quota;
+  withLock_(function () { quota = anonReserve_(key, st); });
+  try {
+    const r = scanCore_({ username: 'anon_' + key, perms: {} }, payload, true); // scanCore_ đã áp rateLimit_ theo username
+    r.anon = quota;
+    return r;
+  } catch (e) {
+    withLock_(function () { anonRelease_(key); }); // quét lỗi thì không tính lượt
+    throw e;
   }
-  const digits = m[3].replace(/\D/g, '');
-  const num = digits.length === 5 ? digits.slice(0, 3) + '.' + digits.slice(3) : digits;
-  const moto = /\d$/.test(m[2]);
-  data.bien_so_day_du = moto ? m[1] + '-' + m[2] + ' ' + num : m[1] + m[2] + '-' + num;
-  data.ma_tinh_thanh = m[1];
-  data.seri_dang_ky = m[2];
-  if (!data.loai_phuong_tien) data.loai_phuong_tien = moto ? 'Xe máy' : 'Ô tô';
-  if (!data.mau_bien) data.mau_bien = 'Trắng';
+}
+
+function getAnonConfig(token) {
+  requireAdmin_(token);
+  const st = anonSettings_(), u = anonReadUsage_();
+  return { perDevice: st.perDevice, global: st.global, defaults: { perDevice: ANON_DEFAULTS.PER_DEVICE, global: ANON_DEFAULTS.GLOBAL }, today: { total: u.total, devices: Object.keys(u.dev).length } };
+}
+/** patch: { perDevice?, global? } số nguyên >= 0. perDevice = 0 hoặc global = 0 tắt quét không cần tài khoản. */
+function setAnonConfig(token, patch) {
+  const admin = requireAdmin_(token);
+  patch = patch || {};
+  const p = PropertiesService.getScriptProperties();
+  const changed = [];
+  [['perDevice', 'ANON_DAILY_LIMIT', 1000], ['global', 'ANON_GLOBAL_DAILY', 100000]].forEach(function (x) {
+    if (patch[x[0]] === undefined || patch[x[0]] === null || patch[x[0]] === '') return;
+    const n = Number(patch[x[0]]);
+    if (!isFinite(n) || n < 0 || Math.floor(n) !== n || n > x[2]) throw new Error('Giá trị phải là số nguyên từ 0 đến ' + x[2] + '.');
+    p.setProperty(x[1], String(n)); changed.push(x[0] + '=' + n);
+  });
+  if (changed.length) audit_(admin.username, 'DOI_HAN_MUC_AN_DANH', 'ANON', changed.join('; '));
+  return getAnonConfig(token);
+}
+
+/* ---------- Biển số xe: tự tách mã tỉnh / seri / loại xe / đối tượng từ chuỗi biển số và màu biển ---------- */
+const PLATE_COLORS = { 'trắng': 'Trắng', 'vàng': 'Vàng', 'xanh': 'Xanh', 'đỏ': 'Đỏ' };
+const PLATE_OWNER = { 'Trắng': 'Cá nhân, tổ chức', 'Vàng': 'Kinh doanh vận tải', 'Xanh': 'Cơ quan nhà nước', 'Đỏ': 'Quân đội' };
+function plateColor_(v) {
+  const t = String(v == null ? '' : v).toLowerCase();
+  const keys = Object.keys(PLATE_COLORS);
+  for (let i = 0; i < keys.length; i++) if (t.indexOf(keys[i]) >= 0) return PLATE_COLORS[keys[i]];
+  return null;
+}
+function fixPlateReading_(data) {
+  data.mau_bien = plateColor_(data.mau_bien) || (data.mau_bien ? String(data.mau_bien).trim() : null);
+  const raw = data.bien_so_day_du;
+  if (typeof raw === 'string' && raw.trim()) {
+    const s = raw.toUpperCase().replace(/[–—−]/g, '-').replace(/\s+/g, ' ').trim();
+    const m = /^(\d{2})\s*-?\s*([A-ZĐ]{1,2}\d?)\s*[-.\s]\s*(\d{3}[.\s]?\d{2}|\d{4})$/.exec(s);
+    const army = /^([A-Z]{2})\s*[-\s]?\s*(\d{2})\s*[-.\s]?\s*(\d{2,3})$/.exec(s);
+    if (m) {
+      const digits = m[3].replace(/\D/g, '');
+      const num = digits.length === 5 ? digits.slice(0, 3) + '.' + digits.slice(3) : digits;
+      const moto = /\d$/.test(m[2]);
+      data.bien_so_day_du = moto ? m[1] + '-' + m[2] + ' ' + num : m[1] + m[2] + '-' + num;
+      data.ma_tinh_thanh = m[1];
+      data.seri_dang_ky = m[2];
+      if (!data.loai_phuong_tien) data.loai_phuong_tien = moto ? 'Xe máy' : 'Ô tô';
+    } else if (army && (data.mau_bien === 'Đỏ' || !data.mau_bien)) {
+      // Biển quân đội: 2 chữ cái + 4-5 số, không có mã tỉnh
+      data.bien_so_day_du = army[1] + ' ' + army[2] + '-' + army[3];
+      data.ma_tinh_thanh = null;
+      data.seri_dang_ky = army[1];
+      data.mau_bien = 'Đỏ';
+    } else {
+      const p = /^(\d{2})/.exec(s);
+      if (p && !data.ma_tinh_thanh) data.ma_tinh_thanh = p[1];
+    }
+  }
+  if (!data.mau_bien && data.bien_so_day_du) data.mau_bien = 'Trắng';
+  data.doi_tuong_su_dung = PLATE_OWNER[data.mau_bien] || null;
   return data;
 }
 
@@ -1933,21 +2048,30 @@ function retryAfterSec_(bodyText, nowMs) {
 /** Dấu hiệu gắn cuối thông báo lỗi để giao diện đếm ngược; giao diện sẽ cắt dấu hiệu này khi hiển thị. */
 function retryMarker_(sec) { return ' [[RETRY_AFTER:' + Math.max(1, Math.round(sec)) + ']]'; }
 
-/** UrlFetch có thử lại luỹ thừa cho lỗi 429 / 5xx / lỗi mạng. */
-function fetchRetry_(url, options, no429Retry) {
+/** Thống kê một lượt quét (số lần gọi, số lần thử lại, thời gian chờ) để biết chậm ở đâu. */
+let FETCH_STATS_ = { calls: 0, retries: 0, waitMs: 0, fetchMs: 0, codes: [] };
+function resetFetchStats_() { FETCH_STATS_ = { calls: 0, retries: 0, waitMs: 0, fetchMs: 0, codes: [] }; }
+
+/** UrlFetch có thử lại luỹ thừa cho lỗi 429 / 5xx / lỗi mạng. failover: còn khoá khác để thử thì gặp 429/5xx trả về ngay, không chờ thử lại cùng khoá. */
+function fetchRetry_(url, options, failover) {
   let lastErr = null;
   for (let i = 0; i < 4; i++) {
+    const t0 = Date.now();
     try {
       const resp = UrlFetchApp.fetch(url, options);
       const code = resp.getResponseCode();
+      FETCH_STATS_.calls++; FETCH_STATS_.fetchMs += Date.now() - t0; FETCH_STATS_.codes.push(code);
       if (code !== 429 && code < 500) return resp;
-      if (code === 429 && no429Retry) return resp;
+      if (failover) return resp;
       if (i === 3) return resp;
     } catch (e) {
+      FETCH_STATS_.calls++; FETCH_STATS_.fetchMs += Date.now() - t0; FETCH_STATS_.codes.push('err');
       lastErr = e;
-      if (i === 3) throw new Error('Không kết nối được dịch vụ ngoài: ' + e.message);
+      if (i === 3 || (failover && i >= 1)) throw new Error('Không kết nối được dịch vụ ngoài: ' + e.message);
     }
-    Utilities.sleep(Math.pow(2, i) * 1000 + Math.floor(Math.random() * 500));
+    const wait = Math.pow(2, i) * 1000 + Math.floor(Math.random() * 500);
+    FETCH_STATS_.retries++; FETCH_STATS_.waitMs += wait;
+    Utilities.sleep(wait);
   }
   throw lastErr || new Error('Lỗi kết nối.');
 }

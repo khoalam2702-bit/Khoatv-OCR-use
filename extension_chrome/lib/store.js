@@ -93,3 +93,24 @@ export async function getFboProfile(origin) {
   try { password = rec.passEnc ? await vault.decrypt(rec.passEnc) : ''; } catch { /* khoá mất: nhập lại */ }
   return { user: rec.user, password };
 }
+
+/* ---------- Chế độ không cần tài khoản OCR ----------
+ * Mã thiết bị ngẫu nhiên (storage.local) chỉ dùng để máy chủ đếm hạn mức quét theo ngày.
+ * Chế độ và bản nháp kết quả nằm ở storage.session: đóng trình duyệt là mất, không gửi lên máy chủ. */
+export async function getDeviceId() {
+  const { deviceId } = await chrome.storage.local.get('deviceId');
+  if (deviceId) return deviceId;
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ deviceId: id });
+  return id;
+}
+export async function getAnonMode() { return !!(await chrome.storage.session.get('anonMode')).anonMode; }
+export async function setAnonMode(on) {
+  if (on) await chrome.storage.session.set({ anonMode: true });
+  else await chrome.storage.session.remove(['anonMode', 'anonDraft']);
+}
+export async function getAnonDraft() { return (await chrome.storage.session.get('anonDraft')).anonDraft || null; }
+export async function setAnonDraft(draft) {
+  if (draft) await chrome.storage.session.set({ anonDraft: draft });
+  else await chrome.storage.session.remove('anonDraft');
+}

@@ -9,7 +9,8 @@ export const maxDuration = 60;
 const AUTHED = new Set([
   'getMe', 'changeMyPassword', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport',
   'listUsers', 'createUser', 'updateUser', 'resetUserPassword', 'deleteUser',
-  'getAiConfig', 'setAiConfig', 'testAiConfig'
+  'getAiConfig', 'setAiConfig', 'testAiConfig',
+  'getAnonConfig', 'setAnonConfig'
 ]);
 /** Không cần phiên (cấu hình công khai, quên mật khẩu). */
 const PUBLIC = new Set(['getAppConfig', 'requestPasswordReset', 'resetPasswordWithCode']);

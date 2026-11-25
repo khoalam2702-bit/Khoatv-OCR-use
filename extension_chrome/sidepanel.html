@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>OCR</title>
+  <title>Tool OCR - điền form FBO</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
   <header>
-    <strong>OCR → FBO</strong>
+    <strong>Tool OCR - điền form FBO</strong>
     <span id="who"></span>
     <button id="btn-fbo-login" class="link" title="Điền tài khoản đã lưu vào trang đăng nhập FBO ở tab hiện tại" hidden>Đăng nhập FBO</button>
     <button id="btn-inspect" class="link" hidden title="Dò các ô của form FBO đang xem và sao chép kết quả (để bổ sung ánh xạ)">Dò form</button>
@@ -25,6 +25,8 @@
     <label>Mật khẩu<input id="in-pass" type="password" autocomplete="current-password"></label>
     <label class="chk"><input id="in-remember" type="checkbox" checked> Ghi nhớ tài khoản và mật khẩu trên máy này</label>
     <button id="btn-login" class="primary">Đăng nhập</button>
+    <button id="btn-anon" type="button" hidden>Dùng không cần tài khoản</button>
+    <p id="anon-hint" class="hint" hidden></p>
     <p class="hint">Dùng tài khoản của Web Admin OCR. Mật khẩu (nếu ghi nhớ) được mã hoá và chỉ lưu trên trình duyệt này.</p>
   </section>
 
