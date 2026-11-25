@@ -501,7 +501,7 @@ async function doFill() {
     if (r.diag) parts.push('Chẩn đoán ô địa chỉ (gửi lại cho người hỗ trợ): ' + r.diag + '.');
     if (r.mainOnly) parts.push('(Trang có khung phụ không phản hồi nên chỉ điền ở khung chính.)');
     if (r.away) parts.push('Lưu ý: đã điền vào tab "' + cut(r.tabTitle) + '", không phải tab bạn đang xem. Quay lại tab đó để kiểm tra.');
-    info.textContent = parts.join(' ');
+    info.textContent = parts.join('\n'); // mỗi ý một dòng
     info.className = r.status === 'FILLED' && !r.away ? 'ok' : 'warn';
     bar.max = r.total || 1; bar.value = r.filled.length; done = true; // thanh hiện tỉ lệ đã điền, giữ lại để NSD xem
     if (!state.saved.anon) {

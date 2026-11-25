@@ -19,25 +19,45 @@ export function buildDm({ tinh = [], xa = [], quocTich = [] } = {}) {
   return { provinces, wardsBy, nat };
 }
 
+// Tỉnh cũ đã nhập vào tỉnh khác từ 01/7/2025 (Nghị quyết 202/2025/QH15, 63 -> 34 tỉnh): tên cũ (không dấu, không tiền tố) -> mã tỉnh mới trong danh mục.
+// Thẻ CCCD cấp trước 2025 vẫn in tên tỉnh cũ. Chỉ quy đổi cấp tỉnh; xã/phường cũ đã đổi tên và sáp nhập nên KHÔNG tự đoán (để trống cho người dùng chọn).
+const OLD_PROVINCE = {
+  'ha giang': '08', 'yen bai': '15', 'bac kan': '19', 'vinh phuc': '25', 'hoa binh': '25', 'bac giang': '24',
+  'thai binh': '33', 'hai duong': '31', 'ha nam': '37', 'nam dinh': '37',
+  'quang binh': '44', 'thua thien hue': '46', 'quang nam': '48', 'kon tum': '51', 'binh dinh': '52',
+  'ninh thuan': '56', 'phu yen': '66', 'dak nong': '68', 'binh thuan': '68',
+  'binh phuoc': '75', 'ba ria vung tau': '79', 'binh duong': '79',
+  'long an': '80', 'tien giang': '82', 'ben tre': '86', 'tra vinh': '86', 'soc trang': '92', 'hau giang': '92', 'kien giang': '91', 'bac lieu': '96'
+};
+
 const hasWord = (hay, needle) => needle && (' ' + hay + ' ').includes(' ' + needle + ' ');
 
 /** Tách địa chỉ chữ thành { tinh: {ma, ten}|null, xa: {ma, ten}|null }. */
 export function lookupAddress(dm, text) {
-  const out = { tinh: null, xa: null };
+  const out = { tinh: null, xa: null, legacy: false, provKey: '' };
   const parts = String(text || '').split(/[,;]|\s-\s/).map(norm).filter(Boolean);
   if (!parts.length) return out;
   let prov = null, provIdx = -1;
   for (let i = parts.length - 1; i >= 0 && !prov; i--) {
     const k = strip(parts[i], PROV_PREFIX);
     const p = dm.provinces.find((x) => x.key === k);
-    if (p) { prov = p; provIdx = i; }
+    if (p) { prov = p; provIdx = i; out.provKey = k; }
+  }
+  if (!prov) { // tên tỉnh cũ đã sáp nhập: quy đổi sang tỉnh mới, không tra xã/phường
+    for (let i = parts.length - 1; i >= 0 && !prov; i--) {
+      const k = strip(parts[i], PROV_PREFIX), ma = OLD_PROVINCE[k];
+      const p = ma ? dm.provinces.find((x) => x.ma === ma) : null;
+      if (p) { prov = p; provIdx = i; out.provKey = k; out.legacy = true; }
+    }
   }
   if (!prov) {
     const all = parts.join(' ');
     prov = dm.provinces.find((x) => hasWord(all, x.key)) || null; // không có dấu phẩy: tìm tên tỉnh ngay trong chuỗi
   }
   if (!prov) return out;
+  if (!out.provKey) out.provKey = prov.key;
   out.tinh = { ma: prov.ma, ten: prov.ten };
+  if (out.legacy) return out; // xã/phường theo đơn vị cũ: để trống
   const wards = dm.wardsBy[prov.ma] || [];
   for (let i = 0; i < parts.length && !out.xa; i++) {
     if (i === provIdx) continue;
@@ -61,7 +81,7 @@ export function addressDetail(dm, text) {
   const keep = raw.split(/[,;]|\s-\s/).map((x) => x.trim()).filter((x) => {
     const n = norm(x);
     if (!n) return false;
-    if (prov && strip(n, PROV_PREFIX) === prov.key) return false;
+    if (strip(n, PROV_PREFIX) === r.provKey || (prov && strip(n, PROV_PREFIX) === prov.key && !r.legacy)) return false;
     if (ward && (n === ward.full || (!WARD_PREFIX.test(n) && n === ward.key))) return false;
     return true;
   });
