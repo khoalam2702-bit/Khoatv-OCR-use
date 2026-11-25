@@ -1,6 +1,6 @@
 import { ENABLED_TYPES, DEFAULT_LIMITS } from './lib/config.js';
 import { createGasClient, GasError } from './lib/gas.js';
-import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword } from './lib/store.js';
+import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword, getDeviceId, getAnonMode, setAnonMode, getAnonDraft, setAnonDraft } from './lib/store.js';
 import { prepareFile, shrinkBase64 } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
@@ -15,7 +15,7 @@ import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scan
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
 
-const state = { auth: null, config: null, type: null, files: [], scan: null, saved: null };
+const state = { auth: null, anon: false, config: null, type: null, files: [], scan: null, saved: null };
 
 /* ---------- Giao diện chung ---------- */
 function show(view) {
@@ -75,6 +75,37 @@ async function showLogin(message) {
   if (rec && rec.username && !$('in-user').value) $('in-user').value = rec.username;
   $('in-remember').checked = true;
   show('login'); msg(message || '', message ? 'info' : undefined);
+  await renderAnonOption();
+}
+
+/** Nút "Dùng không cần tài khoản": chỉ hiện khi máy chủ còn bật chế độ này (hạn mức > 0). */
+async function renderAnonOption() {
+  const btn = $('btn-anon'), hint = $('anon-hint');
+  btn.hidden = true; hint.hidden = true;
+  try { await loadConfig(); } catch { return; }
+  const n = state.config.limits.anonPerDay;
+  if (!(n > 0)) return;
+  btn.hidden = false; hint.hidden = false;
+  hint.textContent = 'Không cần tài khoản: quét tối đa ' + n + ' lần mỗi ngày trên thiết bị này, kết quả không lưu lên hệ thống (đóng trình duyệt là mất), chỉ dùng để điền form FBO.';
+}
+
+/** Vào chế độ không cần tài khoản: không có phiên đăng nhập, không lưu lên Web Admin. */
+async function enterAnon() {
+  state.anon = true; state.auth = null;
+  await setAnonMode(true);
+  $('who').textContent = 'Không tài khoản (không lưu)';
+  $('btn-inspect').hidden = true; $('btn-fbo-login').hidden = false;
+  $('btn-logout').textContent = 'Đăng nhập';
+  await loadConfig();
+  checkFboPermission();
+  resetScan();
+  show('scan');
+}
+async function exitAnon() {
+  state.anon = false; await setAnonMode(false);
+  $('btn-logout').textContent = 'Đăng xuất'; $('who').textContent = ''; $('btn-fbo-login').hidden = true;
+  state.scan = null; state.saved = null;
+  await showLogin('');
 }
 
 /* ---------- Đăng nhập ---------- */
@@ -101,11 +132,12 @@ async function loadConfig() {
   const byCode = new Map(cfg.types.map((t) => [t.code, t]));
   state.config = {
     types: ENABLED_TYPES.map((c) => byCode.get(c)).filter(Boolean),
-    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles, scanPer10Min: cfg.scanPer10Min || DEFAULT_LIMITS.scanPer10Min, sessionHours: cfg.sessionHours || DEFAULT_LIMITS.sessionHours }
+    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles, scanPer10Min: cfg.scanPer10Min || DEFAULT_LIMITS.scanPer10Min, anonPerDay: Number(cfg.anonPerDay) || 0, sessionHours: cfg.sessionHours || DEFAULT_LIMITS.sessionHours }
   };
 }
 
 async function enter() {
+  state.anon = false; await setAnonMode(false); $('btn-logout').textContent = 'Đăng xuất';
   $('who').textContent = state.auth.me.name + ' (' + state.auth.me.username + ')';
   $('btn-inspect').hidden = state.auth.me.role !== 'ADMIN'; // "Dò form" chỉ dành cho quản trị viên (người lập ánh xạ)
   $('btn-fbo-login').hidden = false;
@@ -214,9 +246,10 @@ function renderLimits() {
   const items = [
     'Tối đa ' + L.maxFiles + ' tệp mỗi tài liệu (ví dụ CCCD 2 mặt = 2 ảnh).',
     'Dung lượng: mỗi tệp tối đa ' + mb(L.maxFileBytes) + ' MB, tổng các tệp tối đa ' + mb(L.maxTotalBytes) + ' MB. Chỉ nhận JPG, PNG, WEBP, PDF; ảnh tự nén JPG, cạnh dài tối đa 2400 px.',
-    'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
+    state.anon ? 'Không cần tài khoản: tối đa ' + L.anonPerDay + ' lần quét mỗi ngày trên thiết bị này, kết quả không lưu lên hệ thống. Đăng nhập tài khoản OCR để lưu và không giới hạn theo ngày. PDF dài nên tách 5-10 trang mỗi lượt.'
+      : 'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
     'Mỗi lần quét xử lý tối đa khoảng 6 phút; quá thời gian sẽ báo lỗi, hãy quét lại với ít trang hơn.',
-    'Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.',
+    state.anon ? 'Kết quả chỉ giữ trong phiên trình duyệt này; đóng trình duyệt là mất.' : 'Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.',
     'Hạn mức AI (Gemini) tính theo khóa API, theo phút và theo ngày do Google quy định. Chạm hạn mức sẽ hiện đồng hồ đếm ngược; hạn mức ngày đặt lại lúc 0 giờ giờ Thái Bình Dương (khoảng 14-15 giờ giờ Việt Nam).'
   ];
   const box = $('limit-hint');
@@ -299,7 +332,9 @@ async function doScan() {
     const skipAiUsed = !!qr; // chỉ true ở chế độ chỉ QR khi QR hợp lệ: backend không gọi AI
     if (qrFirst) setScanStage(skipAiUsed ? 'save' : 'ai');
     const [r, qr2] = await Promise.all([
-      api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
+      state.anon
+        ? call('scanAnonymous', [await getDeviceId(), { docType: state.type, files, skipAi: skipAiUsed }])
+        : api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
       qrTask
     ]);
     qr = qr || qr2;
@@ -314,7 +349,8 @@ async function doScan() {
     else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
     else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
     const tm = r && r.timing;
-    stopScanProgress(true, tm ? '(lưu tệp ' + (tm.driveMs / 1000).toFixed(1) + 's, AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ')' : '');
+    const left = state.anon && r.anon ? 'Còn ' + Math.max(0, r.anon.limit - r.anon.used) + '/' + r.anon.limit + ' lượt quét không cần tài khoản hôm nay.' : '';
+    stopScanProgress(true, ((tm ? '(lưu tệp ' + (tm.driveMs / 1000).toFixed(1) + 's, AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ') ' : '') + left).trim());
   } catch (e) {
     stopScanProgress(false);
     const r = splitRetry(e.message);
@@ -341,7 +377,20 @@ function renderReview(data) {
     if (f.type === 'number') el.inputMode = 'decimal';
     label.appendChild(el); form.appendChild(label);
   }
-  $('after-save').hidden = true; $('review-actions').hidden = false; $('fill-info').textContent = ''; $('fill-progress').hidden = true;
+  $('fill-info').textContent = ''; $('fill-progress').hidden = true;
+  $('review-actions').hidden = false;
+  if (state.anon) {
+    // Không tài khoản: không có bước Lưu; nút Điền vào FBO hiện ngay, không hỏi lưu. Bản nháp chỉ giữ trong phiên trình duyệt.
+    $('btn-save').hidden = true; $('btn-next').hidden = false;
+    $('after-save').hidden = false;
+    $('save-info').textContent = 'Không lưu lên hệ thống (chế độ không cần tài khoản). Kiểm tra, sửa nếu cần rồi bấm Điền vào FBO.';
+    getSettings().then(({ fboMappings }) => { $('btn-fill').hidden = !hasMapping(fboMappings, state.type); });
+    form.oninput = () => { setAnonDraft({ type: state.type, data: readForm().data }); };
+    setAnonDraft({ type: state.type, data });
+  } else {
+    $('btn-save').hidden = false; form.oninput = null;
+    $('after-save').hidden = true;
+  }
   setFormDisabled(false);
 }
 
@@ -391,6 +440,15 @@ function thisPeriod() {
 async function doFill() {
   msg('');
   const btn = $('btn-fill'), info = $('fill-info'), bar = $('fill-progress');
+  if (state.anon) {
+    // Không tài khoản: lấy dữ liệu đang hiển thị trên form, không lưu, không hỏi lưu
+    const { data, errors, t: tt } = readForm();
+    if (errors.length) { msg('Có trường số sai định dạng (tô đỏ). Nhập lại bằng số.'); return; }
+    const miss = missingRequired(tt.required, data);
+    if (miss.length) { msg('Còn thiếu trường bắt buộc: ' + miss.map((k) => tt.fields.find((f) => f.k === k).label).join(', ') + '.'); return; }
+    state.saved = { data, anon: true };
+    setAnonDraft({ type: state.type, data });
+  }
   busy(btn, true, 'Đang chuẩn bị...');
   info.textContent = ''; info.className = 'hint';
   bar.hidden = false; bar.removeAttribute('value'); // thanh chạy không xác định trong lúc chờ form
@@ -446,14 +504,16 @@ async function doFill() {
     info.textContent = parts.join(' ');
     info.className = r.status === 'FILLED' && !r.away ? 'ok' : 'warn';
     bar.max = r.total || 1; bar.value = r.filled.length; done = true; // thanh hiện tỉ lệ đã điền, giữ lại để NSD xem
-    try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
-    catch (e) { info.textContent += ' (Chưa cập nhật được trạng thái đồng bộ: ' + e.message + ')'; }
+    if (!state.saved.anon) {
+      try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
+      catch (e) { info.textContent += ' (Chưa cập nhật được trạng thái đồng bộ: ' + e.message + ')'; }
+    }
   } catch (e) {
     if (e instanceof FillStopped) { // bấm Dừng: không đánh dấu lỗi, cho điền lại
       info.textContent = 'Đã dừng. Mở lại tab và form FBO cần điền, rồi bấm "Điền vào FBO" để điền lại.'; info.className = 'warn';
     } else {
       info.textContent = e.message; info.className = 'warn';
-      try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ }
+      if (!state.saved.anon) { try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ } }
     }
   } finally { stop.hidden = true; stop.onclick = null; if (!done) bar.hidden = true; busy(btn, false); }
 }
@@ -508,15 +568,16 @@ $('btn-perm').onclick = async () => {
 $('btn-fbo-login').onclick = doFboLogin;
 $('btn-login').onclick = doLogin;
 $('in-pass').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
-$('btn-logout').onclick = () => logout('', false);
+$('btn-logout').onclick = () => (state.anon ? exitAnon() : logout('', false));
+$('btn-anon').onclick = async () => { msg(''); try { await enterAnon(); } catch (e) { msg(e.message); } };
 $('btn-settings').onclick = () => chrome.runtime.openOptionsPage();
 $('btn-pick').onclick = () => $('in-files').click();
 $('in-files').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
 $('btn-scan').onclick = doScan;
-$('btn-back').onclick = () => { state.scan = null; show('scan'); };
+$('btn-back').onclick = () => { state.scan = null; if (state.anon) setAnonDraft(null); show('scan'); };
 $('btn-save').onclick = doSave;
 $('btn-fill').onclick = doFill;
-$('btn-next').onclick = () => { resetScan(); msg(''); show('scan'); };
+$('btn-next').onclick = () => { if (state.anon) setAnonDraft(null); resetScan(); msg(''); show('scan'); };
 
 const drop = $('drop');
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
@@ -534,6 +595,14 @@ document.addEventListener('paste', (e) => {
   await refreshRemoteConfig(); // link Apps Script nằm ở Web Admin (Vercel); lấy mới mỗi lần mở, lỗi mạng thì dùng bản đã lưu
   const { gasUrl } = await getSettings();
   if (!gasUrl) { show('login'); msg('Chưa lấy được địa chỉ máy chủ OCR từ Web Admin. Kiểm tra mạng, hoặc liên hệ quản trị viên (biến GAS_WEB_APP_URL trên Vercel).'); return; }
+  if (await getAnonMode()) { // còn trong phiên trình duyệt đang dùng chế độ không tài khoản
+    try {
+      await enterAnon();
+      const d = await getAnonDraft();
+      if (d && state.config.types.some((x) => x.code === d.type)) { state.type = d.type; state.scan = { data: d.data, fileIds: [] }; renderTypes(); renderReview(d.data); show('review'); }
+      return;
+    } catch (e) { await setAnonMode(false); state.anon = false; msg(e.message); }
+  }
   const auth = await getAuth();
   if (auth) {
     try {
