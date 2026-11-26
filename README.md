@@ -242,3 +242,6 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 
 #### Quét 1 lần, điền nhiều lần
 Kết quả quét (kể cả ảnh chân dung và danh sách công việc) được giữ trong phiên trình duyệt: tắt/mở lại side panel hoặc form FBO vẫn bấm Điền tiếp được, không phải quét lại. Bấm "Quét tiếp" mới xóa. Khi tab FBO không phản hồi, tool báo rõ tab nào, trạng thái gì thay vì chỉ báo hết giờ.
+
+#### Chuyên ngành (CV nhân viên)
+Chuyên ngành trên CV được đối chiếu với danh mục chuyên ngành của FBO (`presets/dm/chuyen-nganh.json`, dạng `[["mã","tên"],...]`) để điền mã vào ô `ma_cn`: trùng tên > tên danh mục nằm trong chuyên ngành trên CV > giống từ >= 70%; không khớp thì dùng mã `99` (KHÁC). Danh mục này chép từ site demo; khách hàng khác có danh mục riêng thì thay file này bằng danh mục của họ (mã sai sẽ điền nhầm chuyên ngành).

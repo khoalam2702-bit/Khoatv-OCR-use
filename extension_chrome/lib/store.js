@@ -16,8 +16,8 @@ export const getPreset = () => packaged('presets/fbo-hrm.json');
 
 /** Danh mục tỉnh/thành, phường/xã, quốc tịch của FBO đi kèm extension (presets/dm/*.json). */
 export async function getDm() {
-  const [tinh, xa, quocTich, diaChiCu] = await Promise.all([packaged('presets/dm/tinh.json'), packaged('presets/dm/xa.json'), packaged('presets/dm/quoc-tich.json'), packaged('presets/dm/dia-chi-cu.json')]);
-  return buildDm({ tinh: Array.isArray(tinh) ? tinh : [], xa: Array.isArray(xa) ? xa : [], quocTich: Array.isArray(quocTich) ? quocTich : [], diaChiCu });
+  const [tinh, xa, quocTich, diaChiCu, chuyenNganh] = await Promise.all([packaged('presets/dm/tinh.json'), packaged('presets/dm/xa.json'), packaged('presets/dm/quoc-tich.json'), packaged('presets/dm/dia-chi-cu.json'), packaged('presets/dm/chuyen-nganh.json')]);
+  return buildDm({ tinh: Array.isArray(tinh) ? tinh : [], xa: Array.isArray(xa) ? xa : [], quocTich: Array.isArray(quocTich) ? quocTich : [], diaChiCu, chuyenNganh: Array.isArray(chuyenNganh) ? chuyenNganh : [] });
 }
 
 /** Cấu hình trung tâm: lấy từ Web Admin (admin nhập 1 lần ở Vercel), lưu đệm để mở panel là dùng ngay. */

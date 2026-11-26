@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildDm, addressDetail, lookupAddress, lookupNationality, enrichData, norm } from '../lib/dm.js';
+import { lookupMajor, buildDm, addressDetail, lookupAddress, lookupNationality, enrichData, norm } from '../lib/dm.js';
 
 const rd = (n) => JSON.parse(fs.readFileSync(new URL('../presets/dm/' + n, import.meta.url), 'utf8'));
 const dm = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json') }); // không có bảng đơn vị cũ
+const dmCn = buildDm({ chuyenNganh: rd('chuyen-nganh.json') });
 const dmOld = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json'), diaChiCu: rd('dia-chi-cu.json') });
 
 test('danh mục đóng gói đủ: 34 tỉnh/thành, 3320 phường/xã, 14 quốc tịch', () => {
@@ -182,4 +183,19 @@ test('CV nhân viên: ánh xạ ra đúng ô của form Thông tin nhân viên (
   assert.equal(e.thoi_gian_hoc, '2014 - 2017');
   // CCCD: Số nhà/tổ điền vào ô nhập thật (…_so), không phải ô địa chỉ ghép ẩn
   assert.match(preset.CCCD.thuong_tru_chi_tiet, /dia_chi_th_tru_so"\]$/); assert.match(preset.CCCD.que_quan_chi_tiet, /que_quan_so"\]$/);
+});
+
+test('chuyên ngành: khớp danh mục FBO (trùng tên, chứa tên, không khớp → KHÁC)', () => {
+  const ma = (t) => { const r = lookupMajor(t, dmCn); return r && r.ma; };
+  assert.equal(ma('Kế toán'), '10');
+  assert.equal(ma('Chuyên ngành Kế Toán'), '10');
+  assert.equal(ma('Kế toán doanh nghiệp'), '10');          // tên danh mục nằm trong chuyên ngành ghi trên CV
+  assert.equal(ma('Luật'), '41');
+  assert.equal(ma('Ngôn ngữ Anh'), '51');
+  assert.equal(ma('Hệ thống thông tin quản lý'), 'HTTTQL');
+  assert.equal(ma('Chăm sóc sắc đẹp'), '99');             // không có trong danh mục → KHÁC
+  assert.equal(lookupMajor('', dmCn), null);
+  assert.equal(lookupMajor('Kế toán', buildDm({})), null); // danh mục trống thì không điền
+  assert.equal(enrichData('CV_NHANVIEN', { chuyen_nganh: 'Tài chính - Ngân hàng' }, dmCn).chuyen_nganh_ma, '46');
+  assert.match(rd('../fbo-hrm.json').CV_NHANVIEN.chuyen_nganh_ma.selector, /_form_ma_cn"\]$/);
 });
