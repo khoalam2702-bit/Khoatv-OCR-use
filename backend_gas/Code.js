@@ -101,12 +101,14 @@ const DOC_TYPES = {
     label: 'CV ứng viên', uniqueKey: null, required: ['ho_ten'],
     hint: 'Hồ sơ ứng viên (CV). Tóm tắt học vấn, kỹ năng và kinh nghiệm gần nhất ngắn gọn, đúng theo nội dung CV. ' +
       'Chỉ ghi thông tin cá nhân (ngày sinh, giới tính, địa chỉ) khi CV có ghi rõ. ' +
-      'Học vấn: cap_dao_tao là trình độ cao nhất (ví dụ Đại học, Cao đẳng), truong_dao_tao là tên trường, chuyen_nganh là ngành học, xep_loai là xếp loại tốt nghiệp nếu có.',
+      'Học vấn: cap_dao_tao là trình độ cao nhất (ví dụ Đại học, Cao đẳng), truong_dao_tao là tên trường, chuyen_nganh là ngành học, xep_loai là xếp loại tốt nghiệp nếu có. ' +
+      'tu_nam và den_nam là NĂM bắt đầu và NĂM kết thúc học (4 chữ số) của bậc học trên, chỉ ghi khi CV nêu.',
     fields: [f_('ho_ten', 'Họ và tên'), f_('email', 'Email'), f_('so_dien_thoai', 'Số điện thoại'), f_('vi_tri_ung_tuyen', 'Vị trí ứng tuyển'),
       f_('hoc_van', 'Học vấn', 'long'), f_('ky_nang', 'Kỹ năng', 'long'), f_('so_nam_kinh_nghiem', 'Số năm kinh nghiệm', 'number'),
       f_('kinh_nghiem_gan_nhat', 'Kinh nghiệm gần nhất', 'long'),
       f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'), f_('dia_chi', 'Địa chỉ'),
-      f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại')]
+      f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại')],
+    aux: [f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm')] // chỉ dùng để điền form FBO (ngày học), không thành cột trong Sheet
   },
   CV_NHANVIEN: {
     label: 'CV nhân viên', uniqueKey: null, required: ['ho_ten'],

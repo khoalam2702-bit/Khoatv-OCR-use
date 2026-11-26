@@ -219,3 +219,20 @@ test('CV nhân viên: học từ/đến = 01/09 của năm; thiếu năm thì kh
   const m = rd('../fbo-hrm.json').CV_NHANVIEN;
   assert.match(m.ngay_hoc_tu.selector, /ngay_hoc_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /ngay_hoc_den"\]$/);
 });
+
+test('CV nhân viên: Từ ngày / Đến ngày học = 01/09 của năm học từ / năm học đến', () => {
+  const e = enrichData('CV_NHANVIEN', { tu_nam: '2014', den_nam: '2017' }, null);
+  assert.equal(e.ngay_hoc_tu, '01/09/2014'); assert.equal(e.ngay_hoc_den, '01/09/2017'); assert.equal(e.ngay_tot_nghiep, '30/09/2017');
+  const o = enrichData('CV_NHANVIEN', { tu_nam: '2019' }, null);
+  assert.equal(o.ngay_hoc_tu, '01/09/2019'); assert.equal(o.ngay_hoc_den, undefined);
+  const m = rd('../fbo-hrm.json').CV_NHANVIEN;
+  assert.match(m.ngay_hoc_tu.selector, /_ngay_hoc_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /_ngay_hoc_den"\]$/);
+});
+
+test('CV ứng viên: Học từ/đến = 01/09 năm từ/đến, Ngày cấp = 30/09 năm đến; ô là ô thật của form ứng viên', () => {
+  const e = enrichData('CV_UNGVIEN', { tu_nam: '2014', den_nam: '2017' }, null);
+  assert.deepEqual([e.ngay_hoc_tu, e.ngay_hoc_den, e.ngay_tot_nghiep], ['01/09/2014', '01/09/2017', '30/09/2017']);
+  assert.equal(enrichData('CV_UNGVIEN', {}, null).ngay_hoc_tu, undefined);
+  const m = rd('../fbo-hrm.json').CV_UNGVIEN;
+  assert.match(m.ngay_hoc_tu.selector, /_ngay_dt_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /_ngay_dt_den"\]$/); assert.match(m.ngay_tot_nghiep.selector, /_ngay_cap_cc"\]$/);
+});

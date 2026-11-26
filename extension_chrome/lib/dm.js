@@ -231,6 +231,11 @@ export function enrichData(docType, data, dm, ctx) {
     out.loai_qh = ctx && ctx.relation === 'CHA_ME' ? '03' : '01';
     out.ngay_hl_tu = (ctx && ctx.today) || '';
   }
+  if (docType === 'CV_UNGVIEN') { // tab Học vấn của hồ sơ ứng viên: cùng quy ước với CV nhân viên (từ/đến = 01/09, ngày cấp = 30/09 năm đến)
+    const yr = (v) => { const m = String(v == null ? '' : v).match(/\b(19[5-9]\d|20\d\d)\b/); return m ? m[1] : ''; };
+    if (yr(out.tu_nam)) out.ngay_hoc_tu = '01/09/' + yr(out.tu_nam);
+    if (yr(out.den_nam)) { out.ngay_hoc_den = '01/09/' + yr(out.den_nam); out.ngay_tot_nghiep = '30/09/' + yr(out.den_nam); }
+  }
   if (docType === 'CV_NHANVIEN') { // ngày tốt nghiệp: quy ước 30/09 của năm kết thúc học (CV chỉ ghi năm)
     const y = String(out.den_nam == null ? '' : out.den_nam).match(/\b(19[5-9]\d|20\d\d)\b/);
     if (y) out.ngay_tot_nghiep = '30/09/' + y[1];

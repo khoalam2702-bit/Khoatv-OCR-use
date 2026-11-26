@@ -148,7 +148,19 @@
     "xep_loai": "[id$=\"_dirExtender_form_xep_loai_dt\"]",
     "dia_chi_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_tinh\"]",
     "dia_chi_xa_ma": "[id$=\"_dirExtender_form_dia_chi_xa\"]",
-    "dia_chi_chi_tiet": "[id$=\"_dirExtender_form_dia_chi\"]"
+    "dia_chi_chi_tiet": "[id$=\"_dirExtender_form_dia_chi\"]",
+    "ngay_hoc_tu": {
+      "selector": "[id$=\"_dirExtender_form_ngay_dt_tu\"]",
+      "format": "date"
+    },
+    "ngay_hoc_den": {
+      "selector": "[id$=\"_dirExtender_form_ngay_dt_den\"]",
+      "format": "date"
+    },
+    "ngay_tot_nghiep": {
+      "selector": "[id$=\"_dirExtender_form_ngay_cap_cc\"]",
+      "format": "date"
+    }
   },
   "GPLX": {
     "so_gplx": "[id$=\"MainReport75_dirExtender_form_so_bl\"]",
