@@ -1258,6 +1258,8 @@ function buildSchema_(type) {
   return { type: 'OBJECT', properties: props, required: all.map(function (f) { return f.k; }) };
 }
 
+const OVERLOAD_WAITS_MS = [3000, 8000, 15000];
+
 function callGemini_(type, files, opts) {
   opts = opts || {};
   const model = prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL);
@@ -1309,6 +1311,7 @@ function callGemini_(type, files, opts) {
     body.generationConfig.mediaResolution = (type.ai && type.ai.resolution) || (pdfOnly ? 'MEDIA_RESOLUTION_MEDIUM' : 'MEDIA_RESOLUTION_HIGH');
     if (type.ai && type.ai.maxTokens) body.generationConfig.maxOutputTokens = type.ai.maxTokens;
   }
+  const startedAt = Date.now();
   let resp = null, keyIdx = 0, used = null;
   for (let i = 0; i < ready.length; i++) {
     keyIdx = keys.indexOf(ready[i]);
@@ -1332,6 +1335,16 @@ function callGemini_(type, files, opts) {
     }
     break;
   }
+  // 503... là Google quá tải tạm thời (không do khoá): thử hết khoá vẫn lỗi thì chờ rồi thử lại, chờ lâu dần.
+  // Chỉ khi có nhiều khoá (một khoá thì fetchRetry_ đã tự chờ và thử lại) và chưa quá 90 giây, tránh người dùng đợi vô ích.
+  for (let n = 0; ready.length > 1 && n < OVERLOAD_WAITS_MS.length; n++) {
+    if (resp.getResponseCode() < 500 || Date.now() - startedAt > 90000) break;
+    Utilities.sleep(OVERLOAD_WAITS_MS[n]);
+    FETCH_STATS_.retries++; FETCH_STATS_.waitMs += OVERLOAD_WAITS_MS[n];
+    used = ready[n % ready.length];
+    keyIdx = keys.indexOf(used);
+    resp = post_(used);
+  }
   const code = resp.getResponseCode();
   if (code !== 200) {
     console.error('Gemini ' + code + ' (khoá ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + '): ' + resp.getContentText().slice(0, 800));
@@ -1339,6 +1352,7 @@ function callGemini_(type, files, opts) {
     if (code === 403) throw new Error('Khoá Gemini API bị từ chối (403): chưa bật API hoặc khoá bị giới hạn. Quản trị viên kiểm tra khoá ở Cài đặt AI.');
     if (code === 404) throw new Error('Model Gemini "' + model + '" không tồn tại hoặc đã ngừng. Kiểm tra Script Property GEMINI_MODEL.');
     if (code === 429) throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
+    if (code >= 500) throw new Error('Máy chủ AI (Gemini) đang quá tải (lỗi ' + code + '). Lỗi tạm thời phía Google, không phải do tệp của bạn. Hãy bấm Quét lại sau khoảng 1 phút.');
     throw new Error('Gemini trả lỗi ' + code + '. Xem nhật ký Apps Script để biết chi tiết.');
   }
   const json = JSON.parse(resp.getContentText());
