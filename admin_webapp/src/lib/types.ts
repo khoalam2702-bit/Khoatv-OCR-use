@@ -31,6 +31,8 @@ export interface RawFiles { files: { mimeType?: string; name: string; base64?: s
 export interface UserLite {
   username: string; full_name: string; email: string; role: 'ADMIN' | 'USER'; active: boolean; must_change: boolean;
   perms: Record<PermKey, boolean>;
+  /** Khoá API riêng (4 ký tự cuối); rỗng = dùng khoá chung. */
+  ai_key?: string;
 }
 
 export const SYNC_STATUSES = ['PENDING', 'FILLED', 'ERROR'] as const;

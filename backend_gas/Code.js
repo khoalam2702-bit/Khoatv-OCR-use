@@ -5,6 +5,7 @@
  *   GEMINI_API_KEY    (bắt buộc) Khoá Gemini API chính. ADMIN đổi được ở trang quản trị > Cài đặt AI (không cần vào Script Properties)
  *   GEMINI_API_KEY_BACKUP, GEMINI_API_KEY_BACKUP_2, _3, _4 (tuỳ chọn) Khoá dự phòng 1 → 4: lần lượt dùng khi khoá trước hết hạn mức (429), bị từ chối (403) hoặc lỗi máy chủ (5xx). Khoá vừa lỗi được cho "nghỉ" (tối đa 30 phút) để các lần quét sau dùng thẳng khoá còn lại
  *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
+ *   USER_GEMINI_KEY_<tên đăng nhập> (tuỳ chọn) Khoá riêng của công ty dùng tài khoản đó; ADMIN khai ở Web Admin, trang Tài khoản
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
  *   GEMINI_FALLBACK_MODEL (tuỳ chọn) Model dùng khi model chính quá tải (5xx). Mặc định gemini-3.5-flash-lite; đặt off để tắt
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
@@ -289,6 +290,7 @@ const API_ACTIONS = {
   updateUser: { fn: function (a) { return updateUser(a[0], a[1], a[2]); } },
   resetUserPassword: { fn: function (a) { return resetUserPassword(a[0], a[1]); } },
   deleteUser: { fn: function (a) { return deleteUser(a[0], a[1]); } },
+  setUserAiKey: { fn: function (a) { return setUserAiKey(a[0], a[1], a[2]); } },
   // cấu hình AI (chỉ ADMIN)
   getAiConfig: { fn: function (a) { return getAiConfig(a[0]); } },
   setAiConfig: { fn: function (a) { return setAiConfig(a[0], a[1]); } },
@@ -621,7 +623,11 @@ function normEmail_(v) {
 
 function listUsers(token) {
   requireAdmin_(token);
-  return readUsers_().list.map(userLite_);
+  return readUsers_().list.map(function (u) {
+    const v = userLite_(u);
+    v.ai_key = keyHint_(userKeyOf_(u.username)); // chỉ 4 ký tự cuối; rỗng = dùng khoá chung
+    return v;
+  });
 }
 
 function createUser(token, d) {
@@ -847,6 +853,7 @@ function deleteUser(token, username) {
     if (u.role === 'ADMIN' && others < 1) throw new Error('Phải còn ít nhất một quản trị viên đang hoạt động.');
     ctx.sh.deleteRow(u._row);
   });
+  PropertiesService.getScriptProperties().deleteProperty(USER_KEY_PREFIX + username); // tạo lại cùng tên không được thừa hưởng khoá
   audit_(admin.username, 'XOA_USER', username, 'Các bản ghi OCR do tài khoản này quét vẫn được giữ nguyên');
   return true;
 }
@@ -962,6 +969,8 @@ function scanCore_(me, payload, anon) {
   rateLimit_(me.username);
   resetFetchStats_();
   FALLBACK_USED_ = '';
+  const ownKey = anon ? '' : userKeyOf_(me.username);
+  USER_AI_ = ownKey ? { user: me.username, key: ownKey } : null;
 
   const blobs = items.map(function (it) {
     try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
@@ -1293,11 +1302,12 @@ function callGemini_(type, files, opts) {
     generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type), temperature: 0 }
   };
   function url_(m) { return 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent'; }
-  const keys = geminiKeys_();
+  const keys = USER_AI_ ? [USER_AI_.key] : geminiKeys_();
+  const scope = USER_AI_ ? model + '|' + USER_AI_.user : model; // quá tải được nhớ riêng theo bộ khoá
   // Khoá đang "nghỉ" (vừa hết hạn mức/bị từ chối) được bỏ qua để khỏi tốn lượt gọi; hết khoá khả dụng thì báo ngay, không gọi mạng.
   const split = splitKeysByCooldown_(keys);
   if (!split.ready.length) {
-    throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(split.minWaitSec));
+    throw new Error((USER_AI_ ? 'Khoá API riêng của công ty bạn đang hết hạn mức hoặc bị từ chối. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' : 'Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.') + retryMarker_(split.minWaitSec));
   }
   const ready = split.ready;
   function post_(key, m) {
@@ -1307,7 +1317,7 @@ function callGemini_(type, files, opts) {
       headers: { 'x-goog-api-key': key },
       payload: JSON.stringify(body),
       muteHttpExceptions: true
-    }, ready.length > 1); // còn khoá khác để thử: gặp 429 chuyển khoá ngay, không chờ thử lại
+    }, ready.length > 1 || !!USER_AI_); // khoá riêng: không chờ lâu trong fetchRetry_. Còn khoá khác để thử: gặp 429 chuyển khoá ngay, không chờ thử lại
   }
   // OCR không cần suy luận dài: giảm mức suy nghĩ và dùng độ phân giải ảnh cao (đọc dấu tiếng Việt tốt hơn).
   // Script Property GEMINI_FAST=off để tắt. Model không nhận tham số này (HTTP 400) thì tự gọi lại không kèm.
@@ -1333,7 +1343,7 @@ function callGemini_(type, files, opts) {
     return r;
   }
   // Model chính vừa quá tải: đi thẳng vào dự phòng, không bắt người dùng chờ. Dự phòng cũng lỗi thì chạy đường thường.
-  if (hasBackup && !opts.slow && isOverloaded_(model)) {
+  if (hasBackup && !opts.slow && isOverloaded_(scope)) {
     for (let i = 0; !resp && i < Math.min(2, ready.length); i++) {
       const r = postBackup_(ready[i]);
       if (r.getResponseCode() === 200) { resp = r; used = ready[i]; keyIdx = keys.indexOf(used); FALLBACK_USED_ = backup; }
@@ -1352,7 +1362,7 @@ function callGemini_(type, files, opts) {
     }
     const c = resp.getResponseCode();
     if (c === 200) break;
-    if (c >= 500) markOverload_(model);
+    if (c >= 500) markOverload_(scope);
     // Hết hạn mức (429), bị từ chối (403 / khoá sai): cho khoá này nghỉ rồi thử khoá kế tiếp (nếu có).
     // Lỗi máy chủ (5xx) là do model quá tải, không do khoá: thử khoá kế tiếp nhưng không cho khoá nghỉ.
     if (c === 429 || c === 403 || c >= 500 || isBadKey_(resp)) {
@@ -1368,7 +1378,7 @@ function callGemini_(type, files, opts) {
   }
   // 503... là Google quá tải tạm thời (không do khoá): thử lại model chính một lần rồi chuyển sang model dự phòng.
   // Extension dừng ở 120 giây nên phải chuyển sớm. Một khoá thì fetchRetry_ đã tự chờ và thử lại model chính.
-  const many = ready.length > 1;
+  const many = ready.length > 1 || !!USER_AI_;
   // Model dự phòng (bản Lite) đọc kém hơn nên chỉ dùng sau khi model chính đã thử lại mà vẫn lỗi.
   const steps = hasBackup
     ? (many ? [[2000, model]] : []).concat([[500, backup], [3000, backup]])
@@ -1392,6 +1402,8 @@ function callGemini_(type, files, opts) {
   const code = resp.getResponseCode();
   if (code !== 200) {
     console.error('Gemini ' + code + ' (khoá ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + '): ' + resp.getContentText().slice(0, 800));
+    if (USER_AI_ && (isBadKey_(resp) || code === 403)) throw new Error('Khoá API riêng của công ty bạn không hợp lệ hoặc bị từ chối. Liên hệ quản trị viên để cập nhật khoá.');
+    if (USER_AI_ && code === 429) throw new Error('Khoá API riêng của công ty bạn đã hết hạn mức. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
     if (isBadKey_(resp)) throw new Error('Khoá Gemini API không hợp lệ hoặc đã bị thu hồi. Quản trị viên vào Cài đặt AI để cập nhật khoá.');
     if (code === 403) throw new Error('Khoá Gemini API bị từ chối (403): chưa bật API hoặc khoá bị giới hạn. Quản trị viên kiểm tra khoá ở Cài đặt AI.');
     if (code === 404) throw new Error('Model Gemini "' + model + '" không tồn tại hoặc đã ngừng. Kiểm tra Script Property GEMINI_MODEL.');
@@ -2095,6 +2107,44 @@ function geminiKeys_() {
   });
   if (!out.length) throw new Error('Chưa cấu hình Script Property: GEMINI_API_KEY');
   return out;
+}
+
+/* ---- Khoá riêng theo tài khoản OCR (mỗi tài khoản = một công ty) ----
+ * Có khoá riêng thì CHỈ dùng khoá đó, lỗi thì báo lỗi, không mượn khoá chung (để chi phí không lẫn giữa các công ty).
+ * Chưa khai thì dùng khoá chung. Quét không đăng nhập luôn dùng khoá chung. */
+const USER_KEY_PREFIX = 'USER_GEMINI_KEY_';
+let USER_AI_ = null; // { user, key } của lượt quét đang chạy; null = dùng khoá chung
+
+function userKeyOf_(username) {
+  return String(PropertiesService.getScriptProperties().getProperty(USER_KEY_PREFIX + username) || '').trim();
+}
+
+/** patch: { apiKey } để khai / đổi, { clear: true } để xoá. Khoá được thử gọi Gemini trước khi lưu. */
+function setUserAiKey(token, username, patch) {
+  const admin = requireAdmin_(token);
+  username = String(username || '').trim().toLowerCase();
+  patch = patch || {};
+  if (!readUsers_().list.some(function (x) { return x.username === username; })) throw new Error('Không tìm thấy tài khoản.');
+  const p = PropertiesService.getScriptProperties();
+  if (patch.clear === true) {
+    p.deleteProperty(USER_KEY_PREFIX + username);
+    audit_(admin.username, 'XOA_KHOA_RIENG', username, '');
+    return { hint: '', warn: false, message: 'Đã xoá khoá riêng. Tài khoản này dùng khoá chung.' };
+  }
+  const key = checkKeyFormat_(patch.apiKey);
+  // Mỗi công ty một khoá: không trùng khoá chung, không trùng khoá của tài khoản khác
+  if (geminiKeysSafe_().indexOf(key) >= 0) throw new Error('Khoá này đang là khoá chung của hệ thống. Khoá riêng phải là khoá khác. Chưa lưu.');
+  const all = p.getProperties();
+  const other = Object.keys(all).filter(function (n) {
+    return n.indexOf(USER_KEY_PREFIX) === 0 && n !== USER_KEY_PREFIX + username && String(all[n]).trim() === key;
+  })[0];
+  if (other) throw new Error('Khoá này đã khai cho tài khoản "' + other.slice(USER_KEY_PREFIX.length) + '". Chưa lưu.');
+  const r = testGeminiKey_(key, prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL));
+  if (!r.ok) throw new Error(r.message + ' Chưa lưu.');
+  p.setProperty(USER_KEY_PREFIX + username, key);
+  try { CacheService.getScriptCache().remove(cooldownCacheKey_(key)); } catch (e) { /* bỏ qua */ }
+  audit_(admin.username, 'DOI_KHOA_RIENG', username, keyHint_(key)); // chỉ ghi 4 ký tự cuối
+  return { hint: keyHint_(key), warn: r.warn, message: r.message };
 }
 
 /* ---- Khoá Gemini "nghỉ" (cooldown): nhớ khoá vừa lỗi để lần quét sau dùng thẳng khoá còn dùng được ---- */
