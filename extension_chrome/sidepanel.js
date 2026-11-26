@@ -254,6 +254,17 @@ async function addFiles(list) {
   renderFiles(); updateScanBtn();
 }
 
+/** Quản trị viên đổi số lượt/ngày ở Web Admin: cập nhật cảnh báo ngay, không phải mở lại panel. */
+function setAnonLimit(n) {
+  if (!state.config || !(n >= 0) || n === state.config.limits.anonPerDay) return;
+  state.config.limits.anonPerDay = n;
+  renderLimits();
+}
+async function refreshAnonLimit() {
+  if (!state.anon) return;
+  try { setAnonLimit(Number((await call('getAppConfig', [])).anonPerDay) || 0); } catch (e) { /* giữ số đang có */ }
+}
+
 const LIMIT_OPEN_KEY = 'ocrLimitOpen';
 /** Ghi chú giới hạn dưới khu chọn tệp: tệp, dung lượng, số lần quét, thời gian, hạn mức AI. */
 function renderLimits() {
@@ -362,6 +373,7 @@ async function doScan() {
     stopScanProgress(true); // quét xong: dừng bộ đếm ngay (trước đây không dừng nên giây vẫn chạy tiếp)
     qr = qr || qr2;
     if (!skipAiUsed) clearQuotaWait(); // AI trả kết quả được thì hạn mức không còn là vấn đề
+    if (state.anon && r.anon) setAnonLimit(Number(r.anon.limit));
     r.data = r.data || {};
     const used = mergeQr(r.data, qr);
     if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
@@ -764,10 +776,10 @@ $('btn-settings').onclick = () => chrome.runtime.openOptionsPage();
 $('btn-pick').onclick = () => $('in-files').click();
 $('in-files').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
 $('btn-scan').onclick = doScan;
-$('btn-back').onclick = () => { state.scan = null; if (state.anon) setAnonDraft(null); show('scan'); };
+$('btn-back').onclick = () => { state.scan = null; if (state.anon) setAnonDraft(null); show('scan'); refreshAnonLimit(); };
 $('btn-save').onclick = doSave;
 $('btn-fill').onclick = doFill;
-$('btn-next').onclick = () => { if (state.anon) setAnonDraft(null); resetScan(); msg(''); show('scan'); };
+$('btn-next').onclick = () => { if (state.anon) setAnonDraft(null); resetScan(); msg(''); show('scan'); refreshAnonLimit(); };
 
 const drop = $('drop');
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
