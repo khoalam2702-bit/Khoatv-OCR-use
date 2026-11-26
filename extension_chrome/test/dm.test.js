@@ -242,3 +242,10 @@ test('CV nhân viên: số điện thoại và email điền đúng ô trên for
   assert.match(m.so_dien_thoai, /_form_dien_thoai_dd"\]$/);
   assert.match(m.email, /_form_email_cty"\]$/);
 });
+
+test('CV ứng viên: địa chỉ không có số nhà thì Địa chỉ liên hệ vẫn nhận nguyên chuỗi', () => {
+  const a = 'Hải Châu - TP. Đà Nẵng';
+  const e = enrichData('CV_UNGVIEN', { dia_chi: a }, dmOld);
+  assert.equal(e.dia_chi_chi_tiet, a);
+  assert.equal(e.dia_chi_tinh_ma, '48');
+});
