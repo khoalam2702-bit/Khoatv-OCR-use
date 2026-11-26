@@ -46,7 +46,7 @@ test('preset FBO HRM nhân viên hợp lệ', async () => {
 test('preset có GPLX, mỗi mục có ít nhất một selector', async () => {
   const fs = await import('node:fs');
   const preset = JSON.parse(fs.readFileSync(new URL('../presets/fbo-hrm.json', import.meta.url), 'utf8'));
-  assert.deepEqual(Object.keys(preset).sort(), ['BIEN_SO_XE', 'CCCD', 'CCCD@UNGVIEN', 'CV_UNGVIEN', 'GPLX', 'HO_CHIEU', 'KHAI_SINH']);
+  assert.deepEqual(Object.keys(preset).sort(), ['BIEN_SO_XE', 'CCCD', 'CCCD@UNGVIEN', 'CV_NHANVIEN', 'CV_UNGVIEN', 'GPLX', 'HO_CHIEU', 'KHAI_SINH']);
   assert.equal(validateMapping(preset, () => true), '');
 });
 

@@ -169,3 +169,17 @@ test('CV nhân viên: Địa chỉ hiện tại tách thành số nhà/tổ + t�
   const p = enrichData('CV_NHANVIEN', { dia_chi: '12 Lê Duẩn, Phường Hải Châu 1, Quận Hải Châu, Đà Nẵng' }, dmOld);
   assert.equal(p.hien_tai_tinh_ma, '48'); assert.ok(p.hien_tai_xa_ma); assert.equal(p.hien_tai_chi_tiet, '12 Lê Duẩn');
 });
+
+test('CV nhân viên: ánh xạ ra đúng ô của form Thông tin nhân viên (đã dò), không có ô trùng với CCCD', () => {
+  const preset = rd('../fbo-hrm.json');
+  const m = preset.CV_NHANVIEN;
+  for (const k of ['ho_ten', 'gioi_tinh', 'ngay_sinh', 'quoc_tich']) assert.equal(m[k], undefined, k + ' đã do CCCD điền');
+  const sel = (k) => [].concat(m[k]).map((x) => (typeof x === 'string' ? x : x.selector))[0];
+  assert.match(sel('hien_tai_chi_tiet'), /dia_chi_ht_so"\]$/); assert.match(sel('hien_tai_tinh_ma'), /dia_chi_ht_tinh"\]$/); assert.match(sel('hien_tai_xa_ma'), /dia_chi_ht_xa"\]$/);
+  assert.match(sel('cap_dao_tao'), /ma_tdhv"\]$/); assert.equal(m.cap_dao_tao.map['Đại học'], '50');
+  assert.match(sel('ky_nang'), /_ghi_chu"\]$/);
+  const e = enrichData('CV_NHANVIEN', { tu_nam: '2014', den_nam: '2017' }, dmOld);
+  assert.equal(e.thoi_gian_hoc, '2014 - 2017');
+  // CCCD: Số nhà/tổ điền vào ô nhập thật (…_so), không phải ô địa chỉ ghép ẩn
+  assert.match(preset.CCCD.thuong_tru_chi_tiet, /dia_chi_th_tru_so"\]$/); assert.match(preset.CCCD.que_quan_chi_tiet, /que_quan_so"\]$/);
+});

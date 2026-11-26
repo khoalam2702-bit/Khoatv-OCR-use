@@ -46,7 +46,8 @@ test('mappingVariants: bản mặc định đứng đầu, gom biến thể theo
 });
 test('pickVariant: nhận diện form nhân viên và form ứng viên từ ô thấy được', () => {
   const v = mappingVariants(PRESET, 'CCCD');
-  const common = mappingSelectors(v[0].mapping).filter((s) => !/_ho_nv"|_ten_nv"/.test(s));
+  const other = new Set(mappingSelectors(v[1].mapping)); // ô có ở CẢ HAI form (ô địa chỉ _so chỉ có ở form nhân viên)
+  const common = mappingSelectors(v[0].mapping).filter((s) => other.has(s) && !/_ho_nv"|_ten_nv"/.test(s));
   const nv = pickVariant(v, [...common, '[id$="_dirExtender_form_ho_nv"]', '[id$="_dirExtender_form_ten_nv"]']);
   const uv = pickVariant(v, [...common, '[id$="_dirExtender_form_ho_uv"]', '[id$="_dirExtender_form_ten_uv"]']);
   assert.equal(nv.variant, ''); assert.equal(uv.variant, 'UNGVIEN');

@@ -242,3 +242,9 @@ test('nhiều ô cùng khớp selector: điền và đọc lại đúng ô đang
   assert.equal(shown.value, 'Tổ 15'); assert.equal(hidden.value, '');
   assert.equal(plain(w.__KHOATV_READ__(['[id$="_dia_chi"]']))[0].value, 'Tổ 15');
 });
+
+test('append với sep: mỗi mục một dòng trong Ghi chú, giữ tiền tố đầu mục', () => {
+  const w = page('<textarea id="gc"></textarea>');
+  w.__KHOATV_FILL__({ a: { selector: '#gc', prefix: 'Kỹ năng: ', append: true, sep: '\n' }, b: { selector: '#gc', prefix: 'Sở thích: ', append: true, sep: '\n' } }, { a: 'Giao tiếp', b: 'Đọc sách' });
+  assert.equal(w.document.getElementById('gc').value, 'Kỹ năng: Giao tiếp\nSở thích: Đọc sách');
+});

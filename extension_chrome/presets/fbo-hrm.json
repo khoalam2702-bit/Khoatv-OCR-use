@@ -45,8 +45,8 @@
     "que_quan_tinh_ma": "[id$=\"_dirExtender_form_que_quan_tinh\"]",
     "thuong_tru_xa_ma": "[id$=\"_dirExtender_form_dia_chi_th_tru_xa\"]",
     "que_quan_xa_ma": "[id$=\"_dirExtender_form_que_quan_xa\"]",
-    "thuong_tru_chi_tiet": "[id$=\"_dirExtender_form_dia_chi_th_tru\"]",
-    "que_quan_chi_tiet": "[id$=\"_dirExtender_form_que_quan\"]"
+    "thuong_tru_chi_tiet": "[id$=\"_dirExtender_form_dia_chi_th_tru_so\"]",
+    "que_quan_chi_tiet": "[id$=\"_dirExtender_form_que_quan_so\"]"
   },
   "CCCD@UNGVIEN": {
     "so_cccd": "[id$=\"_dirExtender_form_cmnd_so\"]",
@@ -233,6 +233,83 @@
     "ngay_hl_tu": {
       "selector": "[id$=\"_FormGridhrttctpt_inputCell_{row}.20\"]",
       "format": "date"
+    }
+  },
+  "CV_NHANVIEN": {
+    "cap_dao_tao": {
+      "selector": "[id$=\"_dirExtender_form_ma_tdhv\"]",
+      "map": {
+        "Phổ thông": "10",
+        "Trung học": "20",
+        "Trung cấp": "30",
+        "Cao đẳng": "40",
+        "Đại học": "50",
+        "Thạc sĩ": "60",
+        "Thạc sỹ": "60",
+        "Tiến sĩ": "70",
+        "Tiến sỹ": "70"
+      },
+      "contains": true
+    },
+    "truong_dao_tao": "[id$=\"_dirExtender_form_truong_hoc\"]",
+    "xep_loai": "[id$=\"_dirExtender_form_loai_tot_nghiep\"]",
+    "ngoai_ngu": {
+      "selector": "[id$=\"_dirExtender_form_ma_nn\"]",
+      "map": {
+        "Tiếng Anh": "01",
+        "Tiếng Pháp": "02",
+        "Tiếng Nga": "03",
+        "Tiếng Đức": "04",
+        "Tiếng Trung": "05",
+        "Tiếng Nhật": "06",
+        "Tiếng Hàn": "07"
+      }
+    },
+    "ngoai_ngu_diem": "[id$=\"_dirExtender_form_diem\"]",
+    "hien_tai_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_ht_tinh\"]",
+    "hien_tai_xa_ma": "[id$=\"_dirExtender_form_dia_chi_ht_xa\"]",
+    "hien_tai_chi_tiet": "[id$=\"_dirExtender_form_dia_chi_ht_so\"]",
+    "ky_nang": {
+      "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
+      "prefix": "Kỹ năng: ",
+      "append": true,
+      "sep": "\n"
+    },
+    "so_thich": {
+      "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
+      "prefix": "Sở thích: ",
+      "append": true,
+      "sep": "\n"
+    },
+    "chung_chi": {
+      "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
+      "prefix": "Chứng chỉ: ",
+      "append": true,
+      "sep": "\n"
+    },
+    "kinh_nghiem": {
+      "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
+      "prefix": "Kinh nghiệm làm việc: ",
+      "append": true,
+      "sep": "\n"
+    },
+    "chuyen_nganh": {
+      "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
+      "prefix": "Chuyên ngành: ",
+      "append": true,
+      "sep": "\n"
+    },
+    "thoi_gian_hoc": {
+      "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
+      "prefix": "Thời gian học: ",
+      "append": true,
+      "sep": "\n"
+    },
+    "ngoai_ngu_khac": {
+      "selector": "[id$=\"_dirExtender_form_ghi_chu\"]",
+      "prefix": "Ngoại ngữ khác: ",
+      "append": true,
+      "sep": "\n"
     }
   }
 }

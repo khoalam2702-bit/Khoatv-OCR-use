@@ -181,6 +181,7 @@ export const DERIVED_LABELS = {
   thuong_tru_chi_tiet: 'Thường trú - Số nhà, tổ', que_quan_chi_tiet: 'Quê quán - Số nhà, tổ',
   hien_tai_tinh_ma: 'Hiện tại - Tỉnh/thành', hien_tai_xa_ma: 'Hiện tại - Phường/xã', hien_tai_chi_tiet: 'Hiện tại - Số nhà, tổ', hien_tai_xa_goi_y: 'Hiện tại - Gợi ý xã/phường (xã cũ bị chia, chọn tay)',
   dia_chi_tinh_ma: 'Địa chỉ - Tỉnh/thành', dia_chi_xa_ma: 'Địa chỉ - Phường/xã', dia_chi_chi_tiet: 'Địa chỉ - Số nhà, tổ',
+  thoi_gian_hoc: 'Thời gian học (năm)',
   ma_pt: 'Mã người phụ thuộc', loai_giay_to: 'Loại giấy tờ', loai_qh: 'Loại quan hệ', ngay_hl_tu: 'Hiệu lực từ ngày',
   que_quan_tinh_ma: 'Quê quán - Tỉnh/thành', que_quan_xa_ma: 'Quê quán - Phường/xã',
   noi_cap_ma: 'Nơi cấp (mã quốc tịch)', noi_cap_visa_ma: 'Nơi cấp thị thực (mã quốc tịch)'
@@ -194,6 +195,10 @@ export function enrichData(docType, data, dm, ctx) {
     out.ngay_hl_tu = (ctx && ctx.today) || '';
   }
   if (!dm) return out;
+  if (docType === 'CV_NHANVIEN') { // form nhân viên chỉ có ô ngày đầy đủ cho thời gian học: không bịa ngày/tháng, đưa khoảng năm vào Ghi chú
+    const a = String(out.tu_nam == null ? '' : out.tu_nam).trim(), b = String(out.den_nam == null ? '' : out.den_nam).trim();
+    out.thoi_gian_hoc = a && b ? a + ' - ' + b : a || b;
+  }
   if (docType === 'CCCD') {
     // Nơi sinh chỉ có một ô chữ: thẻ không in Nơi sinh thì gom thông tin nơi chốn trên thẻ (Quê quán) vào ô này.
     if (!String(out.noi_sinh == null ? '' : out.noi_sinh).trim() && out.que_quan) out.noi_sinh = out.que_quan;

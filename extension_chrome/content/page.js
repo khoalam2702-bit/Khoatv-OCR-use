@@ -7,6 +7,7 @@
  * mapping: { "<mã trường OCR>": "<css selector>" | { selector, map?, format?, transform? } | [ nhiều mục như trên ] }
  *   map:    { "Nam": "1", "Nữ": "0" }  đổi giá trị OCR sang giá trị ô chọn
  *   format: "iso" ép ngày dd/MM/yyyy thành yyyy-MM-dd (ô type=date tự nhận); "date" chỉ điền khi giá trị đúng dd/MM/yyyy
+ *   sep:    ký tự nối khi append (mặc định "; "; "\n" = mỗi mục một dòng)
  *   prefix + append: dồn nhiều trường OCR vào một ô (vd Ghi chú): "Kỹ năng: ...; Kinh nghiệm: ...", tự cắt theo maxlength của ô
  *   fixed:  giá trị cố định luôn điền (không cần OCR), vd mã loại giấy tờ "02"
  *   contains: true thì khoá của map chỉ cần nằm TRONG giá trị OCR (vd "Hồ Chí Minh" khớp "CA TP Hồ Chí Minh"), khoá dài được ưu tiên
@@ -141,8 +142,8 @@
     v = String(v);
     if (dry && spec.append) return 'ok'; // ô dồn nhiều trường (Ghi chú): luôn nối thêm, không tính là ghi đè
     if (spec.prefix) v = spec.prefix + v;
-    // append: nhiều trường OCR dồn vào cùng một ô (ví dụ Ghi chú), cách nhau bằng "; "
-    if (spec.append && touched.has(el) && el.value) v = el.value + '; ' + v;
+    // append: nhiều trường OCR dồn vào cùng một ô (ví dụ Ghi chú), cách nhau bằng "; " (hoặc spec.sep, vd "\n" để mỗi mục một dòng)
+    if (spec.append && touched.has(el) && el.value) v = el.value + (spec.sep != null ? spec.sep : '; ') + v;
     touched.add(el);
     if (el.maxLength > 0 && v.length > el.maxLength) v = v.slice(0, el.maxLength);
     if (dry) { dry.push({ old: String(el.value || ''), v: v, src: el.getAttribute('data-khoatv-src') || '' }); return 'ok'; } // chỉ ghi nhận giá trị cũ / mới
