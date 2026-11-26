@@ -6,6 +6,7 @@
  *   GEMINI_API_KEY_BACKUP, GEMINI_API_KEY_BACKUP_2, _3, _4 (tuỳ chọn) Khoá dự phòng 1 → 4: lần lượt dùng khi khoá trước hết hạn mức (429), bị từ chối (403) hoặc lỗi máy chủ (5xx). Khoá vừa lỗi được cho "nghỉ" (tối đa 30 phút) để các lần quét sau dùng thẳng khoá còn lại
  *   GEMINI_TIER       (tuỳ chọn) free | paid: nhãn hiển thị cho ADMIN
  *   GEMINI_MODEL      (tuỳ chọn) Mặc định gemini-3.6-flash
+ *   GEMINI_FALLBACK_MODEL (tuỳ chọn) Model dùng khi model chính quá tải (5xx). Mặc định gemini-3.5-flash-lite; đặt off để tắt
  *   DRIVE_FOLDER_ID   (tuỳ chọn) Thư mục gốc trên Drive, mặc định như bên dưới
  *
  * Cấu trúc trong thư mục gốc (hệ thống tự tạo khi cần):
@@ -18,6 +19,7 @@
 
 const DEFAULTS = {
   GEMINI_MODEL: 'gemini-3.6-flash',
+  GEMINI_FALLBACK_MODEL: 'gemini-3.5-flash-lite',
   DRIVE_FOLDER_ID: '10H3azrz0_xObAmQsans_JYgI-acuK346'
 };
 
@@ -959,6 +961,7 @@ function scanCore_(me, payload, anon) {
   if (total > LIMITS.MAX_TOTAL_BYTES) throw new Error('Tổng dung lượng các tệp quá lớn (tối đa 24 MB).');
   rateLimit_(me.username);
   resetFetchStats_();
+  FALLBACK_USED_ = '';
 
   const blobs = items.map(function (it) {
     try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
@@ -995,7 +998,7 @@ function scanCore_(me, payload, anon) {
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;
   const timing = { driveMs: tAi - tDrive, aiMs: tFix - tAi, calls: FETCH_STATS_.calls, retries: FETCH_STATS_.retries, waitMs: FETCH_STATS_.waitMs, codes: FETCH_STATS_.codes.slice(0, 8) };
   console.log('scanDocument timing ' + JSON.stringify(timing));
-  return { data: data, fileIds: fileIds, ms: Date.now() - started, timing: timing };
+  return { data: data, fileIds: fileIds, ms: Date.now() - started, timing: timing, fallbackModel: FALLBACK_USED_ };
 }
 
 /* ---------- Quét không cần tài khoản (Extension) ----------
@@ -1259,6 +1262,7 @@ function buildSchema_(type) {
 }
 
 const OVERLOAD_WAITS_MS = [3000, 8000, 15000];
+let FALLBACK_USED_ = ''; // model dự phòng đã dùng trong lượt quét này (rỗng = model chính)
 
 function callGemini_(type, files, opts) {
   opts = opts || {};
@@ -1284,7 +1288,7 @@ function callGemini_(type, files, opts) {
     }],
     generationConfig: { responseMimeType: 'application/json', responseSchema: buildSchema_(type), temperature: 0 }
   };
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
+  function url_(m) { return 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent'; }
   const keys = geminiKeys_();
   // Khoá đang "nghỉ" (vừa hết hạn mức/bị từ chối) được bỏ qua để khỏi tốn lượt gọi; hết khoá khả dụng thì báo ngay, không gọi mạng.
   const split = splitKeysByCooldown_(keys);
@@ -1292,8 +1296,8 @@ function callGemini_(type, files, opts) {
     throw new Error('Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.' + retryMarker_(split.minWaitSec));
   }
   const ready = split.ready;
-  function post_(key) {
-    return fetchRetry_(url, {
+  function post_(key, m) {
+    return fetchRetry_(url_(m || model), {
       method: 'post',
       contentType: 'application/json',
       headers: { 'x-goog-api-key': key },
@@ -1325,9 +1329,10 @@ function callGemini_(type, files, opts) {
     }
     const c = resp.getResponseCode();
     if (c === 200) break;
-    // Hết hạn mức (429), bị từ chối (403 / khoá sai) hoặc lỗi máy chủ (5xx): cho khoá này nghỉ rồi thử khoá kế tiếp (nếu có)
+    // Hết hạn mức (429), bị từ chối (403 / khoá sai): cho khoá này nghỉ rồi thử khoá kế tiếp (nếu có).
+    // Lỗi máy chủ (5xx) là do model quá tải, không do khoá: thử khoá kế tiếp nhưng không cho khoá nghỉ.
     if (c === 429 || c === 403 || c >= 500 || isBadKey_(resp)) {
-      markKeyCooldown_(used, cooldownSecFor_(resp, c));
+      if (c < 500) markKeyCooldown_(used, cooldownSecFor_(resp, c));
       if (i < ready.length - 1) {
         console.error('Khoá Gemini ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + ' lỗi ' + c + ', chuyển khoá kế tiếp: ' + resp.getContentText().slice(0, 300));
         continue;
@@ -1335,15 +1340,33 @@ function callGemini_(type, files, opts) {
     }
     break;
   }
-  // 503... là Google quá tải tạm thời (không do khoá): thử hết khoá vẫn lỗi thì chờ rồi thử lại, chờ lâu dần.
-  // Chỉ khi có nhiều khoá (một khoá thì fetchRetry_ đã tự chờ và thử lại) và chưa quá 90 giây, tránh người dùng đợi vô ích.
-  for (let n = 0; ready.length > 1 && n < OVERLOAD_WAITS_MS.length; n++) {
+  // 503... là Google quá tải tạm thời (không do khoá): chờ lâu dần rồi thử lại, sau đó chuyển sang model dự phòng.
+  // Dừng nếu đã quá 90 giây, tránh người dùng đợi vô ích. Một khoá thì fetchRetry_ đã tự chờ và thử lại model chính.
+  const backup = prop_('GEMINI_FALLBACK_MODEL', DEFAULTS.GEMINI_FALLBACK_MODEL);
+  const hasBackup = backup !== 'off' && backup !== model;
+  const many = ready.length > 1;
+  const steps = hasBackup
+    ? (many ? [[3000, model], [1000, backup], [8000, backup]] : [[1000, backup], [8000, backup]])
+    : (many ? OVERLOAD_WAITS_MS.map(function (ms) { return [ms, model]; }) : []);
+  for (let n = 0; n < steps.length; n++) {
     if (resp.getResponseCode() < 500 || Date.now() - startedAt > 90000) break;
-    Utilities.sleep(OVERLOAD_WAITS_MS[n]);
-    FETCH_STATS_.retries++; FETCH_STATS_.waitMs += OVERLOAD_WAITS_MS[n];
+    const wait = steps[n][0], m = steps[n][1];
+    Utilities.sleep(wait);
+    FETCH_STATS_.retries++; FETCH_STATS_.waitMs += wait;
     used = ready[n % ready.length];
     keyIdx = keys.indexOf(used);
-    resp = post_(used);
+    let next = post_(used, m);
+    if (m === model) { resp = next; continue; }
+    if (fast && next.getResponseCode() === 400 && !isBadKey_(next)) {
+      delete body.generationConfig.thinkingConfig;
+      delete body.generationConfig.mediaResolution;
+      next = post_(used, m);
+    }
+    const c = next.getResponseCode();
+    if (c === 200) { resp = next; FALLBACK_USED_ = m; console.log('Model chính quá tải, đã đọc bằng model dự phòng ' + m); break; }
+    console.error('Model dự phòng ' + m + ' lỗi ' + c + ': ' + next.getContentText().slice(0, 300));
+    // Giữ lỗi quá tải của model chính để báo người dùng; dự phòng sai cấu hình (404...) thì thôi không gọi nữa.
+    if (c !== 429 && c < 500) break;
   }
   const code = resp.getResponseCode();
   if (code !== 200) {

@@ -392,6 +392,7 @@ async function doScan() {
     if (skipAiUsed) msg('Chế độ chỉ QR: không dùng AI. Đã lấy số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp từ mã QR. Quê quán, nơi sinh, ngày hết hạn hãy tự nhập.', 'info');
     else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
     else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
+    if (r.fallbackModel) msg('Máy chủ AI chính đang quá tải nên lượt này đọc bằng model dự phòng (' + r.fallbackModel + '). Hãy kiểm tra kỹ dấu tiếng Việt và các con số.', 'info');
     const tm = r && r.timing;
     const left = state.anon && r.anon ? 'Còn ' + Math.max(0, r.anon.limit - r.anon.used) + '/' + r.anon.limit + ' lượt quét không cần tài khoản hôm nay.' : '';
     stopScanProgress(true, ((tm ? '(lưu tệp ' + (tm.driveMs / 1000).toFixed(1) + 's, AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ') ' : '') + left).trim());
