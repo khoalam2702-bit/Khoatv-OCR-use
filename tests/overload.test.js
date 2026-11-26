@@ -19,22 +19,22 @@ const reset = p => { plan = p; calls = 0; urls.length = 0; sleeps.length = 0; Ob
 const MAIN = 'gemini-3.6-flash', LITE = 'gemini-3.5-flash-lite';
 const used = () => vm.runInContext('FALLBACK_USED_', ctx);
 
-reset([BUSY, BUSY, BUSY, OK]);          // 2 khoá đều 503, chờ thử lại vẫn 503 -> model dự phòng đọc được
+reset([BUSY, BUSY, BUSY, BUSY, BUSY, OK]); // hết lượt model chính vẫn 503 -> mới tới model dự phòng
 assert.strictEqual(run().so_cccd, '9');
-assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, LITE]);
-assert.deepStrictEqual(sleeps, [3000, 1000]);
+assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, MAIN, MAIN, LITE]);
+assert.deepStrictEqual(sleeps, [3000, 8000, 15000, 1000]);
 assert.strictEqual(used(), LITE);
 
 reset([OK]);                            // 503 không cho khoá nghỉ: lượt kế tiếp gọi được ngay
 assert.strictEqual(run().so_cccd, '9');
 
-reset([BUSY, BUSY, BUSY, BUSY, BUSY]);  // cả hai model quá tải: báo lỗi dễ hiểu
+reset(Array(7).fill(BUSY));             // cả hai model quá tải: báo lỗi dễ hiểu
 assert.throws(run, /quá tải \(lỗi 503\)/);
-assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, LITE, LITE]);
+assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, MAIN, MAIN, LITE, LITE]);
 
-reset([BUSY, BUSY, BUSY, resp(404)]);   // tên model dự phòng sai: vẫn báo quá tải, không gọi thêm
+reset([BUSY, BUSY, BUSY, BUSY, BUSY, resp(404)]);   // tên model dự phòng sai: vẫn báo quá tải, không gọi thêm
 assert.throws(run, /quá tải \(lỗi 503\)/);
-assert.strictEqual(calls, 4);
+assert.strictEqual(calls, 6);
 
 props.GEMINI_FALLBACK_MODEL = 'off';    // tắt dự phòng: chỉ chờ và thử lại model chính
 reset([BUSY, BUSY, BUSY, BUSY, BUSY]);

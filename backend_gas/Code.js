@@ -1345,9 +1345,9 @@ function callGemini_(type, files, opts) {
   const backup = prop_('GEMINI_FALLBACK_MODEL', DEFAULTS.GEMINI_FALLBACK_MODEL);
   const hasBackup = backup !== 'off' && backup !== model;
   const many = ready.length > 1;
-  const steps = hasBackup
-    ? (many ? [[3000, model], [1000, backup], [8000, backup]] : [[1000, backup], [8000, backup]])
-    : (many ? OVERLOAD_WAITS_MS.map(function (ms) { return [ms, model]; }) : []);
+  // Model dự phòng (bản Lite) đọc kém hơn nên chỉ dùng sau cùng, khi đã hết lượt thử model chính.
+  const steps = (many ? OVERLOAD_WAITS_MS.map(function (ms) { return [ms, model]; }) : [])
+    .concat(hasBackup ? [[1000, backup], [8000, backup]] : []);
   for (let n = 0; n < steps.length; n++) {
     if (resp.getResponseCode() < 500 || Date.now() - startedAt > 90000) break;
     const wait = steps[n][0], m = steps[n][1];
