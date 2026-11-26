@@ -1262,7 +1262,7 @@ function buildSchema_(type) {
   return { type: 'OBJECT', properties: props, required: all.map(function (f) { return f.k; }) };
 }
 
-const OVERLOAD_WAITS_MS = [3000, 8000, 15000];
+const OVERLOAD_WAITS_MS = [2000, 5000];
 let FALLBACK_USED_ = ''; // model dự phòng đã dùng trong lượt quét này (rỗng = model chính)
 
 function callGemini_(type, files, opts) {

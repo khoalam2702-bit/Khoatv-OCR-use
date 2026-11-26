@@ -105,8 +105,6 @@ export default function SettingsPage() {
         <p className="font-medium">Gói Google AI Pro / Ultra (đăng ký ở ứng dụng Gemini) không áp dụng cho khoá API.</p>
         <p className="mt-1">Muốn quét nhiều và ổn định: tạo khoá ở Google AI Studio (aistudio.google.com/apikey), gắn tài khoản thanh toán (Cloud Billing) cho project của khoá, rồi dán vào ô &quot;Khoá chính&quot; bên dưới. Khoá chỉ lưu trên máy chủ Apps Script, không hiện lại trên giao diện.</p>
       </div>
-      {err && <p className="rounded bg-red-50 p-2 text-sm text-red-700">{err}</p>}
-      {ok && <p className="rounded bg-green-50 p-2 text-sm text-green-700">{ok}</p>}
       <form onSubmit={save} className="space-y-3 rounded-lg border bg-white p-4">
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><span className="text-slate-500">Khoá chính</span><div className="font-medium">{cfg ? slotText(cfg.main) : '...'}</div></div>
@@ -116,12 +114,12 @@ export default function SettingsPage() {
         </div>
         <p className="rounded bg-slate-50 p-2 text-xs text-slate-600">Thứ tự dùng: khoá chính, khi hết hạn mức (hoặc bị từ chối, lỗi máy chủ) thì lần lượt dự phòng 1, 2, 3, 4. Mỗi khoá nên tạo ở một dự án Google khác nhau để hạn mức độc lập. Ô để trống = giữ nguyên khoá đang lưu.</p>
         <label className="block text-sm">Khoá chính (trả phí) — để trống nếu không đổi
-          <input type="password" autoComplete="off" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={cfg?.main.set ? `Đang dùng ${cfg.main.hint}, để trống nếu không đổi` : 'AIza...'} />
+          <input type="password" autoComplete="new-password" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={cfg?.main.set ? `Đang dùng ${cfg.main.hint}, để trống nếu không đổi` : 'AIza...'} />
         </label>
         {[0, 1, 2, 3].map((i) => (
           <div key={i}>
             <label className="block text-sm">Khoá dự phòng {i + 1} — để trống nếu không đổi
-              <input type="password" autoComplete="off" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={backupKeys[i]} onChange={(e) => setBak(i, e.target.value)} placeholder={baks[i]?.set ? `Đang dùng ${baks[i].hint}, để trống nếu không đổi` : 'AIza...'} />
+              <input type="password" autoComplete="new-password" spellCheck={false} className="mt-1 w-full rounded border px-2 py-1.5 font-mono" value={backupKeys[i]} onChange={(e) => setBak(i, e.target.value)} placeholder={baks[i]?.set ? `Đang dùng ${baks[i].hint}, để trống nếu không đổi` : 'AIza...'} />
             </label>
             {baks[i]?.set && !backupKeys[i].trim() && (
               <label className="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked={clearBackups[i]} onChange={(e) => setClr(i, e.target.checked)} /> Xoá khoá dự phòng {i + 1} đang lưu</label>
@@ -139,6 +137,8 @@ export default function SettingsPage() {
           </label>
         </div>
         <p className="text-xs text-slate-500">Khi lưu, hệ thống gọi thử Gemini 1 lần với khoá mới. Khoá sai thì không lưu gì.</p>
+        {err && <p role="alert" className="rounded bg-red-50 p-2 text-sm text-red-700">{err}</p>}
+        {ok && <p role="status" className="rounded bg-green-50 p-2 text-sm text-green-700">{ok}</p>}
         <div className="flex gap-2">
           <button className="btn btn-primary" disabled={busy}>{busy ? 'Đang xử lý...' : 'Kiểm tra và lưu'}</button>
           <button type="button" className="btn" disabled={busy} onClick={test}>Kiểm tra khoá đang dùng</button>

@@ -47,6 +47,6 @@ ctx.UrlFetchApp.fetch = slow; ctx.Date = Date;
 props.GEMINI_FALLBACK_MODEL = 'off';    // tắt dự phòng: chỉ chờ và thử lại model chính
 reset([BUSY, BUSY, BUSY, BUSY, BUSY]);
 assert.throws(run, /quá tải/);
-assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, MAIN, MAIN]);
-assert.deepStrictEqual(sleeps, [3000, 8000, 15000]);
+assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, MAIN]);
+assert.deepStrictEqual(sleeps, [2000, 5000]);
 console.log('overload.test OK');
