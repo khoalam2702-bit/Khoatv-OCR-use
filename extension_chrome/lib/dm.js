@@ -1,3 +1,5 @@
+import { normalizeJobs, jobFields } from './jobs.js';
+
 // Tra cứu danh mục FBO (tỉnh/thành, phường/xã, quốc tịch) từ presets/dm/*.json: đổi tên trong dữ liệu OCR thành MÃ để điền ô tra cứu.
 // Không khớp thì trả rỗng (không đoán). Địa chỉ theo 2 cấp (tỉnh + phường/xã) của danh mục hiện hành.
 
@@ -172,13 +174,17 @@ export function lookupNationality(dm, text) {
 // Riêng Nơi sinh chỉ có một ô chữ gom cả 3 nên không tách.
 const ADDR = {
   CCCD: { thuong_tru: 'noi_thuong_tru', que_quan: 'que_quan' },
-  CV_UNGVIEN: { dia_chi: 'dia_chi' }
+  CV_UNGVIEN: { dia_chi: 'dia_chi' },
+  CV_NHANVIEN: { hien_tai: 'dia_chi' } // Địa chỉ hiện tại trên form Thông tin nhân viên
 };
 export const DERIVED_LABELS = {
   thuong_tru_tinh_ma: 'Thường trú - Tỉnh/thành', thuong_tru_xa_ma: 'Thường trú - Phường/xã',
   thuong_tru_xa_goi_y: 'Thường trú - Gợi ý xã/phường (xã cũ bị chia, chọn tay)', que_quan_xa_goi_y: 'Quê quán - Gợi ý xã/phường (xã cũ bị chia, chọn tay)', dia_chi_xa_goi_y: 'Địa chỉ - Gợi ý xã/phường (xã cũ bị chia, chọn tay)',
   thuong_tru_chi_tiet: 'Thường trú - Số nhà, tổ', que_quan_chi_tiet: 'Quê quán - Số nhà, tổ',
+  hien_tai_tinh_ma: 'Hiện tại - Tỉnh/thành', hien_tai_xa_ma: 'Hiện tại - Phường/xã', hien_tai_chi_tiet: 'Hiện tại - Số nhà, tổ', hien_tai_xa_goi_y: 'Hiện tại - Gợi ý xã/phường (xã cũ bị chia, chọn tay)',
   dia_chi_tinh_ma: 'Địa chỉ - Tỉnh/thành', dia_chi_xa_ma: 'Địa chỉ - Phường/xã', dia_chi_chi_tiet: 'Địa chỉ - Số nhà, tổ',
+  thoi_gian_hoc: 'Thời gian học (năm)',
+  ct_don_vi: 'Đơn vị', ct_vi_tri: 'Vị trí công việc', ct_tu_ngay: 'Từ ngày', ct_den_ngay: 'Đến ngày', ct_so_nam: 'Năm công tác', ct_ghi_chu: 'Ghi chú',
   ma_pt: 'Mã người phụ thuộc', loai_giay_to: 'Loại giấy tờ', loai_qh: 'Loại quan hệ', ngay_hl_tu: 'Hiệu lực từ ngày',
   que_quan_tinh_ma: 'Quê quán - Tỉnh/thành', que_quan_xa_ma: 'Quê quán - Phường/xã',
   noi_cap_ma: 'Nơi cấp (mã quốc tịch)', noi_cap_visa_ma: 'Nơi cấp thị thực (mã quốc tịch)'
@@ -187,11 +193,19 @@ export const DERIVED_LABELS = {
 /** Thêm các khóa mã (thuong_tru_tinh_ma...) vào bản sao dữ liệu OCR. Ánh xạ FBO tham chiếu các khóa này. */
 export function enrichData(docType, data, dm, ctx) {
   const out = { ...(data || {}) };
+  if (docType === 'CV_NHANVIEN' && ctx && Number.isInteger(ctx.job)) { // điền công việc thứ ctx.job (từ 0) vào form quá trình công tác
+    const job = normalizeJobs(out.cong_viec)[ctx.job];
+    if (job) Object.assign(out, jobFields(job, ctx.today).fields);
+  }
   if (docType === 'KHAI_SINH') { // người phụ thuộc: loại quan hệ chọn ở Side Panel (Con 01, Cha/Mẹ 03), hiệu lực từ = ngày quét
     out.loai_qh = ctx && ctx.relation === 'CHA_ME' ? '03' : '01';
     out.ngay_hl_tu = (ctx && ctx.today) || '';
   }
   if (!dm) return out;
+  if (docType === 'CV_NHANVIEN') { // form nhân viên chỉ có ô ngày đầy đủ cho thời gian học: không bịa ngày/tháng, đưa khoảng năm vào Ghi chú
+    const a = String(out.tu_nam == null ? '' : out.tu_nam).trim(), b = String(out.den_nam == null ? '' : out.den_nam).trim();
+    out.thoi_gian_hoc = a && b ? a + ' - ' + b : a || b;
+  }
   if (docType === 'CCCD') {
     // Nơi sinh chỉ có một ô chữ: thẻ không in Nơi sinh thì gom thông tin nơi chốn trên thẻ (Quê quán) vào ô này.
     if (!String(out.noi_sinh == null ? '' : out.noi_sinh).trim() && out.que_quan) out.noi_sinh = out.que_quan;

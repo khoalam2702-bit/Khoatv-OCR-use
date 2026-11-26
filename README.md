@@ -1,6 +1,6 @@
 # OCR tài liệu: Google Apps Script + Gemini Vision + Google Sheets + Google Drive
 
-Web App quét và bóc tách 12 loại tài liệu (CCCD, hộ chiếu, GPLX, giấy khai sinh, CV, sổ đỏ, đơn hàng, phiếu giao hàng, phiếu nhập/xuất kho, màn hình cân điện tử, biển số xe). Toàn bộ chạy trong hệ sinh thái Google, không cần cơ sở dữ liệu ngoài.
+Web App quét và bóc tách 13 loại tài liệu (CCCD, hộ chiếu, GPLX, giấy khai sinh, CV ứng viên, CV nhân viên, sổ đỏ, đơn hàng, phiếu giao hàng, phiếu nhập/xuất kho, màn hình cân điện tử, biển số xe). Toàn bộ chạy trong hệ sinh thái Google, không cần cơ sở dữ liệu ngoài.
 
 ## Luồng xử lý
 
@@ -27,7 +27,7 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 ```
 
 - Năm và tháng tính theo thời điểm bấm lưu, múi giờ Việt Nam.
-- Trong file tháng, tên sheet = mã loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `SO_DO`, `DON_HANG`, `GIAO_HANG`, `NHAP_KHO`, `XUAT_KHO`, `CAN_DIEN_TU`, `BIEN_SO_XE`.
+- Trong file tháng, tên sheet = mã loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `CV_NHANVIEN`, `SO_DO`, `DON_HANG`, `GIAO_HANG`, `NHAP_KHO`, `XUAT_KHO`, `CAN_DIEN_TU`, `BIEN_SO_XE`.
 - 7 cột hệ thống đầu mỗi sheet: `scan_timestamp`, `document_type`, `raw_file_url`, `raw_file_id`, `scanned_by`, `source` (`WEB_APP` hoặc `EXTENSION`), `fbo_sync_status` (`PENDING`, `FILLED`, `ERROR`); sau đó là các trường bóc tách. Sheet của các tháng cũ tự được chèn 2 cột mới ở lần ghi kế tiếp, dữ liệu cũ để trống 2 cột này (hiểu là `WEB_APP` / `PENDING`).
 - Cột chữ được định dạng văn bản nên giữ được số 0 đầu (số CCCD, số điện thoại). Cột tiền, khối lượng là số.
 - Chi tiết hàng hoá / vật tư lưu dạng JSON trong 1 ô.
@@ -46,7 +46,7 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 ```
 backend_gas/       Apps Script: Code.js (logic + cổng doPost), index.html (giao diện GAS cũ), appsscript.json
 admin_webapp/      Web Admin Next.js (NextAuth): đối soát bản ghi, quản lý tài khoản. Xem admin_webapp/README.md
-extension_chrome/  Extension Chrome/Edge (MV3 Side Panel): quét 7 loại OCR, lưu về GAS, điền form FBO. Xem mục "Extension" bên dưới
+extension_chrome/  Extension Chrome/Edge (MV3 Side Panel): quét 8 loại OCR, lưu về GAS, điền form FBO. Xem mục "Extension" bên dưới
 .github/workflows/ deploy.yml (đẩy backend_gas lên GAS), admin-webapp.yml (build Next.js), extension.yml (test extension)
 public/, vercel.json   khung Vercel bao quanh giao diện GAS cũ (giữ nguyên)
 ```
@@ -55,7 +55,7 @@ Mọi thao tác **ghi** dữ liệu đều đi qua Apps Script (luật chống t
 
 ## Extension Chrome/Edge (`extension_chrome/`)
 
-Side Panel (Chrome / Edge 114+). Giai đoạn này hỗ trợ 7 loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `CAN_DIEN_TU`, `BIEN_SO_XE` (danh sách ở `extension_chrome/lib/config.js`; nhãn và trường lấy từ `getAppConfig`).
+Side Panel (Chrome / Edge 114+). Giai đoạn này hỗ trợ 8 loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `CV_NHANVIEN`, `CAN_DIEN_TU`, `BIEN_SO_XE` (danh sách ở `extension_chrome/lib/config.js`; nhãn và trường lấy từ `getAppConfig`).
 
 Luồng: đăng nhập (tài khoản Web Admin) → chọn loại → thêm ảnh/PDF (chọn tệp, kéo thả, Ctrl+V; ảnh nén JPEG 0.92) → `scanDocument` → xem/sửa → `saveRecord` (ghi `source = EXTENSION`, `fbo_sync_status = PENDING`) → "Điền vào FBO" → `updateSyncStatus` (`FILLED` / `ERROR`).
 
@@ -79,11 +79,28 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 
 Kiểm thử: `cd extension_chrome && npm ci && npm test`.
 
+### CV nhân viên (`CV_NHANVIEN`)
+
+Quét CV rồi điền vào form **Thông tin nhân viên** (cùng form CCCD đã điền; không điền các ô trùng CCCD: họ tên, giới tính, ngày sinh, quốc tịch). Ánh xạ trong `presets/fbo-hrm.json`, đã đối chiếu với form thật:
+- Tab Thông tin chung: Địa chỉ hiện tại (số nhà/tổ + tỉnh + phường/xã).
+- Tab Trình độ học vấn: trình độ (mã 10 Phổ thông, 20 Trung học, 30 Trung cấp, 40 Cao đẳng, 50 Đại học, 60 Thạc sỹ, 70 Tiến sỹ), trường, xếp loại. Chuyên ngành và khoảng năm học đưa vào Ghi chú (ô chuyên ngành là danh mục mã riêng của từng khách hàng; ô ngày cần đủ ngày/tháng).
+- Tab Ngoại ngữ: ngoại ngữ chính (mã 01 Anh ... 07 Hàn) và bằng/điểm; ngoại ngữ khác vào Ghi chú.
+- Ô **Ghi chú nằm ở tab Khác** (tab "Ghi chú" trên form là khung bình luận): Kỹ năng, Sở thích, Chứng chỉ, Kinh nghiệm làm việc, mỗi mục một dòng có đầu mục.
+Mã danh mục theo dữ liệu demo; khách hàng có danh mục khác thì chỉnh bảng `map` ở Cài đặt.
+- **Ảnh chân dung:** AI trả khung ảnh trong CV (ảnh hoặc PDF), extension cắt (`lib/photo.js`, trang PDF vẽ bằng pdf.js đóng gói sẵn trong `lib/vendor/pdfjs/`, giấy phép Apache-2.0) và gắn vào ô chọn ảnh của form khi bấm Điền. Có xem trước và ô bỏ chọn; form đã có ảnh thì hỏi trước khi thay. Khung ảnh không có hoặc không hợp lệ thì bỏ qua, không đoán.
+
 ### Địa chỉ cũ → tỉnh/xã mới (sáp nhập 01/7/2025)
 
 Thẻ CCCD cấp trước 2025 in địa chỉ 3 cấp cũ (xã/huyện/tỉnh). Extension quy đổi sang tỉnh + phường/xã mới của danh mục FBO bằng `extension_chrome/presets/dm/dia-chi-cu.json` (12.216 dòng nghị quyết; xã cũ nhập trọn vào 1 xã mới thì tự chọn, xã cũ bị chia cho nhiều xã mới thì để trống và ghi gợi ý, không đoán). Áp dụng cho mọi loại có địa chỉ tách ô: Thường trú/Quê quán của CCCD (cả form nhân viên lẫn ứng viên) và Địa chỉ của CV ứng viên. Sinh lại bảng: `node tools/build-dia-chi-cu.mjs <thư mục data của dorabot-io/sap-nhap-2025>`.
 
 Nguồn dữ liệu: Dorabot (dorabot.io/dia-chi/sap-nhap), chép từ nghị quyết của Ủy ban Thường vụ Quốc hội, giấy phép [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.vi).
+
+
+#### Quá trình công tác (từng công việc)
+- AI trả thêm danh sách `cong_viec` (đơn vị, chức danh, từ, đến, mô tả); danh sách chỉ dùng để điền form, không thành cột trong Sheet.
+- Sau khi Lưu, panel hiện danh sách công việc. Mở form "Thêm thông tin quá trình công tác trước đây" ở FBO, bấm **Điền công việc tiếp theo**; mỗi lần điền một công việc, tool không tự bấm Lưu.
+- Chống trùng/ghi đè: công việc đã điền được đánh dấu ✓ (điền lại phải xác nhận); form đang ở chế độ Sửa (tiêu đề không phải "Thêm") thì hỏi trước; form còn dữ liệu của bản ghi chưa Lưu thì hỏi trước khi ghi đè.
+- Ngày theo quy ước khi CV thiếu: Từ không có → hôm nay; chỉ năm → 01/01; tháng/năm → đầu tháng. Đến không có → bằng ngày Từ; chỉ năm → 31/12; tháng/năm → cuối tháng; "Nay" → hôm nay (ô Đến của form bắt buộc). Thời gian gốc ghi vào Ghi chú. Ánh xạ nằm ở khóa `CV_NHANVIEN@CONGTAC` trong `presets/fbo-hrm.json`.
 
 ## Cổng API (`doPost`)
 

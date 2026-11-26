@@ -1,5 +1,7 @@
 import { getSettings, getFboProfile, getDm } from './store.js';
 import { enrichData } from './dm.js';
+import { PHOTO_FORMS } from './photo.js';
+import { JOB_VARIANT } from './jobs.js';
 import { FORM_WAIT_MS, POLL_MS, STEP_TIMEOUT_MS, STABLE_POLLS, mappingSelectors, classifyForm, withTimeout, importantOverwrites, abortable, FillStopped, mappingVariants, pickVariant, formLabel } from './formcheck.js';
 
 /** Chạy script trong tab NGAY, không chờ khung phụ tải xong (document_idle). Trang FBO có khung phụ không bao giờ tải xong thì lệnh mặc định treo mãi. */
@@ -69,7 +71,8 @@ async function waitForForm(target, variants, onProgress, signal) {
 export async function fillActiveTab(docType, data, opts) {
   opts = opts || {};
   const { fboMappings } = await getSettings();
-  const variants = mappingVariants(fboMappings, docType);
+  // Mặc định chỉ các form hồ sơ; form Quá trình công tác (CONGTAC) chỉ khi điền từng công việc (opts.job)
+  const variants = mappingVariants(fboMappings, docType).filter((v) => (opts.job != null ? v.variant === JOB_VARIANT : v.variant !== JOB_VARIANT));
   let mapping = variants.length ? variants[0].mapping : null;
   const blank = { filled: [], notFound: [], empty: [], total: 0 };
   if (!mapping || !Object.keys(mapping).length) return { ...blank, status: 'NO_MAPPING' };
@@ -83,7 +86,7 @@ export async function fillActiveTab(docType, data, opts) {
   // Khoá vào đúng tab đã chọn lúc bấm: chuyển sang tab khác không làm điền nhầm sang tab đó; đóng tab hoặc chuyển trang thì dừng.
   const sig = opts.signal;
   const guard = async () => { if (sig && sig.aborted) throw new FillStopped(); await assertSameTab(tabInfo); };
-  let results, form, lateDiag = '';
+  let results, form, lateDiag = '', photo = '';
   try {
     progress({ phase: 'prepare' });
     await guard();
@@ -109,8 +112,14 @@ export async function fillActiveTab(docType, data, opts) {
     }
     await guard();
     const now = new Date(), p2 = (n) => String(n).padStart(2, '0');
-    const enriched = enrichData(docType, data, await getDm(), { relation: opts.relation, today: p2(now.getDate()) + '/' + p2(now.getMonth() + 1) + '/' + now.getFullYear() });
+    const enriched = enrichData(docType, data, await getDm(), { relation: opts.relation, job: opts.job, today: p2(now.getDate()) + '/' + p2(now.getMonth() + 1) + '/' + now.getFullYear() });
     const call = (extra, what, abortSig) => step(run(target, { func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
+    // Điền công việc: form phải đang ở chế độ THÊM bản ghi mới; đang Sửa một bản ghi có sẵn thì hỏi trước (sẽ ghi đè bản ghi cũ)
+    if (opts.job != null) {
+      const tt = await step(run(target, { func: () => globalThis.__KHOATV_TITLE__() }), 'đọc tiêu đề form', sig);
+      const t0 = tt.map((r) => r.result).find((r) => r && r.found);
+      if (t0 && !/thêm|them|add|new/i.test(t0.title) && opts.confirmEditMode && !(await opts.confirmEditMode(t0.title))) return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total };
+    }
     // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
     progress({ phase: 'check' });
     const dry = await call({ dry: true, src: docType }, 'kiểm tra dữ liệu có sẵn trên form', sig);
@@ -139,6 +148,19 @@ export async function fillActiveTab(docType, data, opts) {
         }
       }
     }
+    // 3) ảnh chân dung (nếu có): ô đã có ảnh thì hỏi trước khi thay
+    const pf = opts.photo && opts.photo.dataUrl && PHOTO_FORMS[docType];
+    if (pf) {
+      await guard();
+      const chk = await step(run(target, { func: (c) => globalThis.__KHOATV_PHOTO__(c, null, null, true), args: [pf] }), 'kiểm tra ô ảnh');
+      const seen = chk.map((r) => r.result).filter((r) => r && r.found);
+      if (!seen.length) photo = 'notFound';
+      else if (seen.some((r) => r.has) && opts.confirmPhotoOverwrite && !(await opts.confirmPhotoOverwrite())) photo = 'kept';
+      else {
+        const put = await step(run(target, { func: (c, u, n) => globalThis.__KHOATV_PHOTO__(c, u, n, false), args: [pf, opts.photo.dataUrl, opts.photo.name] }), 'gắn ảnh');
+        photo = put.some((r) => r.result && r.result.ok) ? 'ok' : 'error';
+      }
+    }
   } catch (e) {
     if (e instanceof FillStopped || (e && /Tab FBO không phản hồi|Tab FBO đã/.test(e.message))) throw e;
     throw new Error('Không truy cập được trang này. Mở form FBO ở tab hiện tại và cấp quyền cho địa chỉ FBO trong Cài đặt. (' + (e && e.message ? e.message : e) + ')');
@@ -157,7 +179,7 @@ export async function fillActiveTab(docType, data, opts) {
   // Người dùng đang xem tab khác lúc điền xong: kết quả vẫn ở tab cũ, báo rõ để không tưởng đã điền vào tab đang xem
   let away = false;
   try { const [cur] = await chrome.tabs.query({ active: true, currentWindow: true }); away = !!cur && cur.id !== tabInfo.id; } catch (e) { away = false; }
-  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, mainOnly, diag: lateDiag, formName: variants.length > 1 ? formLabel(form.variant) : '' };
+  return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, mainOnly, photo, diag: lateDiag, formName: variants.length > 1 ? formLabel(form.variant) : '' };
 }
 
 /** Tab web (http/https) vừa dùng gần nhất: trang Cài đặt tự nó là tab đang mở, nên không thể dùng "tab active". */

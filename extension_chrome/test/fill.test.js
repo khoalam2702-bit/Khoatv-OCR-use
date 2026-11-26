@@ -242,3 +242,27 @@ test('nhiều ô cùng khớp selector: điền và đọc lại đúng ô đang
   assert.equal(shown.value, 'Tổ 15'); assert.equal(hidden.value, '');
   assert.equal(plain(w.__KHOATV_READ__(['[id$="_dia_chi"]']))[0].value, 'Tổ 15');
 });
+
+test('append với sep: mỗi mục một dòng trong Ghi chú, giữ tiền tố đầu mục', () => {
+  const w = page('<textarea id="gc"></textarea>');
+  w.__KHOATV_FILL__({ a: { selector: '#gc', prefix: 'Kỹ năng: ', append: true, sep: '\n' }, b: { selector: '#gc', prefix: 'Sở thích: ', append: true, sep: '\n' } }, { a: 'Giao tiếp', b: 'Đọc sách' });
+  assert.equal(w.document.getElementById('gc').value, 'Kỹ năng: Giao tiếp\nSở thích: Đọc sách');
+});
+
+test('__KHOATV_PHOTO__: dò ô ảnh (không đổi gì ở chế độ dry), báo đã có ảnh khi ảnh xem trước hiện', () => {
+  const w = page('<form><input type="file" id="imageupload"></form><img id="empImage">');
+  const cfg = { input: '#imageupload', preview: '#empImage' };
+  assert.deepEqual(plain(w.__KHOATV_PHOTO__(cfg, null, null, true)), { found: true, has: false });
+  assert.deepEqual(plain(w.__KHOATV_PHOTO__({ input: '#khong-co' }, null, null, true)), { found: false });
+  assert.deepEqual(plain(w.__KHOATV_PHOTO__({ input: '#empImage' }, null, null, true)), { found: false }); // không phải ô chọn tệp
+  assert.equal(w.document.getElementById('imageupload').files.length, 0);
+  const bad = w.__KHOATV_PHOTO__(cfg, 'không phải data url', 'a.jpg', false);
+  assert.equal(bad.ok, false); // dữ liệu ảnh hỏng thì không gắn
+});
+
+test('__KHOATV_TITLE__ đọc tiêu đề hộp thoại; ignoreOld bỏ qua giá trị mặc định của form khi dò ghi đè', () => {
+  const w = page('<span id="x_updateDlgTitleText">Thêm thông tin quá trình công tác trước đây</span><input id="ct" value="1"><input id="vt" value="Kế toán">');
+  assert.deepEqual(plain(w.__KHOATV_TITLE__()), { found: true, title: 'Thêm thông tin quá trình công tác trước đây' });
+  const d = plain(w.__KHOATV_FILL__({ a: { selector: '#ct', ignoreOld: ['1'] }, b: '#vt' }, { a: '5', b: 'Kinh doanh' }, { dry: true }));
+  assert.deepEqual(d.overwrite.map((o) => o.k), ['b']);
+});

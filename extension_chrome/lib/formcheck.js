@@ -52,7 +52,7 @@ export function abortable(promise, signal) {
 }
 
 /** Nhãn form theo hậu tố biến thể ("CCCD@UNGVIEN"); không hậu tố = form mặc định. */
-export const FORM_LABELS = { '': 'Hồ sơ nhân viên', UNGVIEN: 'Hồ sơ ứng viên' };
+export const FORM_LABELS = { '': 'Hồ sơ nhân viên', UNGVIEN: 'Hồ sơ ứng viên', CONGTAC: 'Quá trình công tác' };
 export const formLabel = (variant) => (variant in FORM_LABELS ? FORM_LABELS[variant] : variant);
 
 /** Các ánh xạ của một loại tài liệu: bản mặc định (khoá = loại) và các biến thể theo form (khoá = "LOẠI@FORM"). */
