@@ -194,7 +194,10 @@ test('chuyên ngành: khớp danh mục FBO (trùng tên, chứa tên, không kh
   assert.equal(ma('Ngôn ngữ Anh'), '51');
   assert.equal(ma('Hệ thống thông tin quản lý'), 'HTTTQL');
   assert.equal(ma('Chăm sóc sắc đẹp'), '21');             // không có trong danh mục → mục Khác
-  assert.equal(ma('Công nghệ thông tin'), '02');
+  assert.equal(ma('Công nghệ thông tin'), '02');          // trùng tên với QCNTT/T.CNTT: ưu tiên mã số
+  assert.equal(ma('Kế toán tài chính'), 'KTTC');
+  assert.equal(ma('Quản trị kinh doanh'), 'QQTKD');
+  assert.equal(ma('Marketing'), 'QMARKET');
   assert.equal(lookupMajor('', dmCn), null);
   assert.equal(lookupMajor('Kế toán', buildDm({})), null); // danh mục trống thì không điền
   assert.equal(enrichData('CV_NHANVIEN', { chuyen_nganh: 'Tài chính - Ngân hàng' }, dmCn).chuyen_nganh_ma, '46');
