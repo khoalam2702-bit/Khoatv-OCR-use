@@ -258,8 +258,8 @@ export function enrichData(docType, data, dm, ctx) {
     out[p + '_tinh_ma'] = r.tinh ? r.tinh.ma : '';
     out[p + '_xa_ma'] = r.xa ? r.xa.ma : '';
     out[p + '_chi_tiet'] = addressDetail(dm, out[k]); // số nhà, tổ... cắt từ địa chỉ
-    // Hồ sơ ứng viên: ô chữ này là "Địa chỉ liên hệ"; địa chỉ chỉ có quận/phường, tỉnh thì ghi nguyên chuỗi, không để trống
-    if (docType === 'CV_UNGVIEN' && !out[p + '_chi_tiet']) out[p + '_chi_tiet'] = String(out[k] == null ? '' : out[k]).trim();
+    // Hồ sơ ứng viên chỉ có một ô "Địa chỉ liên hệ" (không có ô tỉnh/phường riêng): ghi nguyên địa chỉ trên CV
+    if (docType === 'CV_UNGVIEN') out[p + '_chi_tiet'] = String(out[k] == null ? '' : out[k]).trim();
     if (r.candidates.length) out[p + '_xa_goi_y'] = r.candidates.map((c) => c.ten).join(' / '); // xã cũ bị chia cho nhiều xã mới: không tự chọn, chỉ gợi ý
   }
   if (docType === 'HO_CHIEU') {

@@ -266,3 +266,21 @@ test('__KHOATV_TITLE__ đọc tiêu đề hộp thoại; ignoreOld bỏ qua giá
   const d = plain(w.__KHOATV_FILL__({ a: { selector: '#ct', ignoreOld: ['1'] }, b: '#vt' }, { a: '5', b: 'Kinh doanh' }, { dry: true }));
   assert.deepEqual(d.overwrite.map((o) => o.k), ['b']);
 });
+
+test('lưới quá trình làm việc: mỗi công việc một dòng, tự thêm dòng, bỏ qua dòng đã có', async () => {
+  const G = 'x_FormGriddqtlv';
+  const cell = (r) => [2, 3, 5, 6, 7, 10].map((c) => `<input id="${G}_inputCell_${r}.${c}" value="${c === 6 || c === 7 ? '  /  /    ' : ''}">`).join('');
+  const dom = new JSDOM(`<div id="box">${cell(1)}</div><div id="${G}_ToolbarButton_Insert"></div>`, { runScripts: 'outside-only' });
+  const w = dom.window, d = w.document;
+  w.eval(src);
+  let n = 1;
+  d.getElementById(G + '_ToolbarButton_Insert').onclick = () => d.getElementById('box').insertAdjacentHTML('beforeend', cell(++n));
+  const spec = { grid: 'FormGriddqtlv', cols: { ct_don_vi: 2, ct_vi_tri: 3, ct_so_nam: 5, ct_tu_ngay: 6, ct_den_ngay: 7, ct_ghi_chu: 10 }, same: ['ct_don_vi', 'ct_vi_tri', 'ct_tu_ngay'], blank: ['ct_don_vi', 'ct_vi_tri'] };
+  const rows = [{ ct_don_vi: 'A', ct_vi_tri: 'NV', ct_tu_ngay: '01/01/2020' }, { ct_don_vi: 'B', ct_vi_tri: 'TP', ct_tu_ngay: '01/01/2022' }];
+  const r1 = await w.__KHOATV_GRID__(spec, rows);
+  assert.deepEqual([...r1.results], ['filled', 'filled']);
+  assert.equal(d.getElementById(G + '_inputCell_1.2').value, 'A');
+  assert.equal(d.getElementById(G + '_inputCell_2.2').value, 'B');
+  assert.deepEqual([...(await w.__KHOATV_GRID__(spec, rows)).results], ['exists', 'exists']);
+  assert.equal(n, 2);
+});

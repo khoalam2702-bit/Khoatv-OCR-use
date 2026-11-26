@@ -19,3 +19,8 @@ assert.ok(/ẢNH CHÂN DUNG/.test(vm.runInContext("DOC_TYPES.CV_UNGVIEN.hint", c
 console.log('cvphoto ok');
 // CV nhân viên lấy cả số điện thoại và email (lưu thành cột trong Sheet)
 for (const k of ['so_dien_thoai', 'email']) { assert.ok(fields.includes(k), 'CV_NHANVIEN thiếu ' + k); assert.ok(schema.properties[k], k); }
+// CV ứng viên cũng trả danh sách công việc (điền lưới Quá trình làm việc), không thành cột
+assert.strictEqual(sUv.properties.cong_viec.type, 'ARRAY');
+assert.ok(!fUv.includes('cong_viec'));
+assert.ok(/cong_viec: danh sách TỪNG/.test(vm.runInContext('DOC_TYPES.CV_UNGVIEN.hint', ctx)));
+assert.ok(/cong_viec: danh sách TỪNG/.test(vm.runInContext('DOC_TYPES.CV_NHANVIEN.hint', ctx)));
