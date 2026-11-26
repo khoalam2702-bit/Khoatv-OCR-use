@@ -110,6 +110,8 @@ table.tbl{width:100%;border-collapse:collapse;font-size:13.5px;min-width:560px}
 html[data-theme=dark] .res-foot{background:var(--panel)}
 .grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}
 .btn-danger{background:var(--red-bg);border-color:var(--red-bd);color:var(--red)}
+/* Chế độ nhúng trong Web Admin (?embed=1): Bản ghi và Tài khoản đã có ở thanh menu Admin nên ẩn tab và nút Mật khẩu của trang này */
+body.embed #tabs,body.embed #btnPw{display:none!important}
 .tabs{display:flex;gap:6px;max-width:1100px;margin:0 auto;padding:10px 12px 0;overflow-x:auto}
 .tab{padding:7px 16px;border-radius:8px;border:1px solid var(--line);background:var(--btn);color:var(--tx2);font:700 13.5px inherit;font-family:inherit;cursor:pointer;white-space:nowrap;min-height:36px}
 .tab.active{background:var(--acc-bg);border-color:var(--acc-bd);color:var(--acc)}
@@ -412,6 +414,11 @@ html[data-theme=dark] .res-foot{background:var(--panel)}
     if (page === 'rec') loadRecords();
     if (page === 'users') loadUsers();
   }
+  try {
+    google.script.url.getLocation(function (loc) {
+      if (loc && loc.parameter && String(loc.parameter.embed) === '1') { document.body.classList.add('embed'); }
+    });
+  } catch (e) { /* không phải môi trường Apps Script: bỏ qua */ }
   Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
     b.addEventListener('click', function () { if (!S.busy) go(b.getAttribute('data-page')); });
   });
