@@ -230,6 +230,12 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 - Một số trình duyệt chặn camera trực tiếp trong khung Apps Script; khi đó nút "Chụp ảnh" tự chuyển sang ứng dụng camera của máy.
 - Quét xong nhưng không bấm lưu thì tệp gốc vẫn nằm trên Drive, không có dòng tương ứng.
 
+## Gộp về một domain (Web Admin + giao diện quét)
+
+- Domain chính: `https://khoatv-ocr-extensions.vercel.app` (dự án `admin_webapp`). `/` là Web Admin; **`/app` là giao diện quét OCR** (khung toàn màn hình mở Apps Script, không cần đăng nhập Web Admin vì ứng dụng có đăng nhập OCR riêng).
+- `/app` lấy địa chỉ Apps Script từ biến môi trường **`GAS_WEB_APP_URL`** của dự án Web Admin trên Vercel (cùng biến đang dùng cho proxy `/api/gas` và `/api/extension-config`). Chưa đặt thì `/app` báo "Chưa cấu hình". Đổi link Web App thì chỉ cần sửa biến này rồi Redeploy.
+- Link cũ `khoatv-ocr-use.vercel.app` tự chuyển hướng sang `/app` (`vercel.json` ở thư mục gốc). `public/index.html` vẫn giữ nguyên vì AutoSynCode cập nhật `APP_URL` trong đó và extension đọc `APP_URL` từ tệp này trên GitHub.
+
 ## Hosting trên Vercel (khung bao quanh ứng dụng)
 
 - Vercel không build mã nguồn: `vercel.json` đặt `outputDirectory` là `public`, không có lệnh build. `backend_gas/` (mã Apps Script) không được phát tán.

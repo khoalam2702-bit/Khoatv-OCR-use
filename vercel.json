@@ -3,5 +3,8 @@
   "framework": null,
   "buildCommand": null,
   "installCommand": null,
-  "outputDirectory": "public"
+  "outputDirectory": "public",
+  "redirects": [
+    { "source": "/", "destination": "https://khoatv-ocr-extensions.vercel.app/app", "permanent": false }
+  ]
 }
