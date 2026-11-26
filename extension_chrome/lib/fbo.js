@@ -128,12 +128,11 @@ export async function fillActiveTab(docType, data, opts) {
     const now = new Date(), p2 = (n) => String(n).padStart(2, '0');
     const enriched = enrichData(docType, data, await getDm(), { relation: opts.relation, job: opts.job, today: p2(now.getDate()) + '/' + p2(now.getMonth() + 1) + '/' + now.getFullYear() });
     const call = (extra, what, abortSig) => step(run(target, { func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
-    // Điền công việc: form phải đang ở chế độ THÊM bản ghi mới; đang Sửa một bản ghi có sẵn thì hỏi trước (sẽ ghi đè bản ghi cũ)
-    if (opts.job != null) {
-      const tt = await step(run(target, { func: () => globalThis.__KHOATV_TITLE__() }), 'đọc tiêu đề form', sig);
-      const t0 = tt.map((r) => r.result).find((r) => r && r.found);
-      if (t0 && !/thêm|them|add|new/i.test(t0.title) && opts.confirmEditMode && !(await opts.confirmEditMode(t0.title))) return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total };
-    }
+    // Chế độ của hộp thoại: "Xem ..." là chỉ đọc (không điền được, kể cả ảnh); công việc phải ở "Thêm", đang "Sửa" thì hỏi trước khi ghi đè
+    const tt = await step(run(target, { func: () => globalThis.__KHOATV_TITLE__() }), 'đọc tiêu đề form', sig);
+    const t0 = tt.map((r) => r.result).find((r) => r && r.found);
+    if (t0 && /^\s*(xem|view)\b/i.test(t0.title)) return { ...blank, total, status: 'READ_ONLY', title: t0.title, found: form.found, selectors: form.total };
+    if (opts.job != null && t0 && !/thêm|them|add|new/i.test(t0.title) && opts.confirmEditMode && !(await opts.confirmEditMode(t0.title))) return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total };
     // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
     progress({ phase: 'check' });
     const dry = await call({ dry: true, src: docType }, 'kiểm tra dữ liệu có sẵn trên form', sig);
@@ -173,6 +172,11 @@ export async function fillActiveTab(docType, data, opts) {
       else {
         const put = await step(run(target, { func: (c, u, n) => globalThis.__KHOATV_PHOTO__(c, u, n, false), args: [pf, opts.photo.dataUrl, opts.photo.name] }), 'gắn ảnh');
         photo = put.some((r) => r.result && r.result.ok) ? 'ok' : 'error';
+        if (photo === 'ok') { // form có hiện ảnh xem trước không? Không hiện = chưa chắc ảnh được nhận, báo để người dùng kiểm tra trước khi Lưu
+          await sleep(900);
+          const after = await step(run(target, { func: (c) => globalThis.__KHOATV_PHOTO__(c, null, null, true), args: [pf] }), 'kiểm tra ảnh sau khi gắn');
+          if (!after.some((r) => r.result && r.result.has)) photo = 'noPreview';
+        }
       }
     }
   } catch (e) {

@@ -500,6 +500,7 @@ async function fillJob(i) {
       confirmOverwrite: async (over) => confirm('Form đang có dữ liệu khác (có thể là công việc trước chưa Lưu):\n\n' + over.map((o) => '• ' + (DERIVED_LABELS[o.k] || o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"').join('\n') + '\n\nGhi đè?')
     });
     if (r.status === 'NO_FORM' || r.status === 'NO_MAPPING') { info.textContent = 'Chưa thấy form "Thêm thông tin quá trình công tác trước đây" ở tab hiện tại. Mở form đó rồi bấm Điền lại.'; info.className = 'warn'; }
+    else if (r.status === 'READ_ONLY') { info.textContent = 'Form đang ở chế độ "' + cut(r.title) + '" (chỉ xem). Bấm Mới trên form FBO rồi điền lại.'; info.className = 'warn'; }
     else if (r.status === 'CANCELLED') { info.textContent = 'Đã hủy, không ghi gì vào form.'; info.className = 'warn'; }
     else {
       if (r.filled.length) { state.jobDone.push(key); }
@@ -586,6 +587,9 @@ async function doFill() {
       info.textContent = 'Bạn chưa mở form cần điền ở tab hiện tại (đã chờ ' + FORM_WAIT_MS / 1000 + ' giây, không thấy ô nào của form "' + (t ? t.label : state.type) + '"). Đăng nhập FBO và mở đúng form (nếu form có nhiều tab, mở tab cần điền), rồi bấm Điền vào FBO lại.';
       info.className = 'warn'; return;
     }
+    if (r.status === 'READ_ONLY') {
+      info.textContent = 'Form đang ở chế độ "' + cut(r.title) + '" (chỉ xem) nên không điền được. Bấm Mới (thêm) hoặc Sửa trên form FBO rồi bấm Điền vào FBO lại. Kết quả quét vẫn còn.'; info.className = 'warn'; return;
+    }
     if (r.status === 'CANCELLED') {
       info.textContent = r.wrongForm ? 'Đã hủy: form đang mở chỉ khớp ' + r.found + '/' + r.selectors + ' ô. Mở đúng form rồi bấm Điền vào FBO lại.' : 'Đã hủy: không ghi đè dữ liệu đang có trên form FBO.';
       info.className = 'warn'; return;
@@ -595,7 +599,7 @@ async function doFill() {
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
     parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
     if (PHOTO_FORMS[state.type]) {
-      const ph = { ok: 'Đã gắn ảnh chân dung.', kept: 'Giữ ảnh đang có trên form.', notFound: 'Không thấy ô chọn ảnh trên form.', error: 'Không gắn được ảnh chân dung (chọn ảnh bằng tay).' }[r.photo];
+      const ph = { ok: 'Đã gắn ảnh chân dung.', kept: 'Giữ ảnh đang có trên form.', notFound: 'Không thấy ô chọn ảnh trên form.', error: 'Không gắn được ảnh chân dung (chọn ảnh bằng tay).', noPreview: 'Đã chọn ảnh vào ô chọn tệp nhưng form chưa hiện ảnh xem trước. Kiểm tra khung ảnh trước khi Lưu; nếu trống thì bấm Chọn... và chọn ảnh bằng tay.' }[r.photo];
       parts.push(ph || (state.photo ? 'Chưa gắn ảnh chân dung (đã bỏ chọn).' : 'Không có ảnh chân dung để gắn (CV không có ảnh hoặc không cắt được).'));
     }
     if (r.diag) parts.push('Chẩn đoán ô địa chỉ (gửi lại cho người hỗ trợ): ' + r.diag + '.');
