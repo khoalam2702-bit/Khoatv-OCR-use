@@ -351,8 +351,18 @@ async function doScan() {
     persistDraft();
     cropPhoto(r.data).then(persistDraft); // ảnh chân dung của CV (nếu loại này có): cắt nền, xong thì hiện xem trước
     show('review');
-    if (r.ms) msg('Quét xong trong ' + Math.round(r.ms / 1000) + ' giây (AI ' + Math.round((r.msAi || 0) / 1000) + ' giây, lưu ảnh ' + Math.round((r.msDrive || 0) / 1000) + ' giây).', 'info');
-  } catch (e) { msg(e.message); }
+    if (skipAiUsed) msg('Chế độ chỉ QR: không dùng AI. Đã lấy số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp từ mã QR. Quê quán, nơi sinh, ngày hết hạn hãy tự nhập.', 'info');
+    else if (used.length) msg('Đã đọc mã QR trên CCCD và dùng cho ' + used.length + ' trường (số CCCD, họ tên, ngày sinh, giới tính, thường trú, ngày cấp). Các trường còn lại lấy từ OCR.', 'info');
+    else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
+    const tm = r && r.timing;
+    const left = state.anon && r.anon ? 'Còn ' + Math.max(0, r.anon.limit - r.anon.used) + '/' + r.anon.limit + ' lượt quét không cần tài khoản hôm nay.' : '';
+    stopScanProgress(true, ((tm ? '(lưu tệp ' + (tm.driveMs / 1000).toFixed(1) + 's, AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ') ' : '') + left).trim());
+  } catch (e) {
+    stopScanProgress(false);
+    const r = splitRetry(e.message);
+    if (r.seconds) { startQuotaWait(r.seconds); msg(''); } // hết hạn mức: banner đếm ngược thay cho thông báo lỗi
+    else msg(r.text);
+  }
   finally { if (scanProg.timer) stopScanProgress(false); busy(btn, false); updateScanBtn(); }
 }
 
