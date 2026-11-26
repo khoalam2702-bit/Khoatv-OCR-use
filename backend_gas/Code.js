@@ -1304,7 +1304,9 @@ function callGemini_(type, files, opts) {
   const fast = prop_('GEMINI_FAST', 'on') !== 'off' && !opts.slow; // opts.slow: lần đọc lại cần chính xác, để Gemini suy nghĩ mặc định
   if (fast) {
     body.generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
-    body.generationConfig.mediaResolution = (type.ai && type.ai.resolution) || 'MEDIA_RESOLUTION_HIGH';
+    // PDF: mức trung bình (Google khuyến nghị cho tài liệu, mỗi trang tốn nửa số token nên đọc nhanh hơn). Ảnh, hoặc lẫn ảnh: mức cao.
+    const pdfOnly = files.every(function (f) { return f.mimeType === 'application/pdf'; });
+    body.generationConfig.mediaResolution = (type.ai && type.ai.resolution) || (pdfOnly ? 'MEDIA_RESOLUTION_MEDIUM' : 'MEDIA_RESOLUTION_HIGH');
     if (type.ai && type.ai.maxTokens) body.generationConfig.maxOutputTokens = type.ai.maxTokens;
   }
   let resp = null, keyIdx = 0, used = null;
