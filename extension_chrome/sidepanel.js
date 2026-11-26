@@ -60,11 +60,11 @@ async function tryAutoLogin() {
 }
 
 /** Gọi API có token; hết phiên thì tự đăng nhập lại bằng mật khẩu đã nhớ rồi gọi lại một lần, không được thì về màn đăng nhập. */
-async function api(action, args, retried) {
-  try { return await call(action, [state.auth.token, ...args]); }
+async function api(action, args, retried, opts) {
+  try { return await call(action, [state.auth.token, ...args], opts); }
   catch (e) {
     if (e instanceof GasError && e.code === 'SESSION_EXPIRED') {
-      if (!retried && await tryAutoLogin()) return api(action, args, true);
+      if (!retried && await tryAutoLogin()) return api(action, args, true, opts);
       await logout('Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.', true);
       throw new Error('Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.');
     }
@@ -274,7 +274,7 @@ function renderLimits() {
     'Dung lượng: mỗi tệp tối đa ' + mb(L.maxFileBytes) + ' MB, tổng các tệp tối đa ' + mb(L.maxTotalBytes) + ' MB. Chỉ nhận JPG, PNG, WEBP, PDF; ảnh tự nén JPG, cạnh dài tối đa 2400 px.',
     state.anon ? 'Đăng nhập tài khoản OCR để lưu kết quả và không giới hạn theo ngày. PDF dài nên tách 5-10 trang mỗi lượt.'
       : 'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
-    'Mỗi lần quét xử lý tối đa khoảng 6 phút; quá thời gian sẽ báo lỗi, hãy quét lại với ít trang hơn.',
+    'Mỗi lần quét chờ tối đa 120 giây; quá thời gian sẽ tự dừng, hãy quét lại với ít trang hơn. Đang quét có thể bấm Dừng.',
     ...(state.anon ? [] : ['Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.']),
     'Hạn mức AI (Gemini) do Google quy định theo phút và theo ngày, mọi người dùng chung. Hết hạn mức phút: chờ khoảng 1 phút. Hết hạn mức ngày: quét lại được sau ' + dailyResetTime() + ' (đồng hồ đếm ngược tối đa 30 phút, chạy xong vẫn có thể phải chờ đến giờ này).'
   ];
@@ -344,10 +344,14 @@ function stopScanProgress(success, detail) {
   } else { bar.hidden = true; info.hidden = true; }
 }
 
+let scanStop = null; // lượt quét đang chạy, để nút Dừng huỷ
 async function doScan() {
   msg('');
   const btn = $('btn-scan');
   busy(btn, true, 'Đang quét...');
+  const stop = new AbortController();
+  scanStop = stop;
+  $('btn-stop-scan').hidden = false;
   try {
     // CCCD: đọc mã QR; dữ liệu QR (số CCCD, họ tên đủ dấu, ngày sinh, giới tính, thường trú, ngày cấp) ghi đè kết quả OCR.
     // Chế độ "chỉ QR": QR hợp lệ thì không gọi AI (nhanh); QR không đọc được thì tự quay về OCR như thường.
@@ -366,10 +370,11 @@ async function doScan() {
     if (qrFirst) setScanStage(skipAiUsed ? 'save' : 'ai');
     const [r, qr2] = await Promise.all([
       state.anon
-        ? call('scanAnonymous', [await getDeviceId(), { docType: state.type, files, skipAi: skipAiUsed }])
-        : api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
+        ? call('scanAnonymous', [await getDeviceId(), { docType: state.type, files, skipAi: skipAiUsed }], { signal: stop.signal })
+        : api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }], false, { signal: stop.signal }),
       qrTask
     ]);
+    if (stop.signal.aborted) throw new GasError('Đã dừng.', 'CANCELLED'); // bấm Dừng đúng lúc kết quả vừa về
     stopScanProgress(true); // quét xong: dừng bộ đếm ngay (trước đây không dừng nên giây vẫn chạy tiếp)
     qr = qr || qr2;
     if (!skipAiUsed) clearQuotaWait(); // AI trả kết quả được thì hạn mức không còn là vấn đề
@@ -393,10 +398,11 @@ async function doScan() {
   } catch (e) {
     stopScanProgress(false);
     const r = splitRetry(e.message);
-    if (r.seconds) { startQuotaWait(r.seconds); msg(''); } // hết hạn mức: banner đếm ngược thay cho thông báo lỗi
+    if (e.code === 'CANCELLED') msg('Đã dừng quét. Máy chủ có thể vẫn xử lý nốt lượt đã gửi.', 'info');
+    else if (r.seconds) { startQuotaWait(r.seconds); msg(''); } // hết hạn mức: banner đếm ngược thay cho thông báo lỗi
     else msg(r.text);
   }
-  finally { if (scanProg.timer) stopScanProgress(false); busy(btn, false); updateScanBtn(); }
+  finally { scanStop = null; $('btn-stop-scan').hidden = true; if (scanProg.timer) stopScanProgress(false); busy(btn, false); updateScanBtn(); }
 }
 
 /* ---------- Bước 3: xem, sửa, lưu ---------- */
@@ -776,6 +782,7 @@ $('btn-settings').onclick = () => chrome.runtime.openOptionsPage();
 $('btn-pick').onclick = () => $('in-files').click();
 $('in-files').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
 $('btn-scan').onclick = doScan;
+$('btn-stop-scan').onclick = () => { if (scanStop) scanStop.abort(); };
 $('btn-back').onclick = () => { state.scan = null; if (state.anon) setAnonDraft(null); show('scan'); refreshAnonLimit(); };
 $('btn-save').onclick = doSave;
 $('btn-fill').onclick = doFill;

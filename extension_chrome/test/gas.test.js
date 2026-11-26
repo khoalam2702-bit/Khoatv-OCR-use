@@ -35,7 +35,7 @@ test('phản hồi không phải JSON và lỗi mạng', async () => {
 
 test('hết thời gian chờ báo TIMEOUT, không báo lỗi mạng', async () => {
   const call = createGasClient({ getUrl: async () => 'u', fetchImpl: async () => { const e = new Error('t'); e.name = 'TimeoutError'; throw e; } });
-  await assert.rejects(call('scanDocument'), (e) => e.code === 'TIMEOUT' && /295 giây/.test(e.message));
+  await assert.rejects(call('scanDocument'), (e) => e.code === 'TIMEOUT' && /120 giây/.test(e.message));
   await assert.rejects(call('saveRecord'), (e) => e.code === 'TIMEOUT' && /110 giây/.test(e.message));
 });
 
@@ -47,4 +47,13 @@ test('rớt mạng: thao tác chỉ đọc tự thử lại một lần, quét t
   n = 0;
   await assert.rejects(call('scanAnonymous'), (e) => e.code === 'NETWORK');
   assert.equal(n, 1);
+});
+
+test('bấm Dừng: huỷ yêu cầu đang chạy và báo CANCELLED', async () => {
+  const stop = new AbortController();
+  const call = createGasClient({ getUrl: async () => 'u', fetchImpl: (u, o) => new Promise((_, reject) => {
+    o.signal.addEventListener('abort', () => reject(o.signal.reason), { once: true });
+    setTimeout(() => stop.abort(), 5);
+  }) });
+  await assert.rejects(call('scanAnonymous', [], { signal: stop.signal }), (e) => e.code === 'CANCELLED');
 });
