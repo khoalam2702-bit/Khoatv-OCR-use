@@ -170,10 +170,10 @@ test('CV nhân viên: Địa chỉ hiện tại tách thành số nhà/tổ + t�
   assert.equal(p.hien_tai_tinh_ma, '48'); assert.ok(p.hien_tai_xa_ma); assert.equal(p.hien_tai_chi_tiet, '12 Lê Duẩn');
 });
 
-test('CV nhân viên: ánh xạ ra đúng ô của form Thông tin nhân viên (đã dò), không có ô trùng với CCCD', () => {
+test('CV nhân viên: ánh xạ ra đúng ô của form Thông tin nhân viên (đã dò), họ tên/giới tính/ngày sinh/quốc tịch dùng cùng ô với CCCD', () => {
   const preset = rd('../fbo-hrm.json');
   const m = preset.CV_NHANVIEN;
-  for (const k of ['ho_ten', 'gioi_tinh', 'ngay_sinh', 'quoc_tich']) assert.equal(m[k], undefined, k + ' đã do CCCD điền');
+  for (const k of ['ho_ten', 'gioi_tinh', 'ngay_sinh', 'quoc_tich']) assert.deepEqual(m[k], preset.CCCD[k], k + ' phải trùng ô với CCCD (cùng form nhân viên)');
   const sel = (k) => [].concat(m[k]).map((x) => (typeof x === 'string' ? x : x.selector))[0];
   assert.match(sel('hien_tai_chi_tiet'), /dia_chi_ht_so"\]$/); assert.match(sel('hien_tai_tinh_ma'), /dia_chi_ht_tinh"\]$/); assert.match(sel('hien_tai_xa_ma'), /dia_chi_ht_xa"\]$/);
   assert.match(sel('cap_dao_tao'), /ma_tdhv"\]$/); assert.equal(m.cap_dao_tao.map['Đại học'], '50');

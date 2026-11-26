@@ -239,3 +239,6 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 - Ứng dụng thực sự chạy trên Apps Script (backend dùng `DriveApp`, `SpreadsheetApp`, giao diện dùng `google.script.run`), nên không chạy được nếu chép nguyên `src/index.html` lên Vercel.
 - Cấu hình trên Vercel: Application Preset = Other, Root Directory = `./`.
 - Lưu ý: vì cho phép nhúng, trang khác cũng có thể nhúng ứng dụng này; ứng dụng vẫn yêu cầu đăng nhập.
+
+#### Quét 1 lần, điền nhiều lần
+Kết quả quét (kể cả ảnh chân dung và danh sách công việc) được giữ trong phiên trình duyệt: tắt/mở lại side panel hoặc form FBO vẫn bấm Điền tiếp được, không phải quét lại. Bấm "Quét tiếp" mới xóa. Khi tab FBO không phản hồi, tool báo rõ tab nào, trạng thái gì thay vì chỉ báo hết giờ.

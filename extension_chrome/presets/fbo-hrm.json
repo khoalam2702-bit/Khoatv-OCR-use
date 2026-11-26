@@ -310,6 +310,33 @@
       "prefix": "Ngoại ngữ khác: ",
       "append": true,
       "sep": "\n"
+    },
+    "ho_ten": [
+      {
+        "selector": "[id$=\"_dirExtender_form_ho_nv\"]",
+        "transform": "name_head"
+      },
+      {
+        "selector": "[id$=\"_dirExtender_form_ten_nv\"]",
+        "transform": "name_last"
+      }
+    ],
+    "ngay_sinh": {
+      "selector": "[id$=\"_dirExtender_form_ngay_sinh\"]",
+      "format": "date"
+    },
+    "gioi_tinh": {
+      "selector": "[id$=\"_dirExtender_form_gioi_tinh\"]",
+      "map": {
+        "Nam": "1",
+        "Nữ": "2"
+      }
+    },
+    "quoc_tich": {
+      "selector": "[id$=\"_dirExtender_form_quoc_tich\"]",
+      "map": {
+        "Việt Nam": "VN"
+      }
     }
   },
   "CV_NHANVIEN@CONGTAC": {

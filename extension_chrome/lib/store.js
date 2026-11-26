@@ -109,6 +109,14 @@ export async function setAnonMode(on) {
   if (on) await chrome.storage.session.set({ anonMode: true });
   else await chrome.storage.session.remove(['anonMode', 'anonDraft']);
 }
+/** Kết quả quét đang làm dở (kể cả đã mở lại panel): quét 1 lần, điền nhiều lần. Chỉ giữ trong phiên trình duyệt (storage.session). */
+export async function getScanDraft() { return (await chrome.storage.session.get('scanDraft')).scanDraft || null; }
+export async function setScanDraft(draft) {
+  try {
+    if (draft) await chrome.storage.session.set({ scanDraft: draft });
+    else await chrome.storage.session.remove('scanDraft');
+  } catch (e) { /* quá hạn mức lưu: bỏ qua, chỉ mất khả năng khôi phục */ }
+}
 export async function getAnonDraft() { return (await chrome.storage.session.get('anonDraft')).anonDraft || null; }
 export async function setAnonDraft(draft) {
   if (draft) await chrome.storage.session.set({ anonDraft: draft });

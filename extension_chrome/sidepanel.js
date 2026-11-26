@@ -1,6 +1,6 @@
 import { ENABLED_TYPES, DEFAULT_LIMITS } from './lib/config.js';
 import { createGasClient, GasError } from './lib/gas.js';
-import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword, getDeviceId, getAnonMode, setAnonMode, getAnonDraft, setAnonDraft } from './lib/store.js';
+import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword, getDeviceId, getAnonMode, setAnonMode, getAnonDraft, setAnonDraft, getScanDraft, setScanDraft } from './lib/store.js';
 import { prepareFile, shrinkBase64 } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
@@ -272,7 +272,7 @@ function renderLimits() {
 }
 
 function resetScan() {
-  state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]);
+  state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]); setScanDraft(null);
   renderTypes(); renderFiles(); updateScanBtn();
   renderLimits();
 }
@@ -339,6 +339,7 @@ async function doScan() {
         : api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
       qrTask
     ]);
+    stopScanProgress(true); // quét xong: dừng bộ đếm ngay (trước đây không dừng nên giây vẫn chạy tiếp)
     qr = qr || qr2;
     if (!skipAiUsed) clearQuotaWait(); // AI trả kết quả được thì hạn mức không còn là vấn đề
     r.data = r.data || {};
@@ -347,11 +348,12 @@ async function doScan() {
     state.scan = r;
     renderReview(r.data);
     setJobs(r.data.cong_viec);
-    cropPhoto(r.data); // ảnh chân dung của CV (nếu loại này có): cắt nền, xong thì hiện xem trước
+    persistDraft();
+    cropPhoto(r.data).then(persistDraft); // ảnh chân dung của CV (nếu loại này có): cắt nền, xong thì hiện xem trước
     show('review');
     if (r.ms) msg('Quét xong trong ' + Math.round(r.ms / 1000) + ' giây (AI ' + Math.round((r.msAi || 0) / 1000) + ' giây, lưu ảnh ' + Math.round((r.msDrive || 0) / 1000) + ' giây).', 'info');
   } catch (e) { msg(e.message); }
-  finally { busy(btn, false); updateScanBtn(); }
+  finally { if (scanProg.timer) stopScanProgress(false); busy(btn, false); updateScanBtn(); }
 }
 
 /* ---------- Bước 3: xem, sửa, lưu ---------- */
@@ -413,6 +415,7 @@ async function doSave() {
   try {
     const r = await api('saveRecord', [state.type, data, state.scan.fileIds]);
     state.saved = { data, period: r.period || thisPeriod(), fileId: r.fileId || state.scan.fileIds[0], updated: !!r.updated };
+    persistDraft();
     setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
     $('save-info').textContent = r.updated ? 'Đã lưu (ghi đè bản ghi trùng).' : 'Đã lưu bản ghi.';
     // Loại chưa có form FBO: chỉ lưu, trạng thái đồng bộ giữ PENDING để điền sau khi bổ sung ánh xạ
@@ -428,6 +431,28 @@ async function doSave() {
 function thisPeriod() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+/* ---------- Giữ kết quả quét: tắt/mở lại panel hay form FBO vẫn điền tiếp được, không phải quét lại ---------- */
+function persistDraft() {
+  if (!state.scan || !state.type) return setScanDraft(null);
+  return setScanDraft({ type: state.type, data: state.scan.data, fileIds: state.scan.fileIds || [], photo: state.photo, jobDone: state.jobDone, saved: state.saved });
+}
+async function restoreDraft() {
+  const d = await getScanDraft();
+  if (!d || !state.config || !state.config.types.some((x) => x.code === d.type)) return false;
+  state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [] };
+  renderTypes(); renderReview(d.data);
+  setJobs(d.data.cong_viec); state.jobDone = d.jobDone || []; renderJobs();
+  setPhoto(d.photo || null);
+  show('review');
+  if (d.saved) { // đã Lưu/đã sẵn sàng điền: hiện luôn nút điền
+    state.saved = d.saved; setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
+    $('save-info').textContent = d.saved.anon ? 'Kết quả quét đang giữ lại (chưa lưu lên hệ thống).' : 'Đã lưu bản ghi.';
+    const { fboMappings } = await getSettings(); $('btn-fill').hidden = !hasMapping(fboMappings, d.type);
+  }
+  msg('Đã khôi phục kết quả quét trước. Không cần quét lại.');
+  return true;
 }
 
 /* ---------- Quá trình công tác: mỗi công việc một bản ghi, điền lần lượt, chống điền trùng ---------- */
@@ -483,7 +508,7 @@ async function fillJob(i) {
       info.className = r.filled.length ? 'ok' : 'warn';
     }
   } catch (e) { info.textContent = e instanceof FillStopped ? 'Đã dừng.' : e.message; info.className = 'warn'; }
-  finally { btns.forEach((b) => { b.disabled = false; }); renderJobs(); }
+  finally { btns.forEach((b) => { b.disabled = false; }); renderJobs(); persistDraft(); }
 }
 $('btn-job-next').onclick = () => { const i = state.jobs.findIndex((x) => !state.jobDone.includes(jobKey(x))); if (i >= 0) fillJob(i); };
 
@@ -516,6 +541,7 @@ async function doFill() {
     if (miss.length) { msg('Còn thiếu trường bắt buộc: ' + miss.map((k) => tt.fields.find((f) => f.k === k).label).join(', ') + '.'); return; }
     state.saved = { data, anon: true };
     setAnonDraft({ type: state.type, data });
+    persistDraft();
   }
   busy(btn, true, 'Đang chuẩn bị...');
   info.textContent = ''; info.className = 'hint';
@@ -674,6 +700,7 @@ document.addEventListener('paste', (e) => {
       await enterAnon();
       const d = await getAnonDraft();
       if (d && state.config.types.some((x) => x.code === d.type)) { state.type = d.type; state.scan = { data: d.data, fileIds: [] }; renderTypes(); renderReview(d.data); show('review'); }
+      await restoreDraft(); // bản đầy đủ (ảnh, danh sách công việc, trạng thái) nếu có
       return;
     } catch (e) { await setAnonMode(false); state.anon = false; msg(e.message); }
   }
@@ -681,9 +708,9 @@ document.addEventListener('paste', (e) => {
   if (auth) {
     try {
       const me = await call('checkSession', [auth.token]);
-      if (me) { state.auth = { token: auth.token, me }; await enter(); return; }
+      if (me) { state.auth = { token: auth.token, me }; await enter(); await restoreDraft(); return; }
     } catch (e) { msg(e.message); }
   }
-  if (await tryAutoLogin()) { await enter(); return; }
+  if (await tryAutoLogin()) { await enter(); await restoreDraft(); return; }
   await showLogin();
 })();

@@ -16,6 +16,18 @@ async function webTab() {
   return tab;
 }
 
+/** Khung chính của tab không chạy được lệnh trong 5 giây: nói rõ tab nào, trạng thái gì, và cách xử lý. */
+async function pingTab(tab, sig) {
+  try { await abortable(withTimeout(run({ tabId: tab.id }, { func: () => document.readyState }), 5000, 'ping'), sig); return; }
+  catch (e) { if (e instanceof FillStopped) throw e; if (!/ping/.test(String(e.message))) throw e; }
+  let t = tab; try { t = await chrome.tabs.get(tab.id); } catch (e) { /* tab đã đóng */ }
+  let host = ''; try { host = new URL(t.url || '').host; } catch (e) { /* không đọc được */ }
+  const why = t.discarded ? 'Tab đã bị trình duyệt giải phóng/ngủ đông (hãy bấm vào tab đó cho tải lại)'
+    : t.status === 'loading' ? 'Trang vẫn đang tải'
+    : 'Trang không phản hồi (có thể đang treo, hoặc đang có hộp thoại thông báo của trình duyệt/FBO cần bấm Nhận/Đóng)';
+  throw new Error('Tab FBO không phản hồi sau 5 giây. Tab được chọn: "' + (t.title || '?') + '" (' + (host || '?') + ', tab #' + t.id + ', trạng thái: ' + (t.status || '?') + (t.discarded ? ', đã ngủ đông' : '') + '). ' + why + '. Xử lý xong bấm Điền vào FBO lại; kết quả quét vẫn còn, không cần quét lại.');
+}
+
 /** Tab đang hiện form đăng nhập FBO (ở bất kỳ frame nào) = chưa đăng nhập. Không thấy form đăng nhập = coi như đã đăng nhập. */
 async function needsLogin(tabId, target) {
   target = target || { tabId, allFrames: true };
@@ -90,6 +102,8 @@ export async function fillActiveTab(docType, data, opts) {
   try {
     progress({ phase: 'prepare' });
     await guard();
+    // Kiểm tra nhanh khung chính có phản hồi không (5 giây) để báo đúng nguyên nhân thay vì chờ hết 2 lượt 15 giây
+    await pingTab(tab, sig);
     // Khung phụ treo làm lệnh vào mọi khung quá hạn: thử lại một lần chỉ với khung chính (form FBO nằm ở khung chính)
     const frames = async (fn, what) => {
       try { return await step(fn(target), what, sig); }
