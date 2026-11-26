@@ -990,7 +990,7 @@ function scanCore_(me, payload, anon) {
   const data = skipAi ? {} : (callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {});
   const tFix = Date.now();
   // Đọc lại dấu là lần gọi AI thứ hai: bỏ qua nếu lượt đầu đã quá 60 giây, tránh bị dừng ở 120 giây và mất cả kết quả
-  if (!skipAi && tFix - started < 60000) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
+  if (!skipAi && !FALLBACK_USED_ && tFix - started < 60000) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
   const fixMs = Date.now() - tFix;
   console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
   fillCvPersonal_(payload.docType, data);
@@ -1263,6 +1263,9 @@ function buildSchema_(type) {
 }
 
 const OVERLOAD_WAITS_MS = [2000, 5000];
+const OVERLOAD_MEMORY_SEC = 300; // vừa gặp 5xx: trong 5 phút đi thẳng vào model dự phòng
+function markOverload_(model) { try { CacheService.getScriptCache().put('gemini_overload_' + model, '1', OVERLOAD_MEMORY_SEC); } catch (e) { /* không có cache thì bỏ qua */ } }
+function isOverloaded_(model) { try { return !!CacheService.getScriptCache().get('gemini_overload_' + model); } catch (e) { return false; } }
 let FALLBACK_USED_ = ''; // model dự phòng đã dùng trong lượt quét này (rỗng = model chính)
 
 function callGemini_(type, files, opts) {
@@ -1318,7 +1321,26 @@ function callGemini_(type, files, opts) {
   }
   const startedAt = Date.now();
   let resp = null, keyIdx = 0, used = null, busy = 0;
-  for (let i = 0; i < ready.length; i++) {
+  const backup = prop_('GEMINI_FALLBACK_MODEL', DEFAULTS.GEMINI_FALLBACK_MODEL);
+  const hasBackup = backup !== 'off' && backup !== model;
+  function postBackup_(key) {
+    let r = post_(key, backup);
+    if (fast && r.getResponseCode() === 400 && !isBadKey_(r)) {
+      delete body.generationConfig.thinkingConfig;
+      delete body.generationConfig.mediaResolution;
+      r = post_(key, backup);
+    }
+    return r;
+  }
+  // Model chính vừa quá tải: đi thẳng vào dự phòng, không bắt người dùng chờ. Dự phòng cũng lỗi thì chạy đường thường.
+  if (hasBackup && !opts.slow && isOverloaded_(model)) {
+    for (let i = 0; !resp && i < Math.min(2, ready.length); i++) {
+      const r = postBackup_(ready[i]);
+      if (r.getResponseCode() === 200) { resp = r; used = ready[i]; keyIdx = keys.indexOf(used); FALLBACK_USED_ = backup; }
+      else console.error('Model dự phòng ' + backup + ' lỗi ' + r.getResponseCode() + ': ' + r.getContentText().slice(0, 300));
+    }
+  }
+  for (let i = 0; !resp || (resp.getResponseCode() !== 200 && i < ready.length); i++) {
     keyIdx = keys.indexOf(ready[i]);
     used = ready[i];
     resp = post_(used);
@@ -1330,6 +1352,7 @@ function callGemini_(type, files, opts) {
     }
     const c = resp.getResponseCode();
     if (c === 200) break;
+    if (c >= 500) markOverload_(model);
     // Hết hạn mức (429), bị từ chối (403 / khoá sai): cho khoá này nghỉ rồi thử khoá kế tiếp (nếu có).
     // Lỗi máy chủ (5xx) là do model quá tải, không do khoá: thử khoá kế tiếp nhưng không cho khoá nghỉ.
     if (c === 429 || c === 403 || c >= 500 || isBadKey_(resp)) {
@@ -1345,8 +1368,6 @@ function callGemini_(type, files, opts) {
   }
   // 503... là Google quá tải tạm thời (không do khoá): thử lại model chính một lần rồi chuyển sang model dự phòng.
   // Extension dừng ở 120 giây nên phải chuyển sớm. Một khoá thì fetchRetry_ đã tự chờ và thử lại model chính.
-  const backup = prop_('GEMINI_FALLBACK_MODEL', DEFAULTS.GEMINI_FALLBACK_MODEL);
-  const hasBackup = backup !== 'off' && backup !== model;
   const many = ready.length > 1;
   // Model dự phòng (bản Lite) đọc kém hơn nên chỉ dùng sau khi model chính đã thử lại mà vẫn lỗi.
   const steps = hasBackup
@@ -1360,13 +1381,8 @@ function callGemini_(type, files, opts) {
     FETCH_STATS_.retries++; FETCH_STATS_.waitMs += wait;
     used = ready[n % ready.length];
     keyIdx = keys.indexOf(used);
-    let next = post_(used, m);
-    if (m === model) { resp = next; continue; }
-    if (fast && next.getResponseCode() === 400 && !isBadKey_(next)) {
-      delete body.generationConfig.thinkingConfig;
-      delete body.generationConfig.mediaResolution;
-      next = post_(used, m);
-    }
+    if (m === model) { resp = post_(used); continue; }
+    const next = postBackup_(used);
     const c = next.getResponseCode();
     if (c === 200) { resp = next; FALLBACK_USED_ = m; console.log('Model chính quá tải, đã đọc bằng model dự phòng ' + m); break; }
     console.error('Model dự phòng ' + m + ' lỗi ' + c + ': ' + next.getContentText().slice(0, 300));

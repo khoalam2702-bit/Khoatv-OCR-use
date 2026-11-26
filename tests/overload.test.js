@@ -25,6 +25,15 @@ assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, LITE]);
 assert.deepStrictEqual(sleeps, [2000, 500]);
 assert.strictEqual(used(), LITE);
 
+urls.length = 0; sleeps.length = 0; plan = [OK]; calls = 0; // vừa quá tải: lượt sau đi thẳng vào dự phòng, không chờ
+assert.strictEqual(run().so_cccd, '9');
+assert.deepStrictEqual(urls, [LITE]);
+assert.deepStrictEqual(sleeps, []);
+
+urls.length = 0; plan = [resp(429), resp(429), OK]; calls = 0; // dự phòng lỗi thì quay lại model chính
+assert.strictEqual(run().so_cccd, '9');
+assert.deepStrictEqual(urls, [LITE, LITE, MAIN]);
+
 reset([OK]);                            // 503 không cho khoá nghỉ: lượt kế tiếp gọi được ngay
 assert.strictEqual(run().so_cccd, '9');
 
