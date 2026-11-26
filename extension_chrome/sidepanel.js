@@ -444,7 +444,7 @@ async function restoreDraft() {
   state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [] };
   renderTypes(); renderReview(d.data);
   setJobs(d.data.cong_viec); state.jobDone = d.jobDone || []; renderJobs();
-  setPhoto(d.photo || null);
+  setPhoto(d.photo || null, PHOTO_FORMS[d.type] ? PHOTO_NONE_NOTE : '');
   show('review');
   if (d.saved) { // đã Lưu/đã sẵn sàng điền: hiện luôn nút điền
     state.saved = d.saved; setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
@@ -515,9 +515,14 @@ $('btn-job-next').onclick = () => { const i = state.jobs.findIndex((x) => !state
 
 /* ---------- Bước 4: điền FBO ---------- */
 /* ---------- Ảnh chân dung trên CV: cắt theo khung AI trả về, hiện xem trước, gắn vào form khi điền ---------- */
-function setPhoto(p) {
+const PHOTO_NONE_NOTE = 'Chưa có ảnh chân dung: CV không có ảnh, không cắt được, hoặc Apps Script chưa triển khai bản mới (có khung ảnh). Bạn có thể chọn ảnh từ máy.';
+/** p = ảnh (hoặc null); note = lời nhắc khi chưa có ảnh. Loại có ô ảnh trên form thì luôn hiện khung, kể cả khi chưa có ảnh, để chọn bằng tay. */
+function setPhoto(p, note) {
   state.photo = p;
-  $('photo-box').hidden = !p;
+  $('photo-box').hidden = !p && !note;
+  $('photo-img').hidden = !p; $('photo-row').hidden = !p; $('photo-hint').hidden = !p;
+  $('photo-note').textContent = p ? '' : (note || '');
+  $('btn-photo-pick').textContent = p ? 'Chọn ảnh khác từ máy...' : 'Chọn ảnh từ máy...';
   if (p) { $('photo-img').src = p.dataUrl; $('in-photo').checked = true; } else $('photo-img').removeAttribute('src');
 }
 async function cropPhoto(data) {
@@ -525,11 +530,24 @@ async function cropPhoto(data) {
   if (!PHOTO_FORMS[state.type]) return;
   const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
   const type = state.type, scan = state.scan;
-  try {
-    const p = await extractPhoto(files, data);
-    if (p && state.type === type && state.scan === scan) setPhoto(p); // người dùng đã quét lại/đổi loại trong lúc cắt thì bỏ
-  } catch (e) { /* không cắt được thì thôi, các trường khác vẫn điền */ }
+  let p = null;
+  try { p = await extractPhoto(files, data); } catch (e) { p = null; } // không cắt được thì thôi, các trường khác vẫn điền
+  if (state.type === type && state.scan === scan) setPhoto(p, PHOTO_NONE_NOTE); // người dùng đã quét lại/đổi loại trong lúc cắt thì bỏ
 }
+/** Chọn ảnh chân dung từ máy: thu nhỏ về cỡ chân dung rồi dùng như ảnh cắt tự động. */
+$('btn-photo-pick').onclick = () => $('photo-file').click();
+$('photo-file').onchange = async (ev) => {
+  const f = ev.target.files && ev.target.files[0]; ev.target.value = '';
+  if (!f) return;
+  try {
+    const url = URL.createObjectURL(f);
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('Không đọc được ảnh')); i.src = url; });
+    const k = Math.min(1, 480 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    setPhoto({ dataUrl: c.toDataURL('image/jpeg', 0.9), name: 'anh_chan_dung.jpg' }); persistDraft();
+  } catch (e) { $('photo-note').textContent = e.message; }
+};
 
 async function doFill() {
   msg('');

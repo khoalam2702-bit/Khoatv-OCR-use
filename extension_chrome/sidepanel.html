@@ -49,9 +49,12 @@
     <h2 id="review-title">Kiểm tra kết quả</h2>
     <form id="form" autocomplete="off"></form>
     <div id="photo-box" hidden>
-      <img id="photo-img" alt="Ảnh chân dung cắt từ CV">
-      <label class="check"><input type="checkbox" id="in-photo" checked> Gắn ảnh này vào form khi điền</label>
-      <div class="hint">Ảnh cắt tự động từ CV; kiểm tra rồi bỏ chọn nếu cắt sai.</div>
+      <img id="photo-img" alt="Ảnh chân dung cắt từ CV" hidden>
+      <div id="photo-note" class="hint"></div>
+      <label class="check" id="photo-row" hidden><input type="checkbox" id="in-photo" checked> Gắn ảnh này vào form khi điền</label>
+      <div class="hint" id="photo-hint" hidden>Ảnh cắt tự động từ CV; kiểm tra rồi bỏ chọn nếu cắt sai.</div>
+      <button type="button" id="btn-photo-pick" class="secondary">Chọn ảnh khác từ máy...</button>
+      <input type="file" id="photo-file" accept="image/*" hidden>
     </div>
     <div id="review-actions" class="row">
       <button id="btn-back" type="button">Quét lại</button>
