@@ -15,3 +15,12 @@ export function formatWait(sec) {
   const p = (n) => String(n).padStart(2, '0');
   return h > 0 ? h + ' giờ ' + p(m) + ' phút ' + p(s) + ' giây' : p(m) + ':' + p(s);
 }
+
+/** Giờ trên máy ứng với 0 giờ giờ Thái Bình Dương (lúc Google đặt lại hạn mức ngày): giờ Việt Nam là "14:00" hoặc "15:00" tùy mùa. */
+export function dailyResetTime(now = new Date(), timeZone) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(now);
+  const get = (t) => Number(parts.find((p) => p.type === t).value);
+  const passed = get('hour') * 3600 + get('minute') * 60 + get('second');
+  const reset = new Date(Math.round((now.getTime() + (86400 - passed) * 1000) / 60000) * 60000);
+  return new Intl.DateTimeFormat('en-GB', { timeZone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(reset);
+}

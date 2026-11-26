@@ -10,7 +10,7 @@ import { extractPhoto, PHOTO_FORMS } from './lib/photo.js';
 import { fillActiveTab, fillCandidateJobs, loginFboActiveTab, inspectFormTab } from './lib/fbo.js';
 import { formatInspect, countControls } from './lib/inspectfmt.js';
 import { hasMapping } from './lib/mapping.js';
-import { splitRetry, formatWait } from './lib/quota.js';
+import { splitRetry, formatWait, dailyResetTime } from './lib/quota.js';
 import { FORM_WAIT_MS, FillStopped } from './lib/formcheck.js';
 import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scanprogress.js';
 
@@ -265,10 +265,17 @@ function renderLimits() {
       : 'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
     'Mỗi lần quét xử lý tối đa khoảng 6 phút; quá thời gian sẽ báo lỗi, hãy quét lại với ít trang hơn.',
     state.anon ? 'Kết quả chỉ giữ trong phiên trình duyệt này; đóng trình duyệt là mất.' : 'Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.',
-    'Hạn mức AI (Gemini) tính theo khóa API, theo phút và theo ngày do Google quy định. Chạm hạn mức sẽ hiện đồng hồ đếm ngược; hạn mức ngày đặt lại lúc 0 giờ giờ Thái Bình Dương (khoảng 14-15 giờ giờ Việt Nam).'
+    'Hạn mức AI (Gemini) do Google quy định theo phút và theo ngày, mọi người dùng chung. Hết hạn mức phút: chờ khoảng 1 phút. Hết hạn mức ngày: quét lại được sau ' + dailyResetTime() + ' (đồng hồ đếm ngược tối đa 30 phút, chạy xong vẫn có thể phải chờ đến giờ này).'
   ];
   const box = $('limit-hint');
   box.textContent = '';
+  if (state.anon) {
+    // Chế độ không đăng nhập bị giới hạn lượt: cảnh báo hiện sẵn, không nằm trong phần thu gọn.
+    const w = document.createElement('div');
+    w.className = 'anon-warn';
+    w.textContent = '⚠ Bạn đang dùng không đăng nhập: tối đa ' + L.anonPerDay + ' lần quét mỗi ngày trên thiết bị này, tính lại từ 0 giờ. Kết quả không được lưu. Lượt AI dùng chung có thể hết sớm hơn, khi đó quét lại sau ' + dailyResetTime() + '.';
+    box.appendChild(w);
+  }
   // Thu gọn/mở rộng bằng <details>; trạng thái nhớ lại ở lần mở sau (mặc định thu gọn cho gọn màn hình).
   const det = document.createElement('details');
   det.className = 'limits-box';
