@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { boxToRect, pickTarget } from '../lib/photo.js';
+import { boxToRect, pickTarget, PHOTO_FORMS } from '../lib/photo.js';
 
 const box = (ymin, xmin, ymax, xmax) => ({ anh_ymin: ymin, anh_xmin: xmin, anh_ymax: ymax, anh_xmax: xmax });
 
@@ -23,4 +23,9 @@ test('pickTarget: tệp/trang AI chỉ, ngoài phạm vi thì về tệp 1 trang
   assert.deepEqual(pickTarget({ anh_tep: 2, anh_trang: 3 }, 2), { file: 2, page: 3 });
   assert.deepEqual(pickTarget({ anh_tep: 5, anh_trang: 0 }, 2), { file: 1, page: 1 });
   assert.deepEqual(pickTarget({}, 1), { file: 1, page: 1 });
+});
+
+test('PHOTO_FORMS: cả CV nhân viên và CV ứng viên đều gắn ảnh vào #imageupload / #empImage', () => {
+  for (const t of ['CV_NHANVIEN', 'CV_UNGVIEN']) assert.deepEqual(PHOTO_FORMS[t], { input: '#imageupload', preview: '#empImage' }, t);
+  assert.equal(PHOTO_FORMS.CCCD, undefined);
 });

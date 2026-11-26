@@ -87,7 +87,7 @@ Quét CV rồi điền vào form **Thông tin nhân viên** (cùng form CCCD đ�
 - Tab Ngoại ngữ: ngoại ngữ chính (mã 01 Anh ... 07 Hàn) và bằng/điểm; ngoại ngữ khác vào Ghi chú.
 - Ô **Ghi chú nằm ở tab Khác** (tab "Ghi chú" trên form là khung bình luận): Kỹ năng, Sở thích, Chứng chỉ, Kinh nghiệm làm việc, mỗi mục một dòng có đầu mục.
 Mã danh mục theo dữ liệu demo; khách hàng có danh mục khác thì chỉnh bảng `map` ở Cài đặt.
-- **Ảnh chân dung:** AI trả khung ảnh trong CV (ảnh hoặc PDF), extension cắt (`lib/photo.js`, trang PDF vẽ bằng pdf.js đóng gói sẵn trong `lib/vendor/pdfjs/`, giấy phép Apache-2.0) và gắn vào ô chọn ảnh của form khi bấm Điền. Có xem trước và ô bỏ chọn; form đã có ảnh thì hỏi trước khi thay. Khung ảnh không có hoặc không hợp lệ thì bỏ qua, không đoán.
+- **Ảnh chân dung (CV nhân viên và CV ứng viên):** AI trả khung ảnh trong CV (ảnh hoặc PDF), extension cắt (`lib/photo.js`, trang PDF vẽ bằng pdf.js đóng gói sẵn trong `lib/vendor/pdfjs/`, giấy phép Apache-2.0) và gắn vào ô chọn ảnh của form khi bấm Điền. Có xem trước và ô bỏ chọn; form đã có ảnh thì hỏi trước khi thay. Khung ảnh không có hoặc không hợp lệ thì bỏ qua, không đoán.
 
 ### Địa chỉ cũ → tỉnh/xã mới (sáp nhập 01/7/2025)
 
