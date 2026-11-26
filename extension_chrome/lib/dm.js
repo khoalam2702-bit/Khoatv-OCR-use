@@ -213,7 +213,7 @@ export const DERIVED_LABELS = {
   thuong_tru_chi_tiet: 'Thường trú - Số nhà, tổ', que_quan_chi_tiet: 'Quê quán - Số nhà, tổ',
   hien_tai_tinh_ma: 'Hiện tại - Tỉnh/thành', hien_tai_xa_ma: 'Hiện tại - Phường/xã', hien_tai_chi_tiet: 'Hiện tại - Số nhà, tổ', hien_tai_xa_goi_y: 'Hiện tại - Gợi ý xã/phường (xã cũ bị chia, chọn tay)',
   dia_chi_tinh_ma: 'Địa chỉ - Tỉnh/thành', dia_chi_xa_ma: 'Địa chỉ - Phường/xã', dia_chi_chi_tiet: 'Địa chỉ - Số nhà, tổ',
-  thoi_gian_hoc: 'Thời gian học (năm)', chuyen_nganh_ma: 'Chuyên ngành (mã danh mục)', ngay_tot_nghiep: 'Ngày tốt nghiệp',
+  thoi_gian_hoc: 'Thời gian học (năm)', chuyen_nganh_ma: 'Chuyên ngành (mã danh mục)', ngay_tot_nghiep: 'Ngày tốt nghiệp', ngay_hoc_tu: 'Học từ ngày', ngay_hoc_den: 'Học đến ngày',
   ct_don_vi: 'Đơn vị', ct_vi_tri: 'Vị trí công việc', ct_tu_ngay: 'Từ ngày', ct_den_ngay: 'Đến ngày', ct_so_nam: 'Năm công tác', ct_ghi_chu: 'Ghi chú',
   ma_pt: 'Mã người phụ thuộc', loai_giay_to: 'Loại giấy tờ', loai_qh: 'Loại quan hệ', ngay_hl_tu: 'Hiệu lực từ ngày',
   que_quan_tinh_ma: 'Quê quán - Tỉnh/thành', que_quan_xa_ma: 'Quê quán - Phường/xã',
@@ -234,6 +234,9 @@ export function enrichData(docType, data, dm, ctx) {
   if (docType === 'CV_NHANVIEN') { // ngày tốt nghiệp: quy ước 30/09 của năm kết thúc học (CV chỉ ghi năm)
     const y = String(out.den_nam == null ? '' : out.den_nam).match(/\b(19[5-9]\d|20\d\d)\b/);
     if (y) out.ngay_tot_nghiep = '30/09/' + y[1];
+    const yr = (v) => { const m = String(v == null ? '' : v).match(/\b(19[5-9]\d|20\d\d)\b/); return m ? m[1] : ''; }; // học từ/đến: quy ước 01/09 của năm
+    if (yr(out.tu_nam)) out.ngay_hoc_tu = '01/09/' + yr(out.tu_nam);
+    if (yr(out.den_nam)) out.ngay_hoc_den = '01/09/' + yr(out.den_nam);
   }
   if (!dm) return out;
   if (docType === 'CV_NHANVIEN') { const mj = lookupMajor(out.chuyen_nganh, dm); if (mj) out.chuyen_nganh_ma = mj.ma; }

@@ -210,3 +210,12 @@ test('CV nhân viên: ngày tốt nghiệp = 30/09 của năm kết thúc học;
   assert.equal(enrichData('CV_NHANVIEN', {}, null).ngay_tot_nghiep, undefined);
   assert.deepEqual(rd('../fbo-hrm.json').CV_NHANVIEN.ngay_tot_nghiep.format, 'date');
 });
+
+test('CV nhân viên: học từ/đến = 01/09 của năm; thiếu năm thì không điền', () => {
+  const e = enrichData('CV_NHANVIEN', { tu_nam: '2014', den_nam: '2017' }, null);
+  assert.deepEqual([e.ngay_hoc_tu, e.ngay_hoc_den, e.ngay_tot_nghiep], ['01/09/2014', '01/09/2017', '30/09/2017']);
+  const f = enrichData('CV_NHANVIEN', { tu_nam: '2019', den_nam: 'Nay' }, null);
+  assert.deepEqual([f.ngay_hoc_tu, f.ngay_hoc_den], ['01/09/2019', undefined]);
+  const m = rd('../fbo-hrm.json').CV_NHANVIEN;
+  assert.match(m.ngay_hoc_tu.selector, /ngay_hoc_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /ngay_hoc_den"\]$/);
+});

@@ -344,6 +344,14 @@
     "ngay_tot_nghiep": {
       "selector": "[id$=\"_dirExtender_form_ngay_tot_nghiep\"]",
       "format": "date"
+    },
+    "ngay_hoc_tu": {
+      "selector": "[id$=\"_dirExtender_form_ngay_hoc_tu\"]",
+      "format": "date"
+    },
+    "ngay_hoc_den": {
+      "selector": "[id$=\"_dirExtender_form_ngay_hoc_den\"]",
+      "format": "date"
     }
   },
   "CV_NHANVIEN@CONGTAC": {
