@@ -25,6 +25,7 @@ button.link { border:0; background:none; color:var(--pri); padding:2px 4px; }
 .types { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
 .types button { text-align:left; } .types button.on { border-color:var(--pri); background:#eff6ff; color:var(--pri); font-weight:600; }
 .drop { border:2px dashed var(--b); border-radius:8px; padding:16px 10px; text-align:center; color:#6b7280; background:#fff; }
+.drop-tip { margin-top:6px; font-size:13px; color:#b45309; }
 .drop.over { border-color:var(--pri); background:#eff6ff; }
 .files { list-style:none; margin:8px 0 0; padding:0; }
 .files li { display:flex; align-items:center; gap:8px; padding:4px 6px; background:#fff; border:1px solid var(--b); border-radius:6px; margin-bottom:4px; }
