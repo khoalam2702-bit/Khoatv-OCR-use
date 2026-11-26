@@ -162,3 +162,10 @@ test('bảng đơn vị cũ: "Bà Rịa - Vũng Tàu" có gạch ngang trong tê
   assert.equal(r.tinh.ma, '79'); assert.ok(r.cu);
   assert.equal(addressDetail(dmOld, 'Số 1, Xã Bình Ba, Huyện Châu Đức, Bà Rịa - Vũng Tàu'), 'Số 1');
 });
+
+test('CV nhân viên: Địa chỉ hiện tại tách thành số nhà/tổ + tỉnh + xã (địa chỉ cũ chỉ có quận thì chỉ ra tỉnh)', () => {
+  const o = enrichData('CV_NHANVIEN', { dia_chi: 'Quận Đống Đa, Hà Nội' }, dmOld);
+  assert.equal(o.hien_tai_tinh_ma, '01'); assert.equal(o.hien_tai_xa_ma, '');
+  const p = enrichData('CV_NHANVIEN', { dia_chi: '12 Lê Duẩn, Phường Hải Châu 1, Quận Hải Châu, Đà Nẵng' }, dmOld);
+  assert.equal(p.hien_tai_tinh_ma, '48'); assert.ok(p.hien_tai_xa_ma); assert.equal(p.hien_tai_chi_tiet, '12 Lê Duẩn');
+});
