@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Tool scan thông tin - Fast Business Online",
   "description": "Quét CCCD, hộ chiếu, GPLX, giấy khai sinh, CV, cân điện tử, biển số xe bằng OCR và điền vào form FAST Business Online.",
-  "version": "0.2.22",
+  "version": "0.2.23",
   "minimum_chrome_version": "114",
   "action": { "default_title": "Tool scan thông tin - Fast Business Online" },
   "side_panel": { "default_path": "sidepanel.html" },
