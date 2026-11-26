@@ -61,3 +61,9 @@ export function fromFormValues(fields, values) {
 export function missingRequired(required, data) {
   return (required || []).filter((k) => data[k] === null || data[k] === undefined || data[k] === '');
 }
+
+/** Nhãn cảnh báo cho giá trị không có trên CV (backend đánh dấu ở <trường>_nguon). */
+const SOURCE_NOTES = { ten_dem: 'đoán theo tên đệm, cần kiểm tra', ten: 'AI đoán theo tên, cần kiểm tra', anh: 'AI đoán theo ảnh, cần kiểm tra', mac_dinh: 'mặc định, CV không ghi' };
+export function sourceNote(key, data) {
+  return (data && SOURCE_NOTES[data[key + '_nguon']]) || '';
+}

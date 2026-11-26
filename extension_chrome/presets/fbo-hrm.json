@@ -98,6 +98,12 @@
     "que_quan_chi_tiet": "[id$=\"_dirExtender_form_que_quan\"]"
   },
   "CV_UNGVIEN": {
+    "quoc_tich": {
+      "selector": "[id$=\"_dirExtender_form_quoc_tich\"]",
+      "map": {
+        "Việt Nam": "VN"
+      }
+    },
     "ho_ten": [
       {
         "selector": "[id$=\"_dirExtender_form_ho_uv\"]",
