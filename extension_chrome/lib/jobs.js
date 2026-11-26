@@ -59,3 +59,15 @@ export function jobFields(job, today) {
     meta: { approx: f0.approx || t0.approx, fromDefault: !f0.date, toDefault: !t0.date, ongoing: t0.ongoing }
   };
 }
+
+/** Lưới "Quá trình làm việc" của hồ sơ ứng viên (FormGriddqtlv): khóa ct_* -> số cột trong lưới. Cột Lương, Lý do chuyển đến/đi không điền. */
+export const CANDIDATE_GRID = {
+  grid: 'FormGriddqtlv',
+  cols: { ct_don_vi: 2, ct_vi_tri: 3, ct_so_nam: 5, ct_tu_ngay: 6, ct_den_ngay: 7, ct_ghi_chu: 10 },
+  same: ['ct_don_vi', 'ct_vi_tri', 'ct_tu_ngay'],
+  blank: ['ct_don_vi', 'ct_vi_tri']
+};
+/** Dòng lưới của từng công việc; Ghi chú trên lưới là một dòng nên đổi xuống dòng thành "; ". */
+export function gridRows(jobs, today) {
+  return jobs.map((j) => { const f = jobFields(j, today).fields; return { ...f, ct_ghi_chu: f.ct_ghi_chu.replace(/\s*\n\s*/g, '; ') }; });
+}

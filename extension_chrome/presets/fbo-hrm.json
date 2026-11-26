@@ -152,8 +152,6 @@
     "truong_dao_tao": "[id$=\"_dirExtender_form_truong_dt\"]",
     "chuyen_nganh": "[id$=\"_dirExtender_form_chuong_trinh_dt\"]",
     "xep_loai": "[id$=\"_dirExtender_form_xep_loai_dt\"]",
-    "dia_chi_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_tinh\"]",
-    "dia_chi_xa_ma": "[id$=\"_dirExtender_form_dia_chi_xa\"]",
     "dia_chi_chi_tiet": "[id$=\"_dirExtender_form_dia_chi\"]",
     "ngay_hoc_tu": {
       "selector": "[id$=\"_dirExtender_form_ngay_dt_tu\"]",

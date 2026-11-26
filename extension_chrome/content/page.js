@@ -305,6 +305,55 @@
     return { found: !!el, title: el ? String(el.innerText || el.textContent || '').trim() : '' };
   };
 
+  /* Lưới Quá trình làm việc (hồ sơ ứng viên): mỗi công việc một dòng. spec = { grid, cols: { khóa: số cột }, same: [khóa nhận biết dòng trùng], blank: [khóa phải trống ở dòng mới] }.
+     rows = [{ khóa: giá trị }]. Trả { found, results: ['filled'|'exists'|'noRow'] }. Thiếu dòng trống thì bấm nút Thêm của lưới. Không bấm Lưu. */
+  globalThis.__KHOATV_GRID__ = async function (spec, rows) {
+    var re = new RegExp(spec.grid + '_inputCell_(\\d+)\\.(\\d+)$');
+    var firstCol = spec.cols[spec.blank[0]];
+    function cells() {
+      var map = {};
+      Array.prototype.forEach.call(document.querySelectorAll('input[id*="' + spec.grid + '_inputCell_"]'), function (e) {
+        var m = re.exec(e.id);
+        if (m) (map[m[1]] = map[m[1]] || {})[m[2]] = e;
+      });
+      return map;
+    }
+    function ids(map) { return Object.keys(map).filter(function (r) { return map[r][firstCol]; }).sort(function (a, b) { return a - b; }); }
+    function val(row, k) { var e = row[spec.cols[k]]; return e ? String(e.value || '').trim() : ''; }
+    if (!ids(cells()).length) return { found: false, results: [] };
+    var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+    var results = [];
+    for (var i = 0; i < rows.length; i++) {
+      var data = rows[i], map = cells(), list = ids(map);
+      var dup = list.some(function (r) { return spec.same.every(function (k) { return norm(val(map[r], k)) === norm(String(data[k] || '').slice(0, 128)); }); });
+      if (dup) { results.push('exists'); continue; }
+      var free = list.filter(function (r) { return spec.blank.every(function (k) { return !val(map[r], k); }); })[0];
+      if (!free) {
+        var add = document.querySelector('[id$="' + spec.grid + '_ToolbarButton_Insert"]');
+        if (add) add.click();
+        for (var t = 0; t < 20 && !free; t++) {
+          await sleep(150);
+          map = cells();
+          free = ids(map).filter(function (r) { return list.indexOf(r) < 0; })[0];
+        }
+      }
+      if (!free) { results.push('noRow'); continue; }
+      var keys = Object.keys(spec.cols);
+      for (var j = 0; j < keys.length; j++) {
+        var el = cells()[free][spec.cols[keys[j]]], v = String(data[keys[j]] == null ? '' : data[keys[j]]);
+        if (!el || !v) continue;
+        if (el.maxLength > 0) v = v.slice(0, el.maxLength);
+        el.focus(); el.click();
+        setNative(el, v);
+        fire(el, 'input'); fire(el, 'change');
+        el.blur();
+      }
+      await sleep(40); // nghỉ một nhịp mỗi dòng cho lưới cập nhật (không nghỉ từng ô: tab nền bị bóp hẹn giờ)
+      results.push('filled');
+    }
+    return { found: true, results: results };
+  };
+
   globalThis.__KHOATV_INSPECT__ = function () {
     var list = [];
     document.querySelectorAll('input, select, textarea').forEach(function (el) {

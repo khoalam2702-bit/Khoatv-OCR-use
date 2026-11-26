@@ -1,7 +1,7 @@
 import { getSettings, getFboProfile, getDm } from './store.js';
 import { enrichData } from './dm.js';
 import { PHOTO_FORMS } from './photo.js';
-import { JOB_VARIANT } from './jobs.js';
+import { JOB_VARIANT, CANDIDATE_GRID, gridRows } from './jobs.js';
 import { FORM_WAIT_MS, POLL_MS, STEP_TIMEOUT_MS, STABLE_POLLS, mappingSelectors, classifyForm, withTimeout, importantOverwrites, abortable, FillStopped, mappingVariants, pickVariant, formLabel } from './formcheck.js';
 
 /** Chạy script trong tab NGAY, không chờ khung phụ tải xong (document_idle). Trang FBO có khung phụ không bao giờ tải xong thì lệnh mặc định treo mãi. */
@@ -198,6 +198,24 @@ export async function fillActiveTab(docType, data, opts) {
   let away = false;
   try { const [cur] = await chrome.tabs.query({ active: true, currentWindow: true }); away = !!cur && cur.id !== tabInfo.id; } catch (e) { away = false; }
   return { status, total, filled: [...filled], notFound: [...notFound], empty: [...empty], found: form.found, selectors: form.total, tabTitle: tabInfo.title, away, mainOnly, photo, diag: lateDiag, formName: variants.length > 1 ? formLabel(form.variant) : '' };
+}
+
+/**
+ * Điền các công việc vào lưới "Quá trình làm việc" của hồ sơ ứng viên đang mở. Không bấm Lưu.
+ * Trả { status: 'DONE' | 'NO_GRID' | 'READ_ONLY', results: ['filled'|'exists'|'noRow'] theo thứ tự jobs, title }
+ */
+export async function fillCandidateJobs(jobs) {
+  const tab = await webTab();
+  await pingTab(tab);
+  const target = { tabId: tab.id }; // form FBO nằm ở khung chính
+  await step(run(target, { files: ['content/page.js'] }), 'nạp công cụ điền');
+  const tt = await step(run(target, { func: () => globalThis.__KHOATV_TITLE__() }), 'đọc tiêu đề form');
+  const title = (tt[0] && tt[0].result && tt[0].result.title) || '';
+  if (/^\s*(xem|view)\b/i.test(title)) return { status: 'READ_ONLY', title, results: [] };
+  const res = await step(run(target, { func: (s, r) => globalThis.__KHOATV_GRID__(s, r), args: [CANDIDATE_GRID, gridRows(jobs)] }), 'điền lưới quá trình làm việc');
+  const out = res[0] && res[0].result;
+  if (!out || !out.found) return { status: 'NO_GRID', title, results: [] };
+  return { status: 'DONE', title, results: out.results };
 }
 
 /** Tab web (http/https) vừa dùng gần nhất: trang Cài đặt tự nó là tab đang mở, nên không thể dùng "tab active". */

@@ -71,6 +71,9 @@ const GENDER_HINT_ = 'gioi_tinh CHỈ ghi khi CV có ghi rõ giới tính. Nếu
   'gioi_tinh_doan_theo là "ten" hoặc "anh"; không đủ chắc chắn thì để trống cả hai. quoc_tich CHỈ ghi khi CV có nêu. ';
 const GENDER_AUX_ = [f_('gioi_tinh_doan', 'Giới tính đoán'), f_('gioi_tinh_doan_theo', 'Đoán giới tính theo (ten/anh)')];
 
+/** Gợi ý tách từng công việc (dùng chung cho CV_NHANVIEN và CV_UNGVIEN; chỉ để điền form, không thành cột). */
+const JOBS_HINT_ = 'cong_viec: danh sách TỪNG công việc trong mục kinh nghiệm làm việc, theo thứ tự trên CV, mỗi công việc một phần tử gồm cong_ty (tên công ty/đơn vị), chuc_danh, tu (thời điểm bắt đầu) và den (thời điểm kết thúc) CHÉP ĐÚNG như CV ghi (ví dụ "06/2023", "2019", "Nay"; không tự thêm tháng hoặc ngày), mo_ta (1-3 ý chính, ngắn). Không có mục kinh nghiệm thì trả danh sách rỗng.';
+
 /**
  * Cấu hình 13 loại tài liệu.
  * Tên sheet = mã loại. uniqueKey: khoá nghiệp vụ để ghi đè chống trùng (null = chống trùng theo tệp gốc)
@@ -114,13 +117,13 @@ const DOC_TYPES = {
       'Chỉ ghi thông tin cá nhân (ngày sinh, địa chỉ) khi CV có ghi rõ. ' + GENDER_HINT_ +
       'Học vấn: cap_dao_tao là trình độ cao nhất (ví dụ Đại học, Cao đẳng), truong_dao_tao là tên trường, chuyen_nganh là ngành học, xep_loai là xếp loại tốt nghiệp nếu có. ' +
       'tu_nam và den_nam là NĂM bắt đầu và NĂM kết thúc học (4 chữ số) của bậc học trên, chỉ ghi khi CV nêu. ' +
-      PHOTO_HINT_,
+      PHOTO_HINT_ + JOBS_HINT_,
     fields: [f_('ho_ten', 'Họ và tên'), f_('email', 'Email'), f_('so_dien_thoai', 'Số điện thoại'), f_('vi_tri_ung_tuyen', 'Vị trí ứng tuyển'),
       f_('hoc_van', 'Học vấn', 'long'), f_('ky_nang', 'Kỹ năng', 'long'), f_('so_nam_kinh_nghiem', 'Số năm kinh nghiệm', 'number'),
       f_('kinh_nghiem_gan_nhat', 'Kinh nghiệm gần nhất', 'long'),
       f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'), f_('quoc_tich', 'Quốc tịch'), f_('dia_chi', 'Địa chỉ'),
       f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại')],
-    aux: [f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm')].concat(PHOTO_AUX_, GENDER_AUX_) // chỉ dùng để điền form FBO (ngày học), không thành cột trong Sheet
+    aux: [f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm')].concat(PHOTO_AUX_, GENDER_AUX_, [f_('cong_viec', 'Danh sách công việc đã làm', 'jobs')]) // chỉ dùng để điền form FBO (ngày học, công việc), không thành cột trong Sheet
   },
   CV_NHANVIEN: {
     label: 'CV nhân viên', uniqueKey: null, required: ['ho_ten'],
@@ -132,7 +135,7 @@ const DOC_TYPES = {
       'Các mục sau viết thành văn bản gọn, mỗi ý một dòng, đúng nội dung CV: ky_nang (kỹ năng), so_thich (sở thích), chung_chi (chứng chỉ, kèm năm), ' +
       'kinh_nghiem (kinh nghiệm làm việc: mỗi vị trí một đoạn gồm thời gian, chức danh, công ty và 1-3 ý chính, mới nhất trước). ' +
             PHOTO_HINT_ +
-      'cong_viec: danh sách TỪNG công việc trong mục kinh nghiệm làm việc, theo thứ tự trên CV, mỗi công việc một phần tử gồm cong_ty (tên công ty/đơn vị), chuc_danh, tu (thời điểm bắt đầu) và den (thời điểm kết thúc) CHÉP ĐÚNG như CV ghi (ví dụ "06/2023", "2019", "Nay"; không tự thêm tháng hoặc ngày), mo_ta (1-3 ý chính, ngắn). Không có mục kinh nghiệm thì trả danh sách rỗng.',
+      JOBS_HINT_,
     fields: [f_('ho_ten', 'Họ và tên'), f_('gioi_tinh', 'Giới tính'), f_('ngay_sinh', 'Ngày sinh'), f_('quoc_tich', 'Quốc tịch'), f_('dia_chi', 'Địa chỉ'), f_('so_dien_thoai', 'Số điện thoại'), f_('email', 'Email'),
       f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại'),
       f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm'), f_('ngoai_ngu', 'Ngoại ngữ'), f_('ngoai_ngu_diem', 'Bằng/điểm ngoại ngữ'), f_('ngoai_ngu_khac', 'Ngoại ngữ khác', 'long'),

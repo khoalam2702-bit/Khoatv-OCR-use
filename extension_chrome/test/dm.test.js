@@ -91,7 +91,7 @@ test('enrichData: CCCD thêm thuong_tru_chi_tiet và que_quan_chi_tiet', () => {
 
 test('enrichData: CV ứng viên tách địa chỉ thành chi tiết + tỉnh + phường/xã; loại khác không thêm khóa địa chỉ', () => {
   const o = enrichData('CV_UNGVIEN', { dia_chi: '12 Lê Duẩn, Phường Hải Châu, Thành phố Đà Nẵng' }, dm);
-  assert.equal(o.dia_chi_chi_tiet, '12 Lê Duẩn');
+  assert.equal(o.dia_chi_chi_tiet, '12 Lê Duẩn, Phường Hải Châu, Thành phố Đà Nẵng');
   assert.ok(o.dia_chi_tinh_ma && o.dia_chi_xa_ma);
   assert.equal(o.dia_chi, '12 Lê Duẩn, Phường Hải Châu, Thành phố Đà Nẵng');
   assert.equal('dia_chi_tinh_ma' in enrichData('GPLX', { dia_chi: 'x' }, dm), false);
