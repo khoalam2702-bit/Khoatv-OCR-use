@@ -1,6 +1,6 @@
 {
   "name": "khoatv-ocr-extension",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "private": true,
   "type": "module",
   "description": "Extension Chrome/Edge (MV3 Side Panel): quét OCR và tự điền form FBO",

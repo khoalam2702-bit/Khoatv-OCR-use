@@ -199,3 +199,10 @@ test('chuyên ngành: khớp danh mục FBO (trùng tên, chứa tên, không kh
   assert.equal(enrichData('CV_NHANVIEN', { chuyen_nganh: 'Tài chính - Ngân hàng' }, dmCn).chuyen_nganh_ma, '46');
   assert.match(rd('../fbo-hrm.json').CV_NHANVIEN.chuyen_nganh_ma.selector, /_form_ma_cn"\]$/);
 });
+
+test('CV nhân viên: ngày tốt nghiệp = 30/09 của năm kết thúc học; không có năm thì không điền', () => {
+  assert.equal(enrichData('CV_NHANVIEN', { den_nam: '2022' }, null).ngay_tot_nghiep, '30/09/2022');
+  assert.equal(enrichData('CV_NHANVIEN', { den_nam: 'Nay' }, null).ngay_tot_nghiep, undefined);
+  assert.equal(enrichData('CV_NHANVIEN', {}, null).ngay_tot_nghiep, undefined);
+  assert.deepEqual(rd('../fbo-hrm.json').CV_NHANVIEN.ngay_tot_nghiep.format, 'date');
+});

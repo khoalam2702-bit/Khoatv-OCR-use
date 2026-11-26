@@ -340,6 +340,10 @@
     },
     "chuyen_nganh_ma": {
       "selector": "[id$=\"_dirExtender_form_ma_cn\"]"
+    },
+    "ngay_tot_nghiep": {
+      "selector": "[id$=\"_dirExtender_form_ngay_tot_nghiep\"]",
+      "format": "date"
     }
   },
   "CV_NHANVIEN@CONGTAC": {
