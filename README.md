@@ -1,6 +1,6 @@
 # OCR tài liệu: Google Apps Script + Gemini Vision + Google Sheets + Google Drive
 
-Web App quét và bóc tách 12 loại tài liệu (CCCD, hộ chiếu, GPLX, giấy khai sinh, CV, sổ đỏ, đơn hàng, phiếu giao hàng, phiếu nhập/xuất kho, màn hình cân điện tử, biển số xe). Toàn bộ chạy trong hệ sinh thái Google, không cần cơ sở dữ liệu ngoài.
+Web App quét và bóc tách 13 loại tài liệu (CCCD, hộ chiếu, GPLX, giấy khai sinh, CV ứng viên, CV nhân viên, sổ đỏ, đơn hàng, phiếu giao hàng, phiếu nhập/xuất kho, màn hình cân điện tử, biển số xe). Toàn bộ chạy trong hệ sinh thái Google, không cần cơ sở dữ liệu ngoài.
 
 ## Luồng xử lý
 
@@ -27,7 +27,7 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 ```
 
 - Năm và tháng tính theo thời điểm bấm lưu, múi giờ Việt Nam.
-- Trong file tháng, tên sheet = mã loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `SO_DO`, `DON_HANG`, `GIAO_HANG`, `NHAP_KHO`, `XUAT_KHO`, `CAN_DIEN_TU`, `BIEN_SO_XE`.
+- Trong file tháng, tên sheet = mã loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `CV_NHANVIEN`, `SO_DO`, `DON_HANG`, `GIAO_HANG`, `NHAP_KHO`, `XUAT_KHO`, `CAN_DIEN_TU`, `BIEN_SO_XE`.
 - 7 cột hệ thống đầu mỗi sheet: `scan_timestamp`, `document_type`, `raw_file_url`, `raw_file_id`, `scanned_by`, `source` (`WEB_APP` hoặc `EXTENSION`), `fbo_sync_status` (`PENDING`, `FILLED`, `ERROR`); sau đó là các trường bóc tách. Sheet của các tháng cũ tự được chèn 2 cột mới ở lần ghi kế tiếp, dữ liệu cũ để trống 2 cột này (hiểu là `WEB_APP` / `PENDING`).
 - Cột chữ được định dạng văn bản nên giữ được số 0 đầu (số CCCD, số điện thoại). Cột tiền, khối lượng là số.
 - Chi tiết hàng hoá / vật tư lưu dạng JSON trong 1 ô.
@@ -46,7 +46,7 @@ Thư mục gốc: `10H3azrz0_xObAmQsans_JYgI-acuK346`. Hệ thống tự tạo t
 ```
 backend_gas/       Apps Script: Code.js (logic + cổng doPost), index.html (giao diện GAS cũ), appsscript.json
 admin_webapp/      Web Admin Next.js (NextAuth): đối soát bản ghi, quản lý tài khoản. Xem admin_webapp/README.md
-extension_chrome/  Extension Chrome/Edge (MV3 Side Panel): quét 7 loại OCR, lưu về GAS, điền form FBO. Xem mục "Extension" bên dưới
+extension_chrome/  Extension Chrome/Edge (MV3 Side Panel): quét 8 loại OCR, lưu về GAS, điền form FBO. Xem mục "Extension" bên dưới
 .github/workflows/ deploy.yml (đẩy backend_gas lên GAS), admin-webapp.yml (build Next.js), extension.yml (test extension)
 public/, vercel.json   khung Vercel bao quanh giao diện GAS cũ (giữ nguyên)
 ```
@@ -55,7 +55,7 @@ Mọi thao tác **ghi** dữ liệu đều đi qua Apps Script (luật chống t
 
 ## Extension Chrome/Edge (`extension_chrome/`)
 
-Side Panel (Chrome / Edge 114+). Giai đoạn này hỗ trợ 7 loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `CAN_DIEN_TU`, `BIEN_SO_XE` (danh sách ở `extension_chrome/lib/config.js`; nhãn và trường lấy từ `getAppConfig`).
+Side Panel (Chrome / Edge 114+). Giai đoạn này hỗ trợ 8 loại: `CCCD`, `HO_CHIEU`, `GPLX`, `KHAI_SINH`, `CV_UNGVIEN`, `CV_NHANVIEN`, `CAN_DIEN_TU`, `BIEN_SO_XE` (danh sách ở `extension_chrome/lib/config.js`; nhãn và trường lấy từ `getAppConfig`).
 
 Luồng: đăng nhập (tài khoản Web Admin) → chọn loại → thêm ảnh/PDF (chọn tệp, kéo thả, Ctrl+V; ảnh nén JPEG 0.92) → `scanDocument` → xem/sửa → `saveRecord` (ghi `source = EXTENSION`, `fbo_sync_status = PENDING`) → "Điền vào FBO" → `updateSyncStatus` (`FILLED` / `ERROR`).
 

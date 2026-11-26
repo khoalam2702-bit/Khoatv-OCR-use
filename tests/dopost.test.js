@@ -11,7 +11,7 @@ assert.strictEqual(post(null, '{x').ok, false);
 assert.strictEqual(post({ action: 'constructor' }).error, 'Hành động không hợp lệ.');
 assert.strictEqual(post({ action: 'setup' }).error, 'Hành động không hợp lệ.');
 assert.strictEqual(post({ action: 'doGet' }).ok, false);
-assert.strictEqual(post({ action: 'getAppConfig' }).data.types.length, 12);
+assert.strictEqual(post({ action: 'getAppConfig' }).data.types.length, 13);
 assert.strictEqual(post({ action: 'getAppConfig' }).data.anonPerDay, 10); // chưa khai báo: mặc định 10 lượt / ngày / thiết bị
 assert.strictEqual(post({ action: 'scanAnonymous', args: [] }).ok, false); // quét không tài khoản chỉ lỗi nghiệp vụ, không lộ hàm nội bộ
 assert.deepStrictEqual(post({ action: 'login', args: ['a', 'ok'] }), { ok: true, data: { token: 't' } });
