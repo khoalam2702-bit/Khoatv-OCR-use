@@ -32,3 +32,19 @@ test('phản hồi không phải JSON và lỗi mạng', async () => {
   const b = createGasClient({ getUrl: async () => 'u', fetchImpl: async () => { throw new Error('down'); } });
   await assert.rejects(b('x'), (e) => e.code === 'NETWORK');
 });
+
+test('hết thời gian chờ báo TIMEOUT, không báo lỗi mạng', async () => {
+  const call = createGasClient({ getUrl: async () => 'u', fetchImpl: async () => { const e = new Error('t'); e.name = 'TimeoutError'; throw e; } });
+  await assert.rejects(call('scanDocument'), (e) => e.code === 'TIMEOUT' && /295 giây/.test(e.message));
+  await assert.rejects(call('saveRecord'), (e) => e.code === 'TIMEOUT' && /110 giây/.test(e.message));
+});
+
+test('rớt mạng: thao tác chỉ đọc tự thử lại một lần, quét thì không', async () => {
+  let n = 0;
+  const call = createGasClient({ getUrl: async () => 'u', retryWaitMs: 0, fetchImpl: async () => { n++; if (n === 1) throw new TypeError('Failed to fetch'); return resp({ ok: true, data: 1 }); } });
+  assert.equal(await call('getAppConfig'), 1);
+  assert.equal(n, 2);
+  n = 0;
+  await assert.rejects(call('scanAnonymous'), (e) => e.code === 'NETWORK');
+  assert.equal(n, 1);
+});
