@@ -19,22 +19,30 @@ const reset = p => { plan = p; calls = 0; urls.length = 0; sleeps.length = 0; Ob
 const MAIN = 'gemini-3.6-flash', LITE = 'gemini-3.5-flash-lite';
 const used = () => vm.runInContext('FALLBACK_USED_', ctx);
 
-reset([BUSY, BUSY, BUSY, BUSY, BUSY, OK]); // hết lượt model chính vẫn 503 -> mới tới model dự phòng
+reset([BUSY, BUSY, BUSY, OK]);          // 2 khoá + 1 lần thử lại vẫn 503 -> model dự phòng
 assert.strictEqual(run().so_cccd, '9');
-assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, MAIN, MAIN, LITE]);
-assert.deepStrictEqual(sleeps, [3000, 8000, 15000, 1000]);
+assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, LITE]);
+assert.deepStrictEqual(sleeps, [2000, 500]);
 assert.strictEqual(used(), LITE);
 
 reset([OK]);                            // 503 không cho khoá nghỉ: lượt kế tiếp gọi được ngay
 assert.strictEqual(run().so_cccd, '9');
 
-reset(Array(7).fill(BUSY));             // cả hai model quá tải: báo lỗi dễ hiểu
+reset(Array(5).fill(BUSY));             // cả hai model quá tải: báo lỗi dễ hiểu
 assert.throws(run, /quá tải \(lỗi 503\)/);
-assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, MAIN, MAIN, LITE, LITE]);
+assert.deepStrictEqual(urls, [MAIN, MAIN, MAIN, LITE, LITE]);
 
-reset([BUSY, BUSY, BUSY, BUSY, BUSY, resp(404)]);   // tên model dự phòng sai: vẫn báo quá tải, không gọi thêm
+reset([BUSY, BUSY, BUSY, resp(404)]);   // tên model dự phòng sai: vẫn báo quá tải, không gọi thêm
 assert.throws(run, /quá tải \(lỗi 503\)/);
-assert.strictEqual(calls, 6);
+assert.strictEqual(calls, 4);
+
+let now = 0; ctx.Date = class extends Date { static now() { return now; } };
+const slow = ctx.UrlFetchApp.fetch;     // mỗi lần 503 mất 30 giây: 1 khoá rồi sang dự phòng ngay
+ctx.UrlFetchApp.fetch = (u, o) => { const r = slow(u, o); if (r.getResponseCode() >= 500) now += 30000; return r; };
+reset([BUSY, OK]);
+assert.strictEqual(run().so_cccd, '9');
+assert.deepStrictEqual(urls, [MAIN, LITE]);
+ctx.UrlFetchApp.fetch = slow; ctx.Date = Date;
 
 props.GEMINI_FALLBACK_MODEL = 'off';    // tắt dự phòng: chỉ chờ và thử lại model chính
 reset([BUSY, BUSY, BUSY, BUSY, BUSY]);

@@ -989,7 +989,8 @@ function scanCore_(me, payload, anon) {
   const skipAi = payload.skipAi === true && payload.docType === 'CCCD';
   const data = skipAi ? {} : (callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {});
   const tFix = Date.now();
-  if (!skipAi) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
+  // Đọc lại dấu là lần gọi AI thứ hai: bỏ qua nếu lượt đầu đã quá 60 giây, tránh bị dừng ở 120 giây và mất cả kết quả
+  if (!skipAi && tFix - started < 60000) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
   const fixMs = Date.now() - tFix;
   console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
   fillCvPersonal_(payload.docType, data);
@@ -1316,7 +1317,7 @@ function callGemini_(type, files, opts) {
     if (type.ai && type.ai.maxTokens) body.generationConfig.maxOutputTokens = type.ai.maxTokens;
   }
   const startedAt = Date.now();
-  let resp = null, keyIdx = 0, used = null;
+  let resp = null, keyIdx = 0, used = null, busy = 0;
   for (let i = 0; i < ready.length; i++) {
     keyIdx = keys.indexOf(ready[i]);
     used = ready[i];
@@ -1333,6 +1334,8 @@ function callGemini_(type, files, opts) {
     // Lỗi máy chủ (5xx) là do model quá tải, không do khoá: thử khoá kế tiếp nhưng không cho khoá nghỉ.
     if (c === 429 || c === 403 || c >= 500 || isBadKey_(resp)) {
       if (c < 500) markKeyCooldown_(used, cooldownSecFor_(resp, c));
+      // Quá tải là do model: thử tối đa 2 khoá (hoặc dừng nếu đã quá 20 giây), đừng tốn thời gian thử hết
+      if (c >= 500 && (++busy >= 2 || Date.now() - startedAt > 20000)) break;
       if (i < ready.length - 1) {
         console.error('Khoá Gemini ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + ' lỗi ' + c + ', chuyển khoá kế tiếp: ' + resp.getContentText().slice(0, 300));
         continue;
@@ -1340,17 +1343,19 @@ function callGemini_(type, files, opts) {
     }
     break;
   }
-  // 503... là Google quá tải tạm thời (không do khoá): chờ lâu dần rồi thử lại, sau đó chuyển sang model dự phòng.
-  // Dừng nếu đã quá 90 giây, tránh người dùng đợi vô ích. Một khoá thì fetchRetry_ đã tự chờ và thử lại model chính.
+  // 503... là Google quá tải tạm thời (không do khoá): thử lại model chính một lần rồi chuyển sang model dự phòng.
+  // Extension dừng ở 120 giây nên phải chuyển sớm. Một khoá thì fetchRetry_ đã tự chờ và thử lại model chính.
   const backup = prop_('GEMINI_FALLBACK_MODEL', DEFAULTS.GEMINI_FALLBACK_MODEL);
   const hasBackup = backup !== 'off' && backup !== model;
   const many = ready.length > 1;
-  // Model dự phòng (bản Lite) đọc kém hơn nên chỉ dùng sau cùng, khi đã hết lượt thử model chính.
-  const steps = (many ? OVERLOAD_WAITS_MS.map(function (ms) { return [ms, model]; }) : [])
-    .concat(hasBackup ? [[1000, backup], [8000, backup]] : []);
+  // Model dự phòng (bản Lite) đọc kém hơn nên chỉ dùng sau khi model chính đã thử lại mà vẫn lỗi.
+  const steps = hasBackup
+    ? (many ? [[2000, model]] : []).concat([[500, backup], [3000, backup]])
+    : (many ? OVERLOAD_WAITS_MS.map(function (ms) { return [ms, model]; }) : []);
   for (let n = 0; n < steps.length; n++) {
-    if (resp.getResponseCode() < 500 || Date.now() - startedAt > 90000) break;
+    if (resp.getResponseCode() < 500 || Date.now() - startedAt > 75000) break;
     const wait = steps[n][0], m = steps[n][1];
+    if (hasBackup && m === model && Date.now() - startedAt > 25000) continue; // đã chậm: sang dự phòng luôn
     Utilities.sleep(wait);
     FETCH_STATS_.retries++; FETCH_STATS_.waitMs += wait;
     used = ready[n % ready.length];
