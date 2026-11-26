@@ -39,18 +39,23 @@ export function parsePeriod(text, edge) {
 
 const dmy = (d) => { const [a, b, c] = d.split('/').map(Number); return new Date(c, b - 1, a); };
 
-/** Các khóa dẫn xuất ct_* của một công việc (khóa ánh xạ form quá trình công tác) + meta để báo người dùng. */
-export function jobFields(job) {
+const todayStr = () => { const d = new Date(); return p2(d.getDate()) + '/' + p2(d.getMonth() + 1) + '/' + d.getFullYear(); };
+
+/**
+ * Các khóa dẫn xuất ct_* của một công việc (khóa ánh xạ form quá trình công tác) + meta để báo người dùng.
+ * Quy ước khi CV thiếu: Từ không có/không đọc được -> hôm nay; chỉ năm -> 01/01. Đến không có -> bằng ngày Từ; chỉ năm -> 31/12; "Nay" -> hôm nay (ô Đến của form bắt buộc).
+ */
+export function jobFields(job, today) {
   const j = job || {};
-  const from = parsePeriod(j.tu, 'from'), to = parsePeriod(j.den, 'to');
-  let years = '';
-  if (from.date && to.date) {
-    const d = (dmy(to.date) - dmy(from.date)) / 86400000 / 365.25;
-    if (d >= 0) years = String(Math.round(d * 100) / 100);
-  }
+  today = today || todayStr();
+  const f0 = parsePeriod(j.tu, 'from'), t0 = parsePeriod(j.den, 'to');
+  const fromDate = f0.date || today;
+  const toDate = t0.date || (t0.ongoing ? today : fromDate);
+  const diff = (dmy(toDate) - dmy(fromDate)) / 86400000 / 365.25;
+  const years = diff >= 0 ? String(Math.round(diff * 100) / 100) : '';
   const ghi = [(j.tu || j.den) ? 'Thời gian theo CV: ' + [j.tu, j.den].filter(Boolean).join(' - ') : '', j.mo_ta].filter(Boolean).join('\n');
   return {
-    fields: { ct_don_vi: j.cong_ty || '', ct_vi_tri: j.chuc_danh || '', ct_tu_ngay: from.date, ct_den_ngay: to.date, ct_so_nam: years, ct_ghi_chu: ghi },
-    meta: { approx: from.approx || to.approx, ongoing: to.ongoing, noFrom: !from.date, noTo: !to.date && !to.ongoing }
+    fields: { ct_don_vi: j.cong_ty || '', ct_vi_tri: j.chuc_danh || '', ct_tu_ngay: fromDate, ct_den_ngay: toDate, ct_so_nam: years, ct_ghi_chu: ghi },
+    meta: { approx: f0.approx || t0.approx, fromDefault: !f0.date, toDefault: !t0.date, ongoing: t0.ongoing }
   };
 }

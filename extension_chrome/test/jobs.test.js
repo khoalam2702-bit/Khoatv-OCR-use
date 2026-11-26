@@ -19,14 +19,18 @@ test('jobFields: khóa ct_*, số năm, ghi chú giữ thời gian gốc; normal
   assert.equal(fields.ct_don_vi, 'ABC'); assert.equal(fields.ct_tu_ngay, '01/01/2020'); assert.equal(fields.ct_den_ngay, '31/12/2021');
   assert.equal(fields.ct_so_nam, '2'); assert.match(fields.ct_ghi_chu, /Thời gian theo CV: 01\/2020 - 12\/2021\nLập báo cáo/);
   assert.equal(meta.approx, true);
-  assert.equal(jobFields({ cong_ty: 'X', tu: '2022', den: 'Nay' }).meta.ongoing, true);
+  assert.equal(jobFields({ cong_ty: 'X', tu: '2022', den: 'Nay' }, '26/11/2026').fields.ct_den_ngay, '26/11/2026');
+  const m = jobFields({ cong_ty: 'Y' }, '26/11/2026').fields; // không có thời gian: Từ = hôm nay, Đến = Từ
+  assert.deepEqual([m.ct_tu_ngay, m.ct_den_ngay, m.ct_so_nam], ['26/11/2026', '26/11/2026', '0']);
+  const n = jobFields({ cong_ty: 'Z', tu: '03/2021' }, '26/11/2026').fields; // có Từ, thiếu Đến: Đến = Từ
+  assert.deepEqual([n.ct_tu_ngay, n.ct_den_ngay], ['01/03/2021', '01/03/2021']);
   assert.deepEqual(normalizeJobs([{ cong_ty: '', chuc_danh: '' }, { cong_ty: ' A ' }, null]).map((j) => j.cong_ty), ['A']);
 });
 
 test('enrichData: ctx.job chọn đúng công việc, không có ctx.job thì không thêm khóa ct_*', () => {
   const data = { cong_viec: [{ cong_ty: 'A', tu: '2018', den: '2019' }, { cong_ty: 'B', tu: '2020', den: 'Nay' }] };
   assert.equal(enrichData('CV_NHANVIEN', data, null, { job: 1 }).ct_don_vi, 'B');
-  assert.equal(enrichData('CV_NHANVIEN', data, null, { job: 1 }).ct_den_ngay, '');
+  assert.equal(enrichData('CV_NHANVIEN', data, null, { job: 1, today: '26/11/2026' }).ct_den_ngay, '26/11/2026');
   assert.equal(enrichData('CV_NHANVIEN', data, null, {}).ct_don_vi, undefined);
   assert.equal(enrichData('CV_NHANVIEN', data, null, { job: 5 }).ct_don_vi, undefined);
 });

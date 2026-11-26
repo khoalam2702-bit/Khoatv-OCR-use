@@ -448,8 +448,8 @@ function renderJobs() {
     const t = document.createElement('div'); t.className = 'jt'; t.textContent = (done ? '✓ ' : '') + (j.cong_ty || '(không rõ đơn vị)') + (j.chuc_danh ? ' – ' + j.chuc_danh : '');
     const mm = document.createElement('div'); mm.className = 'jm';
     mm.textContent = 'Theo CV: ' + ([j.tu, j.den].filter(Boolean).join(' → ') || 'không ghi thời gian') +
-      (f.fields.ct_tu_ngay || f.fields.ct_den_ngay ? ' | Điền: ' + (f.fields.ct_tu_ngay || '…') + ' → ' + (f.fields.ct_den_ngay || (m.ongoing ? 'để trống (còn làm)' : '…')) : '') +
-      (m.approx ? ' (ngày ước lượng: đầu/cuối tháng, đầu/cuối năm)' : '') + (done ? ' | Đã điền' : '');
+      ' | Điền: ' + f.fields.ct_tu_ngay + ' → ' + f.fields.ct_den_ngay +
+      (m.fromDefault || m.toDefault ? ' (CV thiếu ngày: dùng ngày mặc định)' : m.approx ? ' (ngày ước lượng)' : '') + (done ? ' | Đã điền' : '');
     const b = document.createElement('button'); b.type = 'button'; b.textContent = done ? 'Điền lại' : 'Điền';
     b.onclick = () => fillJob(i);
     li.append(t, mm, b); ol.appendChild(li);

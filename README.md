@@ -100,7 +100,7 @@ Nguồn dữ liệu: Dorabot (dorabot.io/dia-chi/sap-nhap), chép từ nghị qu
 - AI trả thêm danh sách `cong_viec` (đơn vị, chức danh, từ, đến, mô tả); danh sách chỉ dùng để điền form, không thành cột trong Sheet.
 - Sau khi Lưu, panel hiện danh sách công việc. Mở form "Thêm thông tin quá trình công tác trước đây" ở FBO, bấm **Điền công việc tiếp theo**; mỗi lần điền một công việc, tool không tự bấm Lưu.
 - Chống trùng/ghi đè: công việc đã điền được đánh dấu ✓ (điền lại phải xác nhận); form đang ở chế độ Sửa (tiêu đề không phải "Thêm") thì hỏi trước; form còn dữ liệu của bản ghi chưa Lưu thì hỏi trước khi ghi đè.
-- CV chỉ ghi tháng/năm hoặc năm: ngày bắt đầu = đầu tháng/đầu năm, ngày kết thúc = cuối tháng/31-12 (đánh dấu "ước lượng"); "Nay" để trống ngày kết thúc; thời gian gốc ghi vào Ghi chú. Ánh xạ nằm ở khóa `CV_NHANVIEN@CONGTAC` trong `presets/fbo-hrm.json`.
+- Ngày theo quy ước khi CV thiếu: Từ không có → hôm nay; chỉ năm → 01/01; tháng/năm → đầu tháng. Đến không có → bằng ngày Từ; chỉ năm → 31/12; tháng/năm → cuối tháng; "Nay" → hôm nay (ô Đến của form bắt buộc). Thời gian gốc ghi vào Ghi chú. Ánh xạ nằm ở khóa `CV_NHANVIEN@CONGTAC` trong `presets/fbo-hrm.json`.
 
 ## Cổng API (`doPost`)
 

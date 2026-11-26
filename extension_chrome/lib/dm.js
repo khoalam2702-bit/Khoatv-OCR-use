@@ -195,7 +195,7 @@ export function enrichData(docType, data, dm, ctx) {
   const out = { ...(data || {}) };
   if (docType === 'CV_NHANVIEN' && ctx && Number.isInteger(ctx.job)) { // điền công việc thứ ctx.job (từ 0) vào form quá trình công tác
     const job = normalizeJobs(out.cong_viec)[ctx.job];
-    if (job) Object.assign(out, jobFields(job).fields);
+    if (job) Object.assign(out, jobFields(job, ctx.today).fields);
   }
   if (docType === 'KHAI_SINH') { // người phụ thuộc: loại quan hệ chọn ở Side Panel (Con 01, Cha/Mẹ 03), hiệu lực từ = ngày quét
     out.loai_qh = ctx && ctx.relation === 'CHA_ME' ? '03' : '01';
