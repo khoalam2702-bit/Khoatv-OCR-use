@@ -753,6 +753,14 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
       markReq(inp, required);
       var lbl = el('label', { 'class': 'lbl', 'for': id, text: f.label + ' ' });
       if (required) lbl.appendChild(el('span', { 'class': 'req', text: '*' }));
+      // CV: giá trị không có trên tài liệu (đoán / mặc định) phải nhìn thấy được để kiểm tra
+      var note = { ten_dem: 'đoán theo tên đệm, cần kiểm tra', ten: 'AI đoán theo tên, cần kiểm tra', anh: 'AI đoán theo ảnh, cần kiểm tra', mac_dinh: 'mặc định, CV không ghi' }[data[f.k + '_nguon']];
+      if (note) {
+        var hint = el('span', { text: ' (' + note + ')' });
+        hint.style.color = '#d97706';
+        lbl.appendChild(hint);
+        inp.addEventListener('input', function () { if (hint.parentNode) hint.parentNode.removeChild(hint); });
+      }
       return el('div', { 'class': isLong(f) ? 'full' : '' }, [lbl, inp]);
     }
     // Biển số xe: tên tỉnh/thành tự tra theo mã tỉnh (2 số đầu của biển)

@@ -2,7 +2,7 @@ import { ENABLED_TYPES, DEFAULT_LIMITS } from './lib/config.js';
 import { createGasClient, GasError } from './lib/gas.js';
 import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword, getDeviceId, getAnonMode, setAnonMode, getAnonDraft, setAnonDraft, getScanDraft, setScanDraft } from './lib/store.js';
 import { prepareFile, shrinkBase64 } from './lib/image.js';
-import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
+import { toFormValues, fromFormValues, missingRequired, sourceNote } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
 import { normalizeJobs, jobFields } from './lib/jobs.js';
 import { readCccdQr, mergeQr } from './lib/qr.js';
@@ -381,6 +381,13 @@ function renderReview(data) {
     const el = document.createElement(f.type === 'long' ? 'textarea' : 'input');
     el.name = f.k; el.value = vals[f.k];
     if (f.type === 'number') el.inputMode = 'decimal';
+    const note = sourceNote(f.k, data);
+    if (note) {
+      const hint = document.createElement('span');
+      hint.className = 'warn'; hint.textContent = ' (' + note + ')';
+      label.appendChild(hint);
+      el.addEventListener('input', () => hint.remove(), { once: true });
+    }
     label.appendChild(el); form.appendChild(label);
   }
   $('fill-info').textContent = ''; $('fill-progress').hidden = true;

@@ -66,6 +66,11 @@ const PHOTO_HINT_ = 'ẢNH CHÂN DUNG: nếu CV có ảnh chân dung của ngư�
 const PHOTO_AUX_ = [f_('anh_tep', 'Số thứ tự tệp chứa ảnh chân dung', 'number'), f_('anh_trang', 'Trang chứa ảnh chân dung', 'number'), f_('anh_ymin', 'Khung ảnh: y trên (0-1000)', 'number'), f_('anh_xmin', 'Khung ảnh: x trái (0-1000)', 'number'),
   f_('anh_ymax', 'Khung ảnh: y dưới (0-1000)', 'number'), f_('anh_xmax', 'Khung ảnh: x phải (0-1000)', 'number')];
 
+/** CV: gioi_tinh/quoc_tich chỉ chép theo CV; phần đoán trả riêng ở trường phụ để giao diện gắn nhãn cảnh báo (xem fillCvPersonal_). */
+const GENDER_HINT_ = 'gioi_tinh CHỈ ghi khi CV có ghi rõ giới tính. Nếu CV không ghi, đoán vào gioi_tinh_doan ("Nam" hoặc "Nữ") dựa trên họ tên, tên trung tính thì tham khảo ảnh chân dung; ' +
+  'gioi_tinh_doan_theo là "ten" hoặc "anh"; không đủ chắc chắn thì để trống cả hai. quoc_tich CHỈ ghi khi CV có nêu. ';
+const GENDER_AUX_ = [f_('gioi_tinh_doan', 'Giới tính đoán'), f_('gioi_tinh_doan_theo', 'Đoán giới tính theo (ten/anh)')];
+
 /**
  * Cấu hình 13 loại tài liệu.
  * Tên sheet = mã loại. uniqueKey: khoá nghiệp vụ để ghi đè chống trùng (null = chống trùng theo tệp gốc)
@@ -106,21 +111,21 @@ const DOC_TYPES = {
   CV_UNGVIEN: {
     label: 'CV ứng viên', uniqueKey: null, required: ['ho_ten'],
     hint: 'Hồ sơ ứng viên (CV). Tóm tắt học vấn, kỹ năng và kinh nghiệm gần nhất ngắn gọn, đúng theo nội dung CV. ' +
-      'Chỉ ghi thông tin cá nhân (ngày sinh, giới tính, địa chỉ) khi CV có ghi rõ. ' +
+      'Chỉ ghi thông tin cá nhân (ngày sinh, địa chỉ) khi CV có ghi rõ. ' + GENDER_HINT_ +
       'Học vấn: cap_dao_tao là trình độ cao nhất (ví dụ Đại học, Cao đẳng), truong_dao_tao là tên trường, chuyen_nganh là ngành học, xep_loai là xếp loại tốt nghiệp nếu có. ' +
       'tu_nam và den_nam là NĂM bắt đầu và NĂM kết thúc học (4 chữ số) của bậc học trên, chỉ ghi khi CV nêu. ' +
       PHOTO_HINT_,
     fields: [f_('ho_ten', 'Họ và tên'), f_('email', 'Email'), f_('so_dien_thoai', 'Số điện thoại'), f_('vi_tri_ung_tuyen', 'Vị trí ứng tuyển'),
       f_('hoc_van', 'Học vấn', 'long'), f_('ky_nang', 'Kỹ năng', 'long'), f_('so_nam_kinh_nghiem', 'Số năm kinh nghiệm', 'number'),
       f_('kinh_nghiem_gan_nhat', 'Kinh nghiệm gần nhất', 'long'),
-      f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'), f_('dia_chi', 'Địa chỉ'),
+      f_('ngay_sinh', 'Ngày sinh'), f_('gioi_tinh', 'Giới tính'), f_('quoc_tich', 'Quốc tịch'), f_('dia_chi', 'Địa chỉ'),
       f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại')],
-    aux: [f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm')].concat(PHOTO_AUX_) // chỉ dùng để điền form FBO (ngày học), không thành cột trong Sheet
+    aux: [f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm')].concat(PHOTO_AUX_, GENDER_AUX_) // chỉ dùng để điền form FBO (ngày học), không thành cột trong Sheet
   },
   CV_NHANVIEN: {
     label: 'CV nhân viên', uniqueKey: null, required: ['ho_ten'],
     hint: 'Hồ sơ (CV) của nhân viên, để điền vào form Thông tin nhân viên. Chỉ lấy đúng nội dung CV, không suy đoán; mục CV không ghi thì để trống (null). ' +
-      'quoc_tich chỉ ghi khi CV có nêu. dia_chi là địa chỉ ghi trên CV (giữ nguyên cả quận/huyện, tỉnh). ' +
+      GENDER_HINT_ + 'dia_chi là địa chỉ ghi trên CV (giữ nguyên cả quận/huyện, tỉnh). ' +
       'so_dien_thoai và email là số điện thoại di động và email CỦA CHÍNH người này (không lấy của người tham chiếu hoặc công ty); có nhiều thì lấy cái đầu tiên. ' +
       'Học vấn (tab Trình độ học vấn): lấy bậc học cao nhất hoặc gần nhất; cap_dao_tao là trình độ (Đại học, Cao đẳng...), truong_dao_tao là tên trường, chuyen_nganh là ngành học, xep_loai là xếp loại tốt nghiệp nếu có, tu_nam và den_nam là năm bắt đầu và năm kết thúc (4 chữ số). ' +
       'ngoai_ngu là TÊN ngoại ngữ chính của người này (ví dụ "Tiếng Anh"), ngoai_ngu_diem là bằng/điểm/trình độ của ngoại ngữ đó (ví dụ "IELTS 6.5"), ngoai_ngu_khac là các ngoại ngữ còn lại kèm trình độ. Không thấy CV nêu ngoại ngữ thì để trống cả ba. ' +
@@ -132,7 +137,7 @@ const DOC_TYPES = {
       f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại'),
       f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm'), f_('ngoai_ngu', 'Ngoại ngữ'), f_('ngoai_ngu_diem', 'Bằng/điểm ngoại ngữ'), f_('ngoai_ngu_khac', 'Ngoại ngữ khác', 'long'),
       f_('ky_nang', 'Kỹ năng', 'long'), f_('so_thich', 'Sở thích', 'long'), f_('chung_chi', 'Chứng chỉ', 'long'), f_('kinh_nghiem', 'Kinh nghiệm làm việc', 'long')],
-    aux: PHOTO_AUX_.concat([f_('cong_viec', 'Danh sách công việc đã làm', 'jobs')])
+    aux: PHOTO_AUX_.concat(GENDER_AUX_, [f_('cong_viec', 'Danh sách công việc đã làm', 'jobs')])
   },
   SO_DO: {
     label: 'Sổ đỏ / Sổ hồng', uniqueKey: null, required: ['thua_dat_so', 'dia_chi_thua_dat'],
@@ -893,6 +898,41 @@ function scanDocument(token, payload) {
  * Lõi quét dùng chung cho tài khoản đăng nhập và quét không cần tài khoản (anon = true).
  * anon: KHÔNG lưu tệp gốc lên Drive và không ghi Sheets; chỉ gọi Gemini rồi trả kết quả (fileIds = []).
  */
+/**
+ * CV nhân viên / ứng viên: CV không ghi giới tính thì lấy theo tên đệm (Thị = Nữ, Văn = Nam), rồi tới phỏng đoán của AI;
+ * không ghi quốc tịch thì mặc định Việt Nam. Giá trị không có trên CV được đánh dấu ở *_nguon (không lưu thành cột).
+ */
+function fillCvPersonal_(docType, data) {
+  if (docType !== 'CV_NHANVIEN' && docType !== 'CV_UNGVIEN') return data;
+  delete data.gioi_tinh_nguon;
+  delete data.quoc_tich_nguon;
+  const name = String(data.ho_ten || '').normalize('NFC').trim().toLowerCase().split(/\s+/);
+  if (!name[0]) return data; // không đọc được CV: không tự điền gì
+  const gender = function (v) {
+    const t = String(v || '').normalize('NFC').trim().toLowerCase();
+    return t === 'nam' || t === 'male' ? 'Nam' : (t === 'nữ' || t === 'female' ? 'Nữ' : '');
+  };
+  if (String(data.gioi_tinh || '').trim()) {
+    data.gioi_tinh = gender(data.gioi_tinh) || data.gioi_tinh;
+  } else {
+    const middle = name.slice(1, -1);
+    const byName = middle.indexOf('thị') >= 0 ? 'Nữ' : (middle.indexOf('văn') >= 0 ? 'Nam' : '');
+    const guess = byName || gender(data.gioi_tinh_doan);
+    if (guess) {
+      data.gioi_tinh = guess;
+      data.gioi_tinh_nguon = byName ? 'ten_dem' : (data.gioi_tinh_doan_theo === 'anh' ? 'anh' : 'ten');
+    }
+  }
+  const nation = String(data.quoc_tich || '').normalize('NFC').trim();
+  if (!nation) {
+    data.quoc_tich = 'Việt Nam';
+    data.quoc_tich_nguon = 'mac_dinh';
+  } else if (/^(vn|việt nam|viet nam|vietnam|vietnamese)$/i.test(nation)) {
+    data.quoc_tich = 'Việt Nam';
+  }
+  return data;
+}
+
 function scanCore_(me, payload, anon) {
   const started = Date.now();
   payload = payload || {};
@@ -946,6 +986,7 @@ function scanCore_(me, payload, anon) {
   if (!skipAi) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
   const fixMs = Date.now() - tFix;
   console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
+  fillCvPersonal_(payload.docType, data);
   if (payload.docType === 'CAN_DIEN_TU') fixScaleReading_(data);
   if (payload.docType === 'BIEN_SO_XE') fixPlateReading_(data);
   if (type.fields.some(function (f) { return f.k === 'ten_tinh_thanh'; })) data.ten_tinh_thanh = plateProvince_(data.ma_tinh_thanh, data.bien_so_day_du) || null;

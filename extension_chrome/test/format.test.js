@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { normalizeText, parseNumber, numberToText, dmyToIso, toFormValues, fromFormValues, missingRequired } from '../lib/format.js';
 import { validateMapping, hasMapping, effectiveMappings, diffFromPreset } from '../lib/mapping.js';
 
@@ -62,4 +63,10 @@ test('effectiveMappings / diffFromPreset', () => {
   assert.deepEqual(effectiveMappings(preset, { GPLX: { b: '#9' }, HO_CHIEU: { c: '#3' } }), { CCCD: { a: '#1' }, GPLX: { b: '#9' }, HO_CHIEU: { c: '#3' } });
   assert.deepEqual(effectiveMappings(preset, undefined), preset);
   assert.deepEqual(diffFromPreset(preset, { CCCD: { a: '#1' }, GPLX: { b: '#9' } }), { GPLX: { b: '#9' } });
+});
+
+test('CV ứng viên: quốc tịch điền vào form hồ sơ ứng viên', () => {
+  const m = JSON.parse(readFileSync(new URL('../presets/fbo-hrm.json', import.meta.url))).CV_UNGVIEN.quoc_tich;
+  assert.match(m.selector, /_form_quoc_tich"\]$/);
+  assert.equal(m.map['Việt Nam'], 'VN');
 });
