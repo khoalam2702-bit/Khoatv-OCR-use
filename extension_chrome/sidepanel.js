@@ -5,6 +5,7 @@ import { prepareFile, shrinkBase64 } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
 import { readCccdQr, mergeQr } from './lib/qr.js';
+import { extractPhoto, PHOTO_FORMS } from './lib/photo.js';
 import { fillActiveTab, loginFboActiveTab, inspectFormTab } from './lib/fbo.js';
 import { formatInspect, countControls } from './lib/inspectfmt.js';
 import { hasMapping } from './lib/mapping.js';
@@ -15,7 +16,7 @@ import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scan
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
 
-const state = { auth: null, anon: false, config: null, type: null, files: [], scan: null, saved: null };
+const state = { auth: null, anon: false, config: null, type: null, files: [], scan: null, saved: null, photo: null };
 
 /* ---------- Giao diện chung ---------- */
 function show(view) {
@@ -270,7 +271,7 @@ function renderLimits() {
 }
 
 function resetScan() {
-  state.files = []; state.scan = null; state.saved = null;
+  state.files = []; state.scan = null; state.saved = null; setPhoto(null);
   renderTypes(); renderFiles(); updateScanBtn();
   renderLimits();
 }
@@ -344,6 +345,7 @@ async function doScan() {
     if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
     state.scan = r;
     renderReview(r.data);
+    cropPhoto(r.data); // ảnh chân dung của CV (nếu loại này có): cắt nền, xong thì hiện xem trước
     show('review');
     if (r.ms) msg('Quét xong trong ' + Math.round(r.ms / 1000) + ' giây (AI ' + Math.round((r.msAi || 0) / 1000) + ' giây, lưu ảnh ' + Math.round((r.msDrive || 0) / 1000) + ' giây).', 'info');
   } catch (e) { msg(e.message); }
@@ -427,6 +429,23 @@ function thisPeriod() {
 }
 
 /* ---------- Bước 4: điền FBO ---------- */
+/* ---------- Ảnh chân dung trên CV: cắt theo khung AI trả về, hiện xem trước, gắn vào form khi điền ---------- */
+function setPhoto(p) {
+  state.photo = p;
+  $('photo-box').hidden = !p;
+  if (p) { $('photo-img').src = p.dataUrl; $('in-photo').checked = true; } else $('photo-img').removeAttribute('src');
+}
+async function cropPhoto(data) {
+  setPhoto(null);
+  if (!PHOTO_FORMS[state.type]) return;
+  const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
+  const type = state.type, scan = state.scan;
+  try {
+    const p = await extractPhoto(files, data);
+    if (p && state.type === type && state.scan === scan) setPhoto(p); // người dùng đã quét lại/đổi loại trong lúc cắt thì bỏ
+  } catch (e) { /* không cắt được thì thôi, các trường khác vẫn điền */ }
+}
+
 async function doFill() {
   msg('');
   const btn = $('btn-fill'), info = $('fill-info'), bar = $('fill-progress');
@@ -453,6 +472,8 @@ async function doFill() {
     signal: ctl.signal,
     required: t ? t.required : [],
     relation: $('in-relation').value,
+    photo: state.photo && $('in-photo').checked ? state.photo : null,
+    confirmPhotoOverwrite: async () => confirm('Form FBO đang có ảnh chân dung.\n\nThay bằng ảnh cắt từ CV?'),
     onProgress: (p) => {
       const sec = p.elapsed != null ? ' ' + Math.floor(p.elapsed / 1000) + 's' : '';
       if (p.phase === 'tab') { btn.textContent = 'Đang chọn tab FBO...'; info.textContent = 'Điền vào tab: "' + cut(p.title) + '". Hãy giữ nguyên tab này đến khi xong.'; }
@@ -488,6 +509,10 @@ async function doFill() {
     if (r.notFound.length) parts.push('Không thấy ô trên form: ' + list(r.notFound) + '.');
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
     parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
+    if (PHOTO_FORMS[state.type]) {
+      const ph = { ok: 'Đã gắn ảnh chân dung.', kept: 'Giữ ảnh đang có trên form.', notFound: 'Không thấy ô chọn ảnh trên form.', error: 'Không gắn được ảnh chân dung (chọn ảnh bằng tay).' }[r.photo];
+      parts.push(ph || (state.photo ? 'Chưa gắn ảnh chân dung (đã bỏ chọn).' : 'Không có ảnh chân dung để gắn (CV không có ảnh hoặc không cắt được).'));
+    }
     if (r.diag) parts.push('Chẩn đoán ô địa chỉ (gửi lại cho người hỗ trợ): ' + r.diag + '.');
     if (r.mainOnly) parts.push('(Trang có khung phụ không phản hồi nên chỉ điền ở khung chính.)');
     if (r.away) parts.push('Lưu ý: đã điền vào tab "' + cut(r.tabTitle) + '", không phải tab bạn đang xem. Quay lại tab đó để kiểm tra.');

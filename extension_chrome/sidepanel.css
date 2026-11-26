@@ -46,3 +46,7 @@ button.danger:hover { background:#b91c1c; }
 
 #fill-info { white-space: pre-line; line-height: 1.5; }
 #fill-info.ok, #fill-info.warn { font-weight: 500; }
+
+#photo-box { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; margin: 8px 0; }
+#photo-box[hidden] { display: none; }
+#photo-img { width: 96px; height: auto; max-height: 128px; object-fit: cover; border: 1px solid #cfd6dd; border-radius: 4px; }

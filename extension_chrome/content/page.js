@@ -277,6 +277,27 @@
     return '';
   }
 
+  /* Gắn ảnh chân dung vào ô chọn tệp của form: như người dùng chọn tệp (FBO tự xem trước và tải lên).
+   * cfg { input, preview }; dry = true: chỉ báo ô có thấy không và đã có ảnh chưa, không đổi gì. */
+  globalThis.__KHOATV_PHOTO__ = function (cfg, dataUrl, name, dry) {
+    var inp = document.querySelector(cfg.input);
+    if (!inp || inp.type !== 'file') return { found: false };
+    var pv = cfg.preview ? document.querySelector(cfg.preview) : null;
+    var has = !!(pv && pv.getAttribute('src') && pv.getAttribute('src') !== 'about:blank' && pv.offsetWidth > 40 && pv.offsetHeight > 40);
+    if (dry) return { found: true, has: has };
+    try {
+      var m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '');
+      if (!m) return { found: true, has: has, ok: false };
+      var bin = atob(m[2]), arr = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      var file = new File([arr], name || 'anh_chan_dung.jpg', { type: m[1] });
+      var dt = new DataTransfer(); dt.items.add(file);
+      inp.files = dt.files;
+      fire(inp, 'input'); fire(inp, 'change');
+      return { found: true, has: has, ok: inp.files.length === 1 };
+    } catch (e) { return { found: true, has: has, ok: false, error: String(e && e.message || e) }; }
+  };
+
   globalThis.__KHOATV_INSPECT__ = function () {
     var list = [];
     document.querySelectorAll('input, select, textarea').forEach(function (el) {
