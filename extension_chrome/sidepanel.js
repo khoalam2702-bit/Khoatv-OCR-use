@@ -108,9 +108,9 @@ async function renderAnonOption() {
 async function enterAnon() {
   state.anon = true; state.auth = null;
   await setAnonMode(true);
-  $('who').textContent = 'Không tài khoản (không lưu)';
+  $('who').textContent = 'Không lưu'; $('who').title = 'Đang dùng không đăng nhập: kết quả không lưu lên hệ thống';
   $('btn-inspect').hidden = true; $('btn-fbo-login').hidden = false;
-  $('btn-logout').textContent = 'Đăng nhập';
+  $('btn-logout').textContent = 'Đăng nhập OCR';
   await loadConfig();
   checkFboPermission();
   resetScan();
@@ -118,7 +118,7 @@ async function enterAnon() {
 }
 async function exitAnon() {
   state.anon = false; await setAnonMode(false);
-  $('btn-logout').textContent = 'Đăng xuất'; $('who').textContent = ''; $('btn-fbo-login').hidden = true;
+  $('btn-logout').textContent = 'Đăng xuất OCR'; $('who').textContent = ''; $('who').title = ''; $('btn-fbo-login').hidden = true;
   state.scan = null; state.saved = null;
   await showLogin('');
 }
@@ -152,7 +152,7 @@ async function loadConfig() {
 }
 
 async function enter() {
-  state.anon = false; await setAnonMode(false); $('btn-logout').textContent = 'Đăng xuất';
+  state.anon = false; await setAnonMode(false); $('btn-logout').textContent = 'Đăng xuất OCR'; $('who').title = '';
   $('who').textContent = state.auth.me.name + ' (' + state.auth.me.username + ')';
   $('btn-inspect').hidden = state.auth.me.role !== 'ADMIN'; // "Dò form" chỉ dành cho quản trị viên (người lập ánh xạ)
   $('btn-fbo-login').hidden = false;
@@ -272,21 +272,14 @@ function renderLimits() {
   const items = [
     'Tối đa ' + L.maxFiles + ' tệp mỗi tài liệu (ví dụ CCCD 2 mặt = 2 ảnh).',
     'Dung lượng: mỗi tệp tối đa ' + mb(L.maxFileBytes) + ' MB, tổng các tệp tối đa ' + mb(L.maxTotalBytes) + ' MB. Chỉ nhận JPG, PNG, WEBP, PDF; ảnh tự nén JPG, cạnh dài tối đa 2400 px.',
-    state.anon ? 'Không cần tài khoản: tối đa ' + L.anonPerDay + ' lần quét mỗi ngày trên thiết bị này, kết quả không lưu lên hệ thống. Đăng nhập tài khoản OCR để lưu và không giới hạn theo ngày. PDF dài nên tách 5-10 trang mỗi lượt.'
+    state.anon ? 'Đăng nhập tài khoản OCR để lưu kết quả và không giới hạn theo ngày. PDF dài nên tách 5-10 trang mỗi lượt.'
       : 'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
     'Mỗi lần quét xử lý tối đa khoảng 6 phút; quá thời gian sẽ báo lỗi, hãy quét lại với ít trang hơn.',
-    state.anon ? 'Kết quả chỉ giữ trong phiên trình duyệt này; đóng trình duyệt là mất.' : 'Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.',
+    ...(state.anon ? [] : ['Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.']),
     'Hạn mức AI (Gemini) do Google quy định theo phút và theo ngày, mọi người dùng chung. Hết hạn mức phút: chờ khoảng 1 phút. Hết hạn mức ngày: quét lại được sau ' + dailyResetTime() + ' (đồng hồ đếm ngược tối đa 30 phút, chạy xong vẫn có thể phải chờ đến giờ này).'
   ];
   const box = $('limit-hint');
   box.textContent = '';
-  if (state.anon) {
-    // Chế độ không đăng nhập bị giới hạn lượt: cảnh báo hiện sẵn, không nằm trong phần thu gọn.
-    const w = document.createElement('div');
-    w.className = 'anon-warn';
-    w.textContent = '⚠ Bạn đang dùng không đăng nhập: tối đa ' + L.anonPerDay + ' lần quét mỗi ngày trên thiết bị này, tính lại từ 0 giờ. Kết quả không được lưu. Lượt AI dùng chung có thể hết sớm hơn, khi đó quét lại sau ' + dailyResetTime() + '.';
-    box.appendChild(w);
-  }
   // Thu gọn/mở rộng bằng <details>; trạng thái nhớ lại ở lần mở sau (mặc định thu gọn cho gọn màn hình).
   const det = document.createElement('details');
   det.className = 'limits-box';
@@ -294,6 +287,13 @@ function renderLimits() {
   const sum = document.createElement('summary');
   sum.textContent = 'Giới hạn và lưu ý khi quét';
   det.appendChild(sum);
+  if (state.anon) {
+    // Chế độ không đăng nhập bị giới hạn lượt: cảnh báo đứng đầu phần thu gọn.
+    const w = document.createElement('div');
+    w.className = 'anon-warn';
+    w.textContent = '⚠ Bạn đang dùng không đăng nhập: tối đa ' + L.anonPerDay + ' lần quét mỗi ngày trên thiết bị này, tính lại từ 0 giờ. Kết quả không được lưu, đóng trình duyệt là mất. Lượt AI dùng chung có thể hết sớm hơn, khi đó quét lại sau ' + dailyResetTime() + '.';
+    det.appendChild(w);
+  }
   const ul = document.createElement('ul');
   ul.className = 'limits';
   for (const t of items) { const li = document.createElement('li'); li.textContent = t; ul.appendChild(li); }
