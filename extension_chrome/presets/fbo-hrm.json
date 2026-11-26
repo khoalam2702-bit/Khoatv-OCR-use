@@ -248,6 +248,8 @@
     }
   },
   "CV_NHANVIEN": {
+    "so_dien_thoai": "[id$=\"_dirExtender_form_dien_thoai_dd\"]",
+    "email": "[id$=\"_dirExtender_form_email_cty\"]",
     "cap_dao_tao": {
       "selector": "[id$=\"_dirExtender_form_ma_tdhv\"]",
       "map": {

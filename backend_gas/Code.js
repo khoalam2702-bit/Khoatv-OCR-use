@@ -121,13 +121,14 @@ const DOC_TYPES = {
     label: 'CV nhân viên', uniqueKey: null, required: ['ho_ten'],
     hint: 'Hồ sơ (CV) của nhân viên, để điền vào form Thông tin nhân viên. Chỉ lấy đúng nội dung CV, không suy đoán; mục CV không ghi thì để trống (null). ' +
       'quoc_tich chỉ ghi khi CV có nêu. dia_chi là địa chỉ ghi trên CV (giữ nguyên cả quận/huyện, tỉnh). ' +
+      'so_dien_thoai và email là số điện thoại di động và email CỦA CHÍNH người này (không lấy của người tham chiếu hoặc công ty); có nhiều thì lấy cái đầu tiên. ' +
       'Học vấn (tab Trình độ học vấn): lấy bậc học cao nhất hoặc gần nhất; cap_dao_tao là trình độ (Đại học, Cao đẳng...), truong_dao_tao là tên trường, chuyen_nganh là ngành học, xep_loai là xếp loại tốt nghiệp nếu có, tu_nam và den_nam là năm bắt đầu và năm kết thúc (4 chữ số). ' +
       'ngoai_ngu là TÊN ngoại ngữ chính của người này (ví dụ "Tiếng Anh"), ngoai_ngu_diem là bằng/điểm/trình độ của ngoại ngữ đó (ví dụ "IELTS 6.5"), ngoai_ngu_khac là các ngoại ngữ còn lại kèm trình độ. Không thấy CV nêu ngoại ngữ thì để trống cả ba. ' +
       'Các mục sau viết thành văn bản gọn, mỗi ý một dòng, đúng nội dung CV: ky_nang (kỹ năng), so_thich (sở thích), chung_chi (chứng chỉ, kèm năm), ' +
       'kinh_nghiem (kinh nghiệm làm việc: mỗi vị trí một đoạn gồm thời gian, chức danh, công ty và 1-3 ý chính, mới nhất trước). ' +
             PHOTO_HINT_ +
       'cong_viec: danh sách TỪNG công việc trong mục kinh nghiệm làm việc, theo thứ tự trên CV, mỗi công việc một phần tử gồm cong_ty (tên công ty/đơn vị), chuc_danh, tu (thời điểm bắt đầu) và den (thời điểm kết thúc) CHÉP ĐÚNG như CV ghi (ví dụ "06/2023", "2019", "Nay"; không tự thêm tháng hoặc ngày), mo_ta (1-3 ý chính, ngắn). Không có mục kinh nghiệm thì trả danh sách rỗng.',
-    fields: [f_('ho_ten', 'Họ và tên'), f_('gioi_tinh', 'Giới tính'), f_('ngay_sinh', 'Ngày sinh'), f_('quoc_tich', 'Quốc tịch'), f_('dia_chi', 'Địa chỉ'),
+    fields: [f_('ho_ten', 'Họ và tên'), f_('gioi_tinh', 'Giới tính'), f_('ngay_sinh', 'Ngày sinh'), f_('quoc_tich', 'Quốc tịch'), f_('dia_chi', 'Địa chỉ'), f_('so_dien_thoai', 'Số điện thoại'), f_('email', 'Email'),
       f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại'),
       f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm'), f_('ngoai_ngu', 'Ngoại ngữ'), f_('ngoai_ngu_diem', 'Bằng/điểm ngoại ngữ'), f_('ngoai_ngu_khac', 'Ngoại ngữ khác', 'long'),
       f_('ky_nang', 'Kỹ năng', 'long'), f_('so_thich', 'Sở thích', 'long'), f_('chung_chi', 'Chứng chỉ', 'long'), f_('kinh_nghiem', 'Kinh nghiệm làm việc', 'long')],
