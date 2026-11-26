@@ -12,6 +12,7 @@ export default function Nav({ name, role }: { name: string; role: 'ADMIN' | 'USE
     <header className="sticky top-0 z-40 border-b bg-white">
       <div className="mx-auto flex max-w-[1600px] items-center gap-2 px-4 py-2">
         <span className="mr-4 text-base font-semibold">OCR Admin</span>
+        {item('/scan', 'Quét OCR')}
         {item('/records', 'Bản ghi')}
         {role === 'ADMIN' && item('/users', 'Tài khoản')}
         {role === 'ADMIN' && item('/settings', 'Cài đặt AI')}

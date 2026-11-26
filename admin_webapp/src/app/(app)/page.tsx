@@ -1,3 +1,4 @@
 import { redirect } from 'next/navigation';
 
-export default function Home() { redirect('/records'); }
+// Vào link gốc là thấy ngay chức năng Quét OCR; Bản ghi, Tài khoản, Cài đặt AI nằm ở thanh menu cùng trang.
+export default function Home() { redirect('/scan'); }

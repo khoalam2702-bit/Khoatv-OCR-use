@@ -232,9 +232,10 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 
 ## Gộp về một domain (Web Admin + giao diện quét)
 
-- Domain chính: `https://khoatv-ocr-extensions.vercel.app` (dự án `admin_webapp`). `/` là Web Admin; **`/app` là giao diện quét OCR** (khung toàn màn hình mở Apps Script, không cần đăng nhập Web Admin vì ứng dụng có đăng nhập OCR riêng).
-- `/app` lấy địa chỉ Apps Script từ biến môi trường **`GAS_WEB_APP_URL`** của dự án Web Admin trên Vercel (cùng biến đang dùng cho proxy `/api/gas` và `/api/extension-config`). Chưa đặt thì `/app` báo "Chưa cấu hình". Đổi link Web App thì chỉ cần sửa biến này rồi Redeploy.
-- Link cũ `khoatv-ocr-use.vercel.app` tự chuyển hướng sang `/app` (`vercel.json` ở thư mục gốc). `public/index.html` vẫn giữ nguyên vì AutoSynCode cập nhật `APP_URL` trong đó và extension đọc `APP_URL` từ tệp này trên GitHub.
+- Một link duy nhất: `https://khoatv-ocr-extensions.vercel.app` (dự án `admin_webapp`). Đăng nhập Web Admin xong vào thẳng **Quét OCR**; thanh menu cùng trang có **Bản ghi**, **Tài khoản**, **Cài đặt AI**.
+- **Quét OCR** (`/scan`) nhúng ứng dụng Apps Script ngay trong khung nội dung, dưới thanh menu. Địa chỉ Apps Script lấy từ biến môi trường **`GAS_WEB_APP_URL`** của dự án Web Admin trên Vercel (cùng biến dùng cho proxy `/api/gas` và `/api/extension-config`). Chưa đặt thì trang báo "Chưa cấu hình". Đổi link Web App thì sửa biến này rồi Redeploy.
+- `/app` là bản **toàn màn hình, không cần đăng nhập Web Admin** (ứng dụng có đăng nhập OCR riêng), dùng cho người chỉ cần quét. Link cũ `khoatv-ocr-use.vercel.app` tự chuyển hướng sang `/app` (`vercel.json` ở thư mục gốc).
+- `public/index.html` giữ nguyên vì AutoSynCode cập nhật `APP_URL` trong đó và extension đọc `APP_URL` từ tệp này trên GitHub.
 
 ## Hosting trên Vercel (khung bao quanh ứng dụng)
 

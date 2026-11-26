@@ -18,7 +18,7 @@ function LoginForm() {
     const r = await signIn('credentials', { username, password, redirect: false });
     setBusy(false);
     if (!r || r.error) { setErr(r?.error && r.error !== 'CredentialsSignin' ? r.error : 'Sai tên đăng nhập hoặc mật khẩu.'); return; }
-    router.push('/records');
+    router.push('/scan');
     router.refresh();
   }
 
