@@ -16,8 +16,8 @@ export const getPreset = () => packaged('presets/fbo-hrm.json');
 
 /** Danh mục tỉnh/thành, phường/xã, quốc tịch của FBO đi kèm extension (presets/dm/*.json). */
 export async function getDm() {
-  const [tinh, xa, quocTich, diaChiCu] = await Promise.all([packaged('presets/dm/tinh.json'), packaged('presets/dm/xa.json'), packaged('presets/dm/quoc-tich.json'), packaged('presets/dm/dia-chi-cu.json')]);
-  return buildDm({ tinh: Array.isArray(tinh) ? tinh : [], xa: Array.isArray(xa) ? xa : [], quocTich: Array.isArray(quocTich) ? quocTich : [], diaChiCu });
+  const [tinh, xa, quocTich, diaChiCu, chuyenNganh] = await Promise.all([packaged('presets/dm/tinh.json'), packaged('presets/dm/xa.json'), packaged('presets/dm/quoc-tich.json'), packaged('presets/dm/dia-chi-cu.json'), packaged('presets/dm/chuyen-nganh.json')]);
+  return buildDm({ tinh: Array.isArray(tinh) ? tinh : [], xa: Array.isArray(xa) ? xa : [], quocTich: Array.isArray(quocTich) ? quocTich : [], diaChiCu, chuyenNganh: Array.isArray(chuyenNganh) ? chuyenNganh : [] });
 }
 
 /** Cấu hình trung tâm: lấy từ Web Admin (admin nhập 1 lần ở Vercel), lưu đệm để mở panel là dùng ngay. */
@@ -108,6 +108,14 @@ export async function getAnonMode() { return !!(await chrome.storage.session.get
 export async function setAnonMode(on) {
   if (on) await chrome.storage.session.set({ anonMode: true });
   else await chrome.storage.session.remove(['anonMode', 'anonDraft']);
+}
+/** Kết quả quét đang làm dở (kể cả đã mở lại panel): quét 1 lần, điền nhiều lần. Chỉ giữ trong phiên trình duyệt (storage.session). */
+export async function getScanDraft() { return (await chrome.storage.session.get('scanDraft')).scanDraft || null; }
+export async function setScanDraft(draft) {
+  try {
+    if (draft) await chrome.storage.session.set({ scanDraft: draft });
+    else await chrome.storage.session.remove('scanDraft');
+  } catch (e) { /* quá hạn mức lưu: bỏ qua, chỉ mất khả năng khôi phục */ }
 }
 export async function getAnonDraft() { return (await chrome.storage.session.get('anonDraft')).anonDraft || null; }
 export async function setAnonDraft(draft) {

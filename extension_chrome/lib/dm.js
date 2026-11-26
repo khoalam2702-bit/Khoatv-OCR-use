@@ -24,14 +24,44 @@ export const oldKeys = {
 };
 
 /** Dựng chỉ mục tra cứu từ dữ liệu thô: tinh [[ma, ten]], xa [[ma_tinh, ma_xa, ten]], quocTich [[ma, ten]], diaChiCu (presets/dm/dia-chi-cu.json: tỉnh/huyện/xã cũ -> mã mới). */
-export function buildDm({ tinh = [], xa = [], quocTich = [], diaChiCu = null } = {}) {
+export function buildDm({ tinh = [], xa = [], quocTich = [], diaChiCu = null, chuyenNganh = [] } = {}) {
   const provinces = tinh.map(([ma, ten]) => ({ ma, ten, key: strip(norm(ten), PROV_PREFIX) }))
     .sort((a, b) => b.key.length - a.key.length);
   const wardsBy = {};
   for (const [mt, ma, ten] of xa) (wardsBy[mt] = wardsBy[mt] || []).push({ ma, ten, full: norm(ten), key: strip(norm(ten), WARD_PREFIX) });
   const nat = quocTich.map(([ma, ten]) => ({ ma, ten, key: norm(ten) }));
   const old = diaChiCu && diaChiCu.p ? diaChiCu : null;
-  return { provinces, wardsBy, nat, old };
+  const majors = chuyenNganh.map(([ma, ten]) => ({ ma, ten, key: major(ten), tokens: new Set(major(ten).split(' ').filter(Boolean)) }));
+  return { provinces, wardsBy, nat, old, majors };
+}
+
+// Chuyên ngành: bỏ chữ "chuyên ngành/ngành/cử nhân/kỹ sư..." đứng đầu rồi so khớp không dấu
+const major = (t) => norm(t).replace(/^(chuyen nganh|nganh|cu nhan|ky su|thac si|tien si)\s+/, '').trim();
+
+/**
+ * Tìm mã chuyên ngành trong danh mục FBO: trùng tên > tên danh mục nằm trọn trong chuyên ngành ghi trên CV (lấy tên dài nhất)
+ * > chuyên ngành nằm trong tên danh mục (lấy tên ngắn nhất) > giống từ (>= 70%). Không có gì khớp thì dùng mã KHÁC nếu danh mục có.
+ * Trả { ma, ten, how } hoặc null (không có chuyên ngành, hoặc danh mục trống).
+ */
+export function lookupMajor(text, dm) {
+  const key = major(text);
+  const list = (dm && dm.majors) || [];
+  if (!key || !list.length) return null;
+  const pad = (x) => ' ' + x + ' ';
+  const hit = (m, how) => ({ ma: m.ma, ten: m.ten, how });
+  const exact = list.find((m) => m.key === key); if (exact) return hit(exact, 'exact');
+  const inside = list.filter((m) => m.key.length >= 3 && pad(key).includes(pad(m.key))).sort((a, b) => b.key.length - a.key.length)[0]; if (inside) return hit(inside, 'contain');
+  const wider = list.filter((m) => key.length >= 4 && pad(m.key).includes(pad(key))).sort((a, b) => a.key.length - b.key.length)[0]; if (wider) return hit(wider, 'contain');
+  const kt = new Set(key.split(' ').filter(Boolean));
+  let best = null, bs = 0;
+  for (const m of list) {
+    if (!m.tokens.size) continue;
+    let c = 0; m.tokens.forEach((t) => { if (kt.has(t)) c++; });
+    const sc = c / Math.max(m.tokens.size, kt.size);
+    if (sc > bs) { bs = sc; best = m; }
+  }
+  if (best && bs >= 0.7) return hit(best, 'fuzzy');
+  const other = list.find((m) => m.key === 'khac') || list.find((m) => m.ma === '99'); return other ? hit(other, 'other') : null;
 }
 
 // Dự phòng khi KHÔNG có bảng dia-chi-cu.json: tỉnh cũ đã nhập vào tỉnh khác từ 01/7/2025 (Nghị quyết 202/2025/QH15, 63 -> 34 tỉnh) -> mã tỉnh mới. Chỉ quy đổi cấp tỉnh.
@@ -183,7 +213,7 @@ export const DERIVED_LABELS = {
   thuong_tru_chi_tiet: 'Thường trú - Số nhà, tổ', que_quan_chi_tiet: 'Quê quán - Số nhà, tổ',
   hien_tai_tinh_ma: 'Hiện tại - Tỉnh/thành', hien_tai_xa_ma: 'Hiện tại - Phường/xã', hien_tai_chi_tiet: 'Hiện tại - Số nhà, tổ', hien_tai_xa_goi_y: 'Hiện tại - Gợi ý xã/phường (xã cũ bị chia, chọn tay)',
   dia_chi_tinh_ma: 'Địa chỉ - Tỉnh/thành', dia_chi_xa_ma: 'Địa chỉ - Phường/xã', dia_chi_chi_tiet: 'Địa chỉ - Số nhà, tổ',
-  thoi_gian_hoc: 'Thời gian học (năm)',
+  thoi_gian_hoc: 'Thời gian học (năm)', chuyen_nganh_ma: 'Chuyên ngành (mã danh mục)', ngay_tot_nghiep: 'Ngày tốt nghiệp', ngay_hoc_tu: 'Học từ ngày', ngay_hoc_den: 'Học đến ngày',
   ct_don_vi: 'Đơn vị', ct_vi_tri: 'Vị trí công việc', ct_tu_ngay: 'Từ ngày', ct_den_ngay: 'Đến ngày', ct_so_nam: 'Năm công tác', ct_ghi_chu: 'Ghi chú',
   ma_pt: 'Mã người phụ thuộc', loai_giay_to: 'Loại giấy tờ', loai_qh: 'Loại quan hệ', ngay_hl_tu: 'Hiệu lực từ ngày',
   que_quan_tinh_ma: 'Quê quán - Tỉnh/thành', que_quan_xa_ma: 'Quê quán - Phường/xã',
@@ -201,7 +231,20 @@ export function enrichData(docType, data, dm, ctx) {
     out.loai_qh = ctx && ctx.relation === 'CHA_ME' ? '03' : '01';
     out.ngay_hl_tu = (ctx && ctx.today) || '';
   }
+  if (docType === 'CV_UNGVIEN') { // tab Học vấn của hồ sơ ứng viên: cùng quy ước với CV nhân viên (từ/đến = 01/09, ngày cấp = 30/09 năm đến)
+    const yr = (v) => { const m = String(v == null ? '' : v).match(/\b(19[5-9]\d|20\d\d)\b/); return m ? m[1] : ''; };
+    if (yr(out.tu_nam)) out.ngay_hoc_tu = '01/09/' + yr(out.tu_nam);
+    if (yr(out.den_nam)) { out.ngay_hoc_den = '01/09/' + yr(out.den_nam); out.ngay_tot_nghiep = '30/09/' + yr(out.den_nam); }
+  }
+  if (docType === 'CV_NHANVIEN') { // ngày tốt nghiệp: quy ước 30/09 của năm kết thúc học (CV chỉ ghi năm)
+    const y = String(out.den_nam == null ? '' : out.den_nam).match(/\b(19[5-9]\d|20\d\d)\b/);
+    if (y) out.ngay_tot_nghiep = '30/09/' + y[1];
+    const yr = (v) => { const m = String(v == null ? '' : v).match(/\b(19[5-9]\d|20\d\d)\b/); return m ? m[1] : ''; }; // học từ/đến: quy ước 01/09 của năm
+    if (yr(out.tu_nam)) out.ngay_hoc_tu = '01/09/' + yr(out.tu_nam);
+    if (yr(out.den_nam)) out.ngay_hoc_den = '01/09/' + yr(out.den_nam);
+  }
   if (!dm) return out;
+  if (docType === 'CV_NHANVIEN') { const mj = lookupMajor(out.chuyen_nganh, dm); if (mj) out.chuyen_nganh_ma = mj.ma; }
   if (docType === 'CV_NHANVIEN') { // form nhân viên chỉ có ô ngày đầy đủ cho thời gian học: không bịa ngày/tháng, đưa khoảng năm vào Ghi chú
     const a = String(out.tu_nam == null ? '' : out.tu_nam).trim(), b = String(out.den_nam == null ? '' : out.den_nam).trim();
     out.thoi_gian_hoc = a && b ? a + ' - ' + b : a || b;

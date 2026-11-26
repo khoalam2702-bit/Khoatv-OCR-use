@@ -10,4 +10,10 @@ const jobs = schema.properties.cong_viec;
 assert.strictEqual(jobs.type, 'ARRAY');
 assert.deepStrictEqual(Object.keys(jobs.items.properties).sort(), ['chuc_danh', 'cong_ty', 'den', 'mo_ta', 'tu']);
 assert.ok(!fields.includes('cong_viec'), 'danh sách công việc chỉ để điền form, không thành cột');
+// CV ứng viên cũng trả khung ảnh (để gắn ảnh vào form hồ sơ ứng viên), cũng không thành cột
+const sUv = JSON.parse(vm.runInContext("JSON.stringify(buildSchema_(DOC_TYPES.CV_UNGVIEN))", ctx));
+for (const k of ['anh_tep', 'anh_trang', 'anh_ymin', 'anh_xmin', 'anh_ymax', 'anh_xmax', 'tu_nam', 'den_nam']) assert.ok(sUv.properties[k], 'CV_UNGVIEN thiếu ' + k);
+const fUv = JSON.parse(vm.runInContext("JSON.stringify(DOC_TYPES.CV_UNGVIEN.fields.map(function(f){return f.k}))", ctx));
+assert.ok(!fUv.some((k) => /^anh_/.test(k)), 'CV_UNGVIEN: khung ảnh không lưu thành cột');
+assert.ok(/ẢNH CHÂN DUNG/.test(vm.runInContext("DOC_TYPES.CV_UNGVIEN.hint", ctx)), 'CV_UNGVIEN: hint thiếu hướng dẫn ảnh');
 console.log('cvphoto ok');

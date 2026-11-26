@@ -148,7 +148,19 @@
     "xep_loai": "[id$=\"_dirExtender_form_xep_loai_dt\"]",
     "dia_chi_tinh_ma": "[id$=\"_dirExtender_form_dia_chi_tinh\"]",
     "dia_chi_xa_ma": "[id$=\"_dirExtender_form_dia_chi_xa\"]",
-    "dia_chi_chi_tiet": "[id$=\"_dirExtender_form_dia_chi\"]"
+    "dia_chi_chi_tiet": "[id$=\"_dirExtender_form_dia_chi\"]",
+    "ngay_hoc_tu": {
+      "selector": "[id$=\"_dirExtender_form_ngay_dt_tu\"]",
+      "format": "date"
+    },
+    "ngay_hoc_den": {
+      "selector": "[id$=\"_dirExtender_form_ngay_dt_den\"]",
+      "format": "date"
+    },
+    "ngay_tot_nghiep": {
+      "selector": "[id$=\"_dirExtender_form_ngay_cap_cc\"]",
+      "format": "date"
+    }
   },
   "GPLX": {
     "so_gplx": "[id$=\"MainReport75_dirExtender_form_so_bl\"]",
@@ -310,6 +322,48 @@
       "prefix": "Ngoại ngữ khác: ",
       "append": true,
       "sep": "\n"
+    },
+    "ho_ten": [
+      {
+        "selector": "[id$=\"_dirExtender_form_ho_nv\"]",
+        "transform": "name_head"
+      },
+      {
+        "selector": "[id$=\"_dirExtender_form_ten_nv\"]",
+        "transform": "name_last"
+      }
+    ],
+    "ngay_sinh": {
+      "selector": "[id$=\"_dirExtender_form_ngay_sinh\"]",
+      "format": "date"
+    },
+    "gioi_tinh": {
+      "selector": "[id$=\"_dirExtender_form_gioi_tinh\"]",
+      "map": {
+        "Nam": "1",
+        "Nữ": "2"
+      }
+    },
+    "quoc_tich": {
+      "selector": "[id$=\"_dirExtender_form_quoc_tich\"]",
+      "map": {
+        "Việt Nam": "VN"
+      }
+    },
+    "chuyen_nganh_ma": {
+      "selector": "[id$=\"_dirExtender_form_ma_cn\"]"
+    },
+    "ngay_tot_nghiep": {
+      "selector": "[id$=\"_dirExtender_form_ngay_tot_nghiep\"]",
+      "format": "date"
+    },
+    "ngay_hoc_tu": {
+      "selector": "[id$=\"_dirExtender_form_ngay_hoc_tu\"]",
+      "format": "date"
+    },
+    "ngay_hoc_den": {
+      "selector": "[id$=\"_dirExtender_form_ngay_hoc_den\"]",
+      "format": "date"
     }
   },
   "CV_NHANVIEN@CONGTAC": {

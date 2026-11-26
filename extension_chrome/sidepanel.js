@@ -1,6 +1,6 @@
 import { ENABLED_TYPES, DEFAULT_LIMITS } from './lib/config.js';
 import { createGasClient, GasError } from './lib/gas.js';
-import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword, getDeviceId, getAnonMode, setAnonMode, getAnonDraft, setAnonDraft } from './lib/store.js';
+import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOcrLogin, getOcrPassword, forgetOcrPassword, getDeviceId, getAnonMode, setAnonMode, getAnonDraft, setAnonDraft, getScanDraft, setScanDraft } from './lib/store.js';
 import { prepareFile, shrinkBase64 } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
@@ -272,7 +272,7 @@ function renderLimits() {
 }
 
 function resetScan() {
-  state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]);
+  state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]); setScanDraft(null);
   renderTypes(); renderFiles(); updateScanBtn();
   renderLimits();
 }
@@ -339,6 +339,7 @@ async function doScan() {
         : api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }]),
       qrTask
     ]);
+    stopScanProgress(true); // quét xong: dừng bộ đếm ngay (trước đây không dừng nên giây vẫn chạy tiếp)
     qr = qr || qr2;
     if (!skipAiUsed) clearQuotaWait(); // AI trả kết quả được thì hạn mức không còn là vấn đề
     r.data = r.data || {};
@@ -347,11 +348,12 @@ async function doScan() {
     state.scan = r;
     renderReview(r.data);
     setJobs(r.data.cong_viec);
-    cropPhoto(r.data); // ảnh chân dung của CV (nếu loại này có): cắt nền, xong thì hiện xem trước
+    persistDraft();
+    cropPhoto(r.data).then(persistDraft); // ảnh chân dung của CV (nếu loại này có): cắt nền, xong thì hiện xem trước
     show('review');
     if (r.ms) msg('Quét xong trong ' + Math.round(r.ms / 1000) + ' giây (AI ' + Math.round((r.msAi || 0) / 1000) + ' giây, lưu ảnh ' + Math.round((r.msDrive || 0) / 1000) + ' giây).', 'info');
   } catch (e) { msg(e.message); }
-  finally { busy(btn, false); updateScanBtn(); }
+  finally { if (scanProg.timer) stopScanProgress(false); busy(btn, false); updateScanBtn(); }
 }
 
 /* ---------- Bước 3: xem, sửa, lưu ---------- */
@@ -413,6 +415,7 @@ async function doSave() {
   try {
     const r = await api('saveRecord', [state.type, data, state.scan.fileIds]);
     state.saved = { data, period: r.period || thisPeriod(), fileId: r.fileId || state.scan.fileIds[0], updated: !!r.updated };
+    persistDraft();
     setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
     $('save-info').textContent = r.updated ? 'Đã lưu (ghi đè bản ghi trùng).' : 'Đã lưu bản ghi.';
     // Loại chưa có form FBO: chỉ lưu, trạng thái đồng bộ giữ PENDING để điền sau khi bổ sung ánh xạ
@@ -428,6 +431,28 @@ async function doSave() {
 function thisPeriod() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+}
+
+/* ---------- Giữ kết quả quét: tắt/mở lại panel hay form FBO vẫn điền tiếp được, không phải quét lại ---------- */
+function persistDraft() {
+  if (!state.scan || !state.type) return setScanDraft(null);
+  return setScanDraft({ type: state.type, data: state.scan.data, fileIds: state.scan.fileIds || [], photo: state.photo, jobDone: state.jobDone, saved: state.saved });
+}
+async function restoreDraft() {
+  const d = await getScanDraft();
+  if (!d || !state.config || !state.config.types.some((x) => x.code === d.type)) return false;
+  state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [] };
+  renderTypes(); renderReview(d.data);
+  setJobs(d.data.cong_viec); state.jobDone = d.jobDone || []; renderJobs();
+  setPhoto(d.photo || null, PHOTO_FORMS[d.type] ? PHOTO_NONE_NOTE : '');
+  show('review');
+  if (d.saved) { // đã Lưu/đã sẵn sàng điền: hiện luôn nút điền
+    state.saved = d.saved; setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
+    $('save-info').textContent = d.saved.anon ? 'Kết quả quét đang giữ lại (chưa lưu lên hệ thống).' : 'Đã lưu bản ghi.';
+    const { fboMappings } = await getSettings(); $('btn-fill').hidden = !hasMapping(fboMappings, d.type);
+  }
+  msg('Đã khôi phục kết quả quét trước. Không cần quét lại.');
+  return true;
 }
 
 /* ---------- Quá trình công tác: mỗi công việc một bản ghi, điền lần lượt, chống điền trùng ---------- */
@@ -475,6 +500,7 @@ async function fillJob(i) {
       confirmOverwrite: async (over) => confirm('Form đang có dữ liệu khác (có thể là công việc trước chưa Lưu):\n\n' + over.map((o) => '• ' + (DERIVED_LABELS[o.k] || o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"').join('\n') + '\n\nGhi đè?')
     });
     if (r.status === 'NO_FORM' || r.status === 'NO_MAPPING') { info.textContent = 'Chưa thấy form "Thêm thông tin quá trình công tác trước đây" ở tab hiện tại. Mở form đó rồi bấm Điền lại.'; info.className = 'warn'; }
+    else if (r.status === 'READ_ONLY') { info.textContent = 'Form đang ở chế độ "' + cut(r.title) + '" (chỉ xem). Bấm Mới trên form FBO rồi điền lại.'; info.className = 'warn'; }
     else if (r.status === 'CANCELLED') { info.textContent = 'Đã hủy, không ghi gì vào form.'; info.className = 'warn'; }
     else {
       if (r.filled.length) { state.jobDone.push(key); }
@@ -483,15 +509,20 @@ async function fillJob(i) {
       info.className = r.filled.length ? 'ok' : 'warn';
     }
   } catch (e) { info.textContent = e instanceof FillStopped ? 'Đã dừng.' : e.message; info.className = 'warn'; }
-  finally { btns.forEach((b) => { b.disabled = false; }); renderJobs(); }
+  finally { btns.forEach((b) => { b.disabled = false; }); renderJobs(); persistDraft(); }
 }
 $('btn-job-next').onclick = () => { const i = state.jobs.findIndex((x) => !state.jobDone.includes(jobKey(x))); if (i >= 0) fillJob(i); };
 
 /* ---------- Bước 4: điền FBO ---------- */
 /* ---------- Ảnh chân dung trên CV: cắt theo khung AI trả về, hiện xem trước, gắn vào form khi điền ---------- */
-function setPhoto(p) {
+const PHOTO_NONE_NOTE = 'Chưa có ảnh chân dung: CV không có ảnh, không cắt được, hoặc Apps Script chưa triển khai bản mới (có khung ảnh). Bạn có thể chọn ảnh từ máy.';
+/** p = ảnh (hoặc null); note = lời nhắc khi chưa có ảnh. Loại có ô ảnh trên form thì luôn hiện khung, kể cả khi chưa có ảnh, để chọn bằng tay. */
+function setPhoto(p, note) {
   state.photo = p;
-  $('photo-box').hidden = !p;
+  $('photo-box').hidden = !p && !note;
+  $('photo-img').hidden = !p; $('photo-row').hidden = !p; $('photo-hint').hidden = !p;
+  $('photo-note').textContent = p ? '' : (note || '');
+  $('btn-photo-pick').textContent = p ? 'Chọn ảnh khác từ máy...' : 'Chọn ảnh từ máy...';
   if (p) { $('photo-img').src = p.dataUrl; $('in-photo').checked = true; } else $('photo-img').removeAttribute('src');
 }
 async function cropPhoto(data) {
@@ -499,11 +530,24 @@ async function cropPhoto(data) {
   if (!PHOTO_FORMS[state.type]) return;
   const files = state.files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 }));
   const type = state.type, scan = state.scan;
-  try {
-    const p = await extractPhoto(files, data);
-    if (p && state.type === type && state.scan === scan) setPhoto(p); // người dùng đã quét lại/đổi loại trong lúc cắt thì bỏ
-  } catch (e) { /* không cắt được thì thôi, các trường khác vẫn điền */ }
+  let p = null;
+  try { p = await extractPhoto(files, data); } catch (e) { p = null; } // không cắt được thì thôi, các trường khác vẫn điền
+  if (state.type === type && state.scan === scan) setPhoto(p, PHOTO_NONE_NOTE); // người dùng đã quét lại/đổi loại trong lúc cắt thì bỏ
 }
+/** Chọn ảnh chân dung từ máy: thu nhỏ về cỡ chân dung rồi dùng như ảnh cắt tự động. */
+$('btn-photo-pick').onclick = () => $('photo-file').click();
+$('photo-file').onchange = async (ev) => {
+  const f = ev.target.files && ev.target.files[0]; ev.target.value = '';
+  if (!f) return;
+  try {
+    const url = URL.createObjectURL(f);
+    const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('Không đọc được ảnh')); i.src = url; });
+    const k = Math.min(1, 480 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    setPhoto({ dataUrl: c.toDataURL('image/jpeg', 0.9), name: 'anh_chan_dung.jpg' }); persistDraft();
+  } catch (e) { $('photo-note').textContent = e.message; }
+};
 
 async function doFill() {
   msg('');
@@ -516,6 +560,7 @@ async function doFill() {
     if (miss.length) { msg('Còn thiếu trường bắt buộc: ' + miss.map((k) => tt.fields.find((f) => f.k === k).label).join(', ') + '.'); return; }
     state.saved = { data, anon: true };
     setAnonDraft({ type: state.type, data });
+    persistDraft();
   }
   busy(btn, true, 'Đang chuẩn bị...');
   info.textContent = ''; info.className = 'hint';
@@ -560,6 +605,9 @@ async function doFill() {
       info.textContent = 'Bạn chưa mở form cần điền ở tab hiện tại (đã chờ ' + FORM_WAIT_MS / 1000 + ' giây, không thấy ô nào của form "' + (t ? t.label : state.type) + '"). Đăng nhập FBO và mở đúng form (nếu form có nhiều tab, mở tab cần điền), rồi bấm Điền vào FBO lại.';
       info.className = 'warn'; return;
     }
+    if (r.status === 'READ_ONLY') {
+      info.textContent = 'Form đang ở chế độ "' + cut(r.title) + '" (chỉ xem) nên không điền được. Bấm Mới (thêm) hoặc Sửa trên form FBO rồi bấm Điền vào FBO lại. Kết quả quét vẫn còn.'; info.className = 'warn'; return;
+    }
     if (r.status === 'CANCELLED') {
       info.textContent = r.wrongForm ? 'Đã hủy: form đang mở chỉ khớp ' + r.found + '/' + r.selectors + ' ô. Mở đúng form rồi bấm Điền vào FBO lại.' : 'Đã hủy: không ghi đè dữ liệu đang có trên form FBO.';
       info.className = 'warn'; return;
@@ -569,7 +617,7 @@ async function doFill() {
     if (r.empty.length) parts.push('Bỏ qua (OCR không có giá trị, sai định dạng ngày hoặc không khớp mã): ' + list(r.empty) + '.');
     parts.push((r.formName ? 'Form nhận diện: ' + r.formName + '. ' : '') + 'Thấy ' + r.found + '/' + r.selectors + ' ô của form.');
     if (PHOTO_FORMS[state.type]) {
-      const ph = { ok: 'Đã gắn ảnh chân dung.', kept: 'Giữ ảnh đang có trên form.', notFound: 'Không thấy ô chọn ảnh trên form.', error: 'Không gắn được ảnh chân dung (chọn ảnh bằng tay).' }[r.photo];
+      const ph = { ok: 'Đã gắn ảnh chân dung.', kept: 'Giữ ảnh đang có trên form.', notFound: 'Không thấy ô chọn ảnh trên form.', error: 'Không gắn được ảnh chân dung (chọn ảnh bằng tay).', noPreview: 'Đã chọn ảnh vào ô chọn tệp nhưng form chưa hiện ảnh xem trước. Kiểm tra khung ảnh trước khi Lưu; nếu trống thì bấm Chọn... và chọn ảnh bằng tay.' }[r.photo];
       parts.push(ph || (state.photo ? 'Chưa gắn ảnh chân dung (đã bỏ chọn).' : 'Không có ảnh chân dung để gắn (CV không có ảnh hoặc không cắt được).'));
     }
     if (r.diag) parts.push('Chẩn đoán ô địa chỉ (gửi lại cho người hỗ trợ): ' + r.diag + '.');
@@ -674,6 +722,7 @@ document.addEventListener('paste', (e) => {
       await enterAnon();
       const d = await getAnonDraft();
       if (d && state.config.types.some((x) => x.code === d.type)) { state.type = d.type; state.scan = { data: d.data, fileIds: [] }; renderTypes(); renderReview(d.data); show('review'); }
+      await restoreDraft(); // bản đầy đủ (ảnh, danh sách công việc, trạng thái) nếu có
       return;
     } catch (e) { await setAnonMode(false); state.anon = false; msg(e.message); }
   }
@@ -681,9 +730,9 @@ document.addEventListener('paste', (e) => {
   if (auth) {
     try {
       const me = await call('checkSession', [auth.token]);
-      if (me) { state.auth = { token: auth.token, me }; await enter(); return; }
+      if (me) { state.auth = { token: auth.token, me }; await enter(); await restoreDraft(); return; }
     } catch (e) { msg(e.message); }
   }
-  if (await tryAutoLogin()) { await enter(); return; }
+  if (await tryAutoLogin()) { await enter(); await restoreDraft(); return; }
   await showLogin();
 })();

@@ -87,7 +87,7 @@ Quét CV rồi điền vào form **Thông tin nhân viên** (cùng form CCCD đ�
 - Tab Ngoại ngữ: ngoại ngữ chính (mã 01 Anh ... 07 Hàn) và bằng/điểm; ngoại ngữ khác vào Ghi chú.
 - Ô **Ghi chú nằm ở tab Khác** (tab "Ghi chú" trên form là khung bình luận): Kỹ năng, Sở thích, Chứng chỉ, Kinh nghiệm làm việc, mỗi mục một dòng có đầu mục.
 Mã danh mục theo dữ liệu demo; khách hàng có danh mục khác thì chỉnh bảng `map` ở Cài đặt.
-- **Ảnh chân dung:** AI trả khung ảnh trong CV (ảnh hoặc PDF), extension cắt (`lib/photo.js`, trang PDF vẽ bằng pdf.js đóng gói sẵn trong `lib/vendor/pdfjs/`, giấy phép Apache-2.0) và gắn vào ô chọn ảnh của form khi bấm Điền. Có xem trước và ô bỏ chọn; form đã có ảnh thì hỏi trước khi thay. Khung ảnh không có hoặc không hợp lệ thì bỏ qua, không đoán.
+- **Ảnh chân dung (CV nhân viên và CV ứng viên):** AI trả khung ảnh trong CV (ảnh hoặc PDF), extension cắt (`lib/photo.js`, trang PDF vẽ bằng pdf.js đóng gói sẵn trong `lib/vendor/pdfjs/`, giấy phép Apache-2.0) và gắn vào ô chọn ảnh của form khi bấm Điền. Có xem trước và ô bỏ chọn; form đã có ảnh thì hỏi trước khi thay. Khung ảnh không có hoặc không hợp lệ thì bỏ qua, không đoán.
 
 ### Địa chỉ cũ → tỉnh/xã mới (sáp nhập 01/7/2025)
 
@@ -230,6 +230,12 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 - Một số trình duyệt chặn camera trực tiếp trong khung Apps Script; khi đó nút "Chụp ảnh" tự chuyển sang ứng dụng camera của máy.
 - Quét xong nhưng không bấm lưu thì tệp gốc vẫn nằm trên Drive, không có dòng tương ứng.
 
+## Gộp về một domain (Web Admin + giao diện quét)
+
+- Domain chính: `https://khoatv-ocr-extensions.vercel.app` (dự án `admin_webapp`). `/` là Web Admin; **`/app` là giao diện quét OCR** (khung toàn màn hình mở Apps Script, không cần đăng nhập Web Admin vì ứng dụng có đăng nhập OCR riêng).
+- `/app` lấy địa chỉ Apps Script từ biến môi trường **`GAS_WEB_APP_URL`** của dự án Web Admin trên Vercel (cùng biến đang dùng cho proxy `/api/gas` và `/api/extension-config`). Chưa đặt thì `/app` báo "Chưa cấu hình". Đổi link Web App thì chỉ cần sửa biến này rồi Redeploy.
+- Link cũ `khoatv-ocr-use.vercel.app` tự chuyển hướng sang `/app` (`vercel.json` ở thư mục gốc). `public/index.html` vẫn giữ nguyên vì AutoSynCode cập nhật `APP_URL` trong đó và extension đọc `APP_URL` từ tệp này trên GitHub.
+
 ## Hosting trên Vercel (khung bao quanh ứng dụng)
 
 - Vercel không build mã nguồn: `vercel.json` đặt `outputDirectory` là `public`, không có lệnh build. `backend_gas/` (mã Apps Script) không được phát tán.
@@ -239,3 +245,9 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 - Ứng dụng thực sự chạy trên Apps Script (backend dùng `DriveApp`, `SpreadsheetApp`, giao diện dùng `google.script.run`), nên không chạy được nếu chép nguyên `src/index.html` lên Vercel.
 - Cấu hình trên Vercel: Application Preset = Other, Root Directory = `./`.
 - Lưu ý: vì cho phép nhúng, trang khác cũng có thể nhúng ứng dụng này; ứng dụng vẫn yêu cầu đăng nhập.
+
+#### Quét 1 lần, điền nhiều lần
+Kết quả quét (kể cả ảnh chân dung và danh sách công việc) được giữ trong phiên trình duyệt: tắt/mở lại side panel hoặc form FBO vẫn bấm Điền tiếp được, không phải quét lại. Bấm "Quét tiếp" mới xóa. Khi tab FBO không phản hồi, tool báo rõ tab nào, trạng thái gì thay vì chỉ báo hết giờ.
+
+#### Chuyên ngành (CV nhân viên)
+Chuyên ngành trên CV được đối chiếu với danh mục chuyên ngành của FBO (`presets/dm/chuyen-nganh.json`, dạng `[["mã","tên"],...]`) để điền mã vào ô `ma_cn`: trùng tên > tên danh mục nằm trong chuyên ngành trên CV > giống từ >= 70%; không khớp thì dùng mã `99` (KHÁC). Danh mục này chép từ site demo; khách hàng khác có danh mục riêng thì thay file này bằng danh mục của họ (mã sai sẽ điền nhầm chuyên ngành).

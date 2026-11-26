@@ -16,6 +16,18 @@ async function webTab() {
   return tab;
 }
 
+/** Khung chính của tab không chạy được lệnh trong 5 giây: nói rõ tab nào, trạng thái gì, và cách xử lý. */
+async function pingTab(tab, sig) {
+  try { await abortable(withTimeout(run({ tabId: tab.id }, { func: () => document.readyState }), 5000, 'ping'), sig); return; }
+  catch (e) { if (e instanceof FillStopped) throw e; if (!/ping/.test(String(e.message))) throw e; }
+  let t = tab; try { t = await chrome.tabs.get(tab.id); } catch (e) { /* tab đã đóng */ }
+  let host = ''; try { host = new URL(t.url || '').host; } catch (e) { /* không đọc được */ }
+  const why = t.discarded ? 'Tab đã bị trình duyệt giải phóng/ngủ đông (hãy bấm vào tab đó cho tải lại)'
+    : t.status === 'loading' ? 'Trang vẫn đang tải'
+    : 'Trang không phản hồi (có thể đang treo, hoặc đang có hộp thoại thông báo của trình duyệt/FBO cần bấm Nhận/Đóng)';
+  throw new Error('Tab FBO không phản hồi sau 5 giây. Tab được chọn: "' + (t.title || '?') + '" (' + (host || '?') + ', tab #' + t.id + ', trạng thái: ' + (t.status || '?') + (t.discarded ? ', đã ngủ đông' : '') + '). ' + why + '. Xử lý xong bấm Điền vào FBO lại; kết quả quét vẫn còn, không cần quét lại.');
+}
+
 /** Tab đang hiện form đăng nhập FBO (ở bất kỳ frame nào) = chưa đăng nhập. Không thấy form đăng nhập = coi như đã đăng nhập. */
 async function needsLogin(tabId, target) {
   target = target || { tabId, allFrames: true };
@@ -90,6 +102,8 @@ export async function fillActiveTab(docType, data, opts) {
   try {
     progress({ phase: 'prepare' });
     await guard();
+    // Kiểm tra nhanh khung chính có phản hồi không (5 giây) để báo đúng nguyên nhân thay vì chờ hết 2 lượt 15 giây
+    await pingTab(tab, sig);
     // Khung phụ treo làm lệnh vào mọi khung quá hạn: thử lại một lần chỉ với khung chính (form FBO nằm ở khung chính)
     const frames = async (fn, what) => {
       try { return await step(fn(target), what, sig); }
@@ -114,12 +128,11 @@ export async function fillActiveTab(docType, data, opts) {
     const now = new Date(), p2 = (n) => String(n).padStart(2, '0');
     const enriched = enrichData(docType, data, await getDm(), { relation: opts.relation, job: opts.job, today: p2(now.getDate()) + '/' + p2(now.getMonth() + 1) + '/' + now.getFullYear() });
     const call = (extra, what, abortSig) => step(run(target, { func: (m, d, o) => globalThis.__KHOATV_FILL__(m, d, o), args: [mapping, enriched, extra] }), what, abortSig);
-    // Điền công việc: form phải đang ở chế độ THÊM bản ghi mới; đang Sửa một bản ghi có sẵn thì hỏi trước (sẽ ghi đè bản ghi cũ)
-    if (opts.job != null) {
-      const tt = await step(run(target, { func: () => globalThis.__KHOATV_TITLE__() }), 'đọc tiêu đề form', sig);
-      const t0 = tt.map((r) => r.result).find((r) => r && r.found);
-      if (t0 && !/thêm|them|add|new/i.test(t0.title) && opts.confirmEditMode && !(await opts.confirmEditMode(t0.title))) return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total };
-    }
+    // Chế độ của hộp thoại: "Xem ..." là chỉ đọc (không điền được, kể cả ảnh); công việc phải ở "Thêm", đang "Sửa" thì hỏi trước khi ghi đè
+    const tt = await step(run(target, { func: () => globalThis.__KHOATV_TITLE__() }), 'đọc tiêu đề form', sig);
+    const t0 = tt.map((r) => r.result).find((r) => r && r.found);
+    if (t0 && /^\s*(xem|view)\b/i.test(t0.title)) return { ...blank, total, status: 'READ_ONLY', title: t0.title, found: form.found, selectors: form.total };
+    if (opts.job != null && t0 && !/thêm|them|add|new/i.test(t0.title) && opts.confirmEditMode && !(await opts.confirmEditMode(t0.title))) return { ...blank, total, status: 'CANCELLED', found: form.found, selectors: form.total };
     // 1) tính thử: ô trường bắt buộc đang có giá trị khác thì hỏi trước khi ghi đè
     progress({ phase: 'check' });
     const dry = await call({ dry: true, src: docType }, 'kiểm tra dữ liệu có sẵn trên form', sig);
@@ -159,6 +172,11 @@ export async function fillActiveTab(docType, data, opts) {
       else {
         const put = await step(run(target, { func: (c, u, n) => globalThis.__KHOATV_PHOTO__(c, u, n, false), args: [pf, opts.photo.dataUrl, opts.photo.name] }), 'gắn ảnh');
         photo = put.some((r) => r.result && r.result.ok) ? 'ok' : 'error';
+        if (photo === 'ok') { // form có hiện ảnh xem trước không? Không hiện = chưa chắc ảnh được nhận, báo để người dùng kiểm tra trước khi Lưu
+          await sleep(900);
+          const after = await step(run(target, { func: (c) => globalThis.__KHOATV_PHOTO__(c, null, null, true), args: [pf] }), 'kiểm tra ảnh sau khi gắn');
+          if (!after.some((r) => r.result && r.result.has)) photo = 'noPreview';
+        }
       }
     }
   } catch (e) {

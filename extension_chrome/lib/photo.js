@@ -2,8 +2,11 @@
 // Khung AI: anh_tep (tệp thứ mấy, từ 1), anh_trang (trang thứ mấy, từ 1), anh_ymin/xmin/ymax/xmax (0-1000 theo chiều cao/rộng của trang).
 // Không có khung hợp lệ thì không cắt (trả null), không đoán.
 
-/** Loại tài liệu có ảnh chân dung gắn vào form: ô chọn tệp và ảnh xem trước của form FBO (đã dò trên form Thông tin nhân viên). */
-export const PHOTO_FORMS = { CV_NHANVIEN: { input: '#imageupload', preview: '#empImage' } };
+/** Loại tài liệu có ảnh chân dung gắn vào form: ô chọn tệp và ảnh xem trước của form FBO (đã dò trên form Thông tin nhân viên và form hồ sơ ứng viên). */
+export const PHOTO_FORMS = {
+  CV_NHANVIEN: { input: '#imageupload', preview: '#empImage' },
+  CV_UNGVIEN: { input: '#imageupload', preview: '#empImage' } // form Cập nhật hồ sơ ứng viên (hrrm012) dùng cùng id ô ảnh, đã dò trên demo
+};
 
 const MIN_SIDE = 40;        // khung nhỏ hơn thế (điểm ảnh) là sai
 const MIN_AREA = 0.002;     // khung nhỏ hơn 0,2% diện tích trang là sai

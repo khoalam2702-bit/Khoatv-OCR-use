@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildDm, addressDetail, lookupAddress, lookupNationality, enrichData, norm } from '../lib/dm.js';
+import { lookupMajor, buildDm, addressDetail, lookupAddress, lookupNationality, enrichData, norm } from '../lib/dm.js';
 
 const rd = (n) => JSON.parse(fs.readFileSync(new URL('../presets/dm/' + n, import.meta.url), 'utf8'));
 const dm = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json') }); // không có bảng đơn vị cũ
+const dmCn = buildDm({ chuyenNganh: rd('chuyen-nganh.json') });
 const dmOld = buildDm({ tinh: rd('tinh.json'), xa: rd('xa.json'), quocTich: rd('quoc-tich.json'), diaChiCu: rd('dia-chi-cu.json') });
 
 test('danh mục đóng gói đủ: 34 tỉnh/thành, 3320 phường/xã, 14 quốc tịch', () => {
@@ -170,10 +171,10 @@ test('CV nhân viên: Địa chỉ hiện tại tách thành số nhà/tổ + t�
   assert.equal(p.hien_tai_tinh_ma, '48'); assert.ok(p.hien_tai_xa_ma); assert.equal(p.hien_tai_chi_tiet, '12 Lê Duẩn');
 });
 
-test('CV nhân viên: ánh xạ ra đúng ô của form Thông tin nhân viên (đã dò), không có ô trùng với CCCD', () => {
+test('CV nhân viên: ánh xạ ra đúng ô của form Thông tin nhân viên (đã dò), họ tên/giới tính/ngày sinh/quốc tịch dùng cùng ô với CCCD', () => {
   const preset = rd('../fbo-hrm.json');
   const m = preset.CV_NHANVIEN;
-  for (const k of ['ho_ten', 'gioi_tinh', 'ngay_sinh', 'quoc_tich']) assert.equal(m[k], undefined, k + ' đã do CCCD điền');
+  for (const k of ['ho_ten', 'gioi_tinh', 'ngay_sinh', 'quoc_tich']) assert.deepEqual(m[k], preset.CCCD[k], k + ' phải trùng ô với CCCD (cùng form nhân viên)');
   const sel = (k) => [].concat(m[k]).map((x) => (typeof x === 'string' ? x : x.selector))[0];
   assert.match(sel('hien_tai_chi_tiet'), /dia_chi_ht_so"\]$/); assert.match(sel('hien_tai_tinh_ma'), /dia_chi_ht_tinh"\]$/); assert.match(sel('hien_tai_xa_ma'), /dia_chi_ht_xa"\]$/);
   assert.match(sel('cap_dao_tao'), /ma_tdhv"\]$/); assert.equal(m.cap_dao_tao.map['Đại học'], '50');
@@ -182,4 +183,56 @@ test('CV nhân viên: ánh xạ ra đúng ô của form Thông tin nhân viên (
   assert.equal(e.thoi_gian_hoc, '2014 - 2017');
   // CCCD: Số nhà/tổ điền vào ô nhập thật (…_so), không phải ô địa chỉ ghép ẩn
   assert.match(preset.CCCD.thuong_tru_chi_tiet, /dia_chi_th_tru_so"\]$/); assert.match(preset.CCCD.que_quan_chi_tiet, /que_quan_so"\]$/);
+});
+
+test('chuyên ngành: khớp danh mục FBO (trùng tên, chứa tên, không khớp → KHÁC)', () => {
+  const ma = (t) => { const r = lookupMajor(t, dmCn); return r && r.ma; };
+  assert.equal(ma('Kế toán'), '10');
+  assert.equal(ma('Chuyên ngành Kế Toán'), '10');
+  assert.equal(ma('Kế toán doanh nghiệp'), '10');          // tên danh mục nằm trong chuyên ngành ghi trên CV
+  assert.equal(ma('Luật'), '41');
+  assert.equal(ma('Ngôn ngữ Anh'), '51');
+  assert.equal(ma('Hệ thống thông tin quản lý'), 'HTTTQL');
+  assert.equal(ma('Chăm sóc sắc đẹp'), '21');             // không có trong danh mục → mục Khác
+  assert.equal(ma('Công nghệ thông tin'), '02');          // trùng tên với QCNTT/T.CNTT: ưu tiên mã số
+  assert.equal(ma('Kế toán tài chính'), 'KTTC');
+  assert.equal(ma('Quản trị kinh doanh'), 'QQTKD');
+  assert.equal(ma('Marketing'), 'QMARKET');
+  assert.equal(lookupMajor('', dmCn), null);
+  assert.equal(lookupMajor('Kế toán', buildDm({})), null); // danh mục trống thì không điền
+  assert.equal(enrichData('CV_NHANVIEN', { chuyen_nganh: 'Tài chính - Ngân hàng' }, dmCn).chuyen_nganh_ma, '46');
+  assert.match(rd('../fbo-hrm.json').CV_NHANVIEN.chuyen_nganh_ma.selector, /_form_ma_cn"\]$/);
+});
+
+test('CV nhân viên: ngày tốt nghiệp = 30/09 của năm kết thúc học; không có năm thì không điền', () => {
+  assert.equal(enrichData('CV_NHANVIEN', { den_nam: '2022' }, null).ngay_tot_nghiep, '30/09/2022');
+  assert.equal(enrichData('CV_NHANVIEN', { den_nam: 'Nay' }, null).ngay_tot_nghiep, undefined);
+  assert.equal(enrichData('CV_NHANVIEN', {}, null).ngay_tot_nghiep, undefined);
+  assert.deepEqual(rd('../fbo-hrm.json').CV_NHANVIEN.ngay_tot_nghiep.format, 'date');
+});
+
+test('CV nhân viên: học từ/đến = 01/09 của năm; thiếu năm thì không điền', () => {
+  const e = enrichData('CV_NHANVIEN', { tu_nam: '2014', den_nam: '2017' }, null);
+  assert.deepEqual([e.ngay_hoc_tu, e.ngay_hoc_den, e.ngay_tot_nghiep], ['01/09/2014', '01/09/2017', '30/09/2017']);
+  const f = enrichData('CV_NHANVIEN', { tu_nam: '2019', den_nam: 'Nay' }, null);
+  assert.deepEqual([f.ngay_hoc_tu, f.ngay_hoc_den], ['01/09/2019', undefined]);
+  const m = rd('../fbo-hrm.json').CV_NHANVIEN;
+  assert.match(m.ngay_hoc_tu.selector, /ngay_hoc_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /ngay_hoc_den"\]$/);
+});
+
+test('CV nhân viên: Từ ngày / Đến ngày học = 01/09 của năm học từ / năm học đến', () => {
+  const e = enrichData('CV_NHANVIEN', { tu_nam: '2014', den_nam: '2017' }, null);
+  assert.equal(e.ngay_hoc_tu, '01/09/2014'); assert.equal(e.ngay_hoc_den, '01/09/2017'); assert.equal(e.ngay_tot_nghiep, '30/09/2017');
+  const o = enrichData('CV_NHANVIEN', { tu_nam: '2019' }, null);
+  assert.equal(o.ngay_hoc_tu, '01/09/2019'); assert.equal(o.ngay_hoc_den, undefined);
+  const m = rd('../fbo-hrm.json').CV_NHANVIEN;
+  assert.match(m.ngay_hoc_tu.selector, /_ngay_hoc_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /_ngay_hoc_den"\]$/);
+});
+
+test('CV ứng viên: Học từ/đến = 01/09 năm từ/đến, Ngày cấp = 30/09 năm đến; ô là ô thật của form ứng viên', () => {
+  const e = enrichData('CV_UNGVIEN', { tu_nam: '2014', den_nam: '2017' }, null);
+  assert.deepEqual([e.ngay_hoc_tu, e.ngay_hoc_den, e.ngay_tot_nghiep], ['01/09/2014', '01/09/2017', '30/09/2017']);
+  assert.equal(enrichData('CV_UNGVIEN', {}, null).ngay_hoc_tu, undefined);
+  const m = rd('../fbo-hrm.json').CV_UNGVIEN;
+  assert.match(m.ngay_hoc_tu.selector, /_ngay_dt_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /_ngay_dt_den"\]$/); assert.match(m.ngay_tot_nghiep.selector, /_ngay_cap_cc"\]$/);
 });
