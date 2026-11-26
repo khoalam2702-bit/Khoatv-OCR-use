@@ -50,3 +50,11 @@ button.danger:hover { background:#b91c1c; }
 #photo-box { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; margin: 8px 0; }
 #photo-box[hidden] { display: none; }
 #photo-img { width: 96px; height: auto; max-height: 128px; object-fit: cover; border: 1px solid #cfd6dd; border-radius: 4px; }
+
+#jobs-box { margin-top: 12px; border-top: 1px solid var(--line, #ddd); padding-top: 8px; }
+#jobs-box[hidden] { display: none; }
+#jobs-list { margin: 6px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+#jobs-list li.done { color: #1a7f37; }
+#jobs-list .jt { font-weight: 600; }
+#jobs-list .jm { font-size: 12px; opacity: .8; }
+#jobs-list button { margin-top: 2px; }

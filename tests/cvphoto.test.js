@@ -6,4 +6,8 @@ const schema = JSON.parse(vm.runInContext("JSON.stringify(buildSchema_(DOC_TYPES
 for (const k of ['anh_tep', 'anh_trang', 'anh_ymin', 'anh_xmin', 'anh_ymax', 'anh_xmax']) assert.strictEqual(schema.properties[k].type, 'NUMBER', k);
 const fields = JSON.parse(vm.runInContext("JSON.stringify(DOC_TYPES.CV_NHANVIEN.fields.map(function(f){return f.k}))", ctx));
 assert.ok(!fields.some((k) => /^anh_/.test(k)), 'khung ảnh chỉ để cắt ảnh, không lưu thành cột');
+const jobs = schema.properties.cong_viec;
+assert.strictEqual(jobs.type, 'ARRAY');
+assert.deepStrictEqual(Object.keys(jobs.items.properties).sort(), ['chuc_danh', 'cong_ty', 'den', 'mo_ta', 'tu']);
+assert.ok(!fields.includes('cong_viec'), 'danh sách công việc chỉ để điền form, không thành cột');
 console.log('cvphoto ok');

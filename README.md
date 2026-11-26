@@ -95,6 +95,13 @@ Thẻ CCCD cấp trước 2025 in địa chỉ 3 cấp cũ (xã/huyện/tỉnh).
 
 Nguồn dữ liệu: Dorabot (dorabot.io/dia-chi/sap-nhap), chép từ nghị quyết của Ủy ban Thường vụ Quốc hội, giấy phép [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/deed.vi).
 
+
+#### Quá trình công tác (từng công việc)
+- AI trả thêm danh sách `cong_viec` (đơn vị, chức danh, từ, đến, mô tả); danh sách chỉ dùng để điền form, không thành cột trong Sheet.
+- Sau khi Lưu, panel hiện danh sách công việc. Mở form "Thêm thông tin quá trình công tác trước đây" ở FBO, bấm **Điền công việc tiếp theo**; mỗi lần điền một công việc, tool không tự bấm Lưu.
+- Chống trùng/ghi đè: công việc đã điền được đánh dấu ✓ (điền lại phải xác nhận); form đang ở chế độ Sửa (tiêu đề không phải "Thêm") thì hỏi trước; form còn dữ liệu của bản ghi chưa Lưu thì hỏi trước khi ghi đè.
+- CV chỉ ghi tháng/năm hoặc năm: ngày bắt đầu = đầu tháng/đầu năm, ngày kết thúc = cuối tháng/31-12 (đánh dấu "ước lượng"); "Nay" để trống ngày kết thúc; thời gian gốc ghi vào Ghi chú. Ánh xạ nằm ở khóa `CV_NHANVIEN@CONGTAC` trong `presets/fbo-hrm.json`.
+
 ## Cổng API (`doPost`)
 
 Dùng cho Web Admin Next.js và Extension. Gửi `POST` tới URL Web App, `Content-Type: text/plain` (tránh preflight CORS), thân JSON:

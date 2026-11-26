@@ -117,13 +117,15 @@ const DOC_TYPES = {
       'Các mục sau viết thành văn bản gọn, mỗi ý một dòng, đúng nội dung CV: ky_nang (kỹ năng), so_thich (sở thích), chung_chi (chứng chỉ, kèm năm), ' +
       'kinh_nghiem (kinh nghiệm làm việc: mỗi vị trí một đoạn gồm thời gian, chức danh, công ty và 1-3 ý chính, mới nhất trước). ' +
       'ẢNH CHÂN DUNG: nếu CV có ảnh chân dung của người này, trả vị trí ảnh: anh_tep là số thứ tự tệp chứa ảnh (tệp đầu tiên là 1), anh_trang là số trang trong tệp (trang đầu là 1; tệp ảnh thì 1), ' +
-      'anh_ymin, anh_xmin, anh_ymax, anh_xmax là khung chữ nhật ôm sát khuôn mặt và vai, chuẩn hóa 0-1000 theo chiều cao (y) và chiều rộng (x) của trang. Không có ảnh chân dung thì để trống cả sáu trường.',
+      'anh_ymin, anh_xmin, anh_ymax, anh_xmax là khung chữ nhật ôm sát khuôn mặt và vai, chuẩn hóa 0-1000 theo chiều cao (y) và chiều rộng (x) của trang. Không có ảnh chân dung thì để trống cả sáu trường. ' +
+      'cong_viec: danh sách TỪNG công việc trong mục kinh nghiệm làm việc, theo thứ tự trên CV, mỗi công việc một phần tử gồm cong_ty (tên công ty/đơn vị), chuc_danh, tu (thời điểm bắt đầu) và den (thời điểm kết thúc) CHÉP ĐÚNG như CV ghi (ví dụ "06/2023", "2019", "Nay"; không tự thêm tháng hoặc ngày), mo_ta (1-3 ý chính, ngắn). Không có mục kinh nghiệm thì trả danh sách rỗng.',
     fields: [f_('ho_ten', 'Họ và tên'), f_('gioi_tinh', 'Giới tính'), f_('ngay_sinh', 'Ngày sinh'), f_('quoc_tich', 'Quốc tịch'), f_('dia_chi', 'Địa chỉ'),
       f_('cap_dao_tao', 'Trình độ'), f_('truong_dao_tao', 'Trường đào tạo'), f_('chuyen_nganh', 'Chuyên ngành'), f_('xep_loai', 'Xếp loại'),
       f_('tu_nam', 'Học từ năm'), f_('den_nam', 'Học đến năm'), f_('ngoai_ngu', 'Ngoại ngữ'), f_('ngoai_ngu_diem', 'Bằng/điểm ngoại ngữ'), f_('ngoai_ngu_khac', 'Ngoại ngữ khác', 'long'),
       f_('ky_nang', 'Kỹ năng', 'long'), f_('so_thich', 'Sở thích', 'long'), f_('chung_chi', 'Chứng chỉ', 'long'), f_('kinh_nghiem', 'Kinh nghiệm làm việc', 'long')],
     aux: [f_('anh_tep', 'Số thứ tự tệp chứa ảnh chân dung', 'number'), f_('anh_trang', 'Trang chứa ảnh chân dung', 'number'), f_('anh_ymin', 'Khung ảnh: y trên (0-1000)', 'number'), f_('anh_xmin', 'Khung ảnh: x trái (0-1000)', 'number'),
-      f_('anh_ymax', 'Khung ảnh: y dưới (0-1000)', 'number'), f_('anh_xmax', 'Khung ảnh: x phải (0-1000)', 'number')]
+      f_('anh_ymax', 'Khung ảnh: y dưới (0-1000)', 'number'), f_('anh_xmax', 'Khung ảnh: x phải (0-1000)', 'number'),
+      f_('cong_viec', 'Danh sách công việc đã làm', 'jobs')]
   },
   SO_DO: {
     label: 'Sổ đỏ / Sổ hồng', uniqueKey: null, required: ['thua_dat_so', 'dia_chi_thua_dat'],
@@ -1185,6 +1187,9 @@ function buildSchema_(type) {
         itemProps[c.k] = { type: c.type === 'number' ? 'NUMBER' : 'STRING', nullable: true };
       });
       props[f.k] = { type: 'ARRAY', nullable: true, description: f.label, items: { type: 'OBJECT', properties: itemProps } };
+    } else if (f.type === 'jobs') {
+      props[f.k] = { type: 'ARRAY', nullable: true, description: f.label, items: { type: 'OBJECT', properties: {
+        cong_ty: { type: 'STRING', nullable: true }, chuc_danh: { type: 'STRING', nullable: true }, tu: { type: 'STRING', nullable: true }, den: { type: 'STRING', nullable: true }, mo_ta: { type: 'STRING', nullable: true } } } };
     } else {
       props[f.k] = { type: f.type === 'number' ? 'NUMBER' : 'STRING', nullable: true, description: f.label };
     }

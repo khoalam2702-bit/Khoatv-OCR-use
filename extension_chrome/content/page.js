@@ -188,7 +188,7 @@
         if (!spec || !spec.selector) return;
         var r, dry = dryOn ? [] : null;
         try { r = setOne(spec.selector, val, spec, touched, dry); } catch (e) { r = 'notFound'; }
-        if (dry) dry.forEach(function (d) { if (d.old.replace(/[\s\/_.\-]+/g, '') !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v, src: d.src, foreign: !!d.src && d.src !== curSrc }); });
+        if (dry) dry.forEach(function (d) { if (spec.ignoreOld && spec.ignoreOld.indexOf(String(d.old).trim()) >= 0) return; /* giá trị mặc định của form (vd Đơn vị = 1): không phải dữ liệu cũ */ if (d.old.replace(/[\s\/_.\-]+/g, '') !== '' && norm(d.old) !== norm(d.v)) out.overwrite.push({ k: k, old: d.old, v: d.v, src: d.src, foreign: !!d.src && d.src !== curSrc }); });
         if (r === 'ok') ok++; else if (r === 'empty') skip++; else miss++;
       });
       if (miss) out.notFound.push(k);
@@ -296,6 +296,13 @@
       fire(inp, 'input'); fire(inp, 'change');
       return { found: true, has: has, ok: inp.files.length === 1 };
     } catch (e) { return { found: true, has: has, ok: false, error: String(e && e.message || e) }; }
+  };
+
+  /* Tiêu đề hộp thoại form đang mở (vd "Thêm thông tin quá trình công tác trước đây" / "Sửa ..."): để biết đang thêm bản ghi mới hay sửa bản ghi cũ. */
+  globalThis.__KHOATV_TITLE__ = function () {
+    var list = Array.prototype.slice.call(document.querySelectorAll('[id$="_updateDlgTitleText"]'));
+    var el = list.filter(function (e) { return e.offsetWidth || e.offsetHeight; })[0] || list[0];
+    return { found: !!el, title: el ? String(el.innerText || el.textContent || '').trim() : '' };
   };
 
   globalThis.__KHOATV_INSPECT__ = function () {

@@ -311,5 +311,24 @@
       "append": true,
       "sep": "\n"
     }
+  },
+  "CV_NHANVIEN@CONGTAC": {
+    "ct_don_vi": {
+      "selector": "[id$=\"_dirExtender_form_cong_ty\"]",
+      "ignoreOld": [
+        "1"
+      ]
+    },
+    "ct_vi_tri": "[id$=\"_dirExtender_form_vi_tri\"]",
+    "ct_tu_ngay": {
+      "selector": "[id$=\"_dirExtender_form_ngay_tu\"]",
+      "format": "date"
+    },
+    "ct_den_ngay": {
+      "selector": "[id$=\"_dirExtender_form_ngay_den\"]",
+      "format": "date"
+    },
+    "ct_so_nam": "[id$=\"_dirExtender_form_thoi_gian_lv\"]",
+    "ct_ghi_chu": "[id$=\"_dirExtender_form_ghi_chu\"]"
   }
 }

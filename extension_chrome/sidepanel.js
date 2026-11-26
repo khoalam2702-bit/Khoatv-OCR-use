@@ -4,6 +4,7 @@ import { getSettings, getAuth, setAuth, refreshRemoteConfig, getOcrLogin, saveOc
 import { prepareFile, shrinkBase64 } from './lib/image.js';
 import { toFormValues, fromFormValues, missingRequired } from './lib/format.js';
 import { DERIVED_LABELS } from './lib/dm.js';
+import { normalizeJobs, jobFields } from './lib/jobs.js';
 import { readCccdQr, mergeQr } from './lib/qr.js';
 import { extractPhoto, PHOTO_FORMS } from './lib/photo.js';
 import { fillActiveTab, loginFboActiveTab, inspectFormTab } from './lib/fbo.js';
@@ -16,7 +17,7 @@ import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scan
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
 
-const state = { auth: null, anon: false, config: null, type: null, files: [], scan: null, saved: null, photo: null };
+const state = { auth: null, anon: false, config: null, type: null, files: [], scan: null, saved: null, photo: null, jobs: [], jobDone: [] };
 
 /* ---------- Giao diện chung ---------- */
 function show(view) {
@@ -271,7 +272,7 @@ function renderLimits() {
 }
 
 function resetScan() {
-  state.files = []; state.scan = null; state.saved = null; setPhoto(null);
+  state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]);
   renderTypes(); renderFiles(); updateScanBtn();
   renderLimits();
 }
@@ -345,6 +346,7 @@ async function doScan() {
     if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
     state.scan = r;
     renderReview(r.data);
+    setJobs(r.data.cong_viec);
     cropPhoto(r.data); // ảnh chân dung của CV (nếu loại này có): cắt nền, xong thì hiện xem trước
     show('review');
     if (r.ms) msg('Quét xong trong ' + Math.round(r.ms / 1000) + ' giây (AI ' + Math.round((r.msAi || 0) / 1000) + ' giây, lưu ảnh ' + Math.round((r.msDrive || 0) / 1000) + ' giây).', 'info');
@@ -427,6 +429,63 @@ function thisPeriod() {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
+
+/* ---------- Quá trình công tác: mỗi công việc một bản ghi, điền lần lượt, chống điền trùng ---------- */
+const jobKey = (j) => [j.cong_ty, j.chuc_danh, j.tu, j.den].join('|');
+function setJobs(list) {
+  state.jobs = normalizeJobs(list);
+  state.jobDone = []; // theo khóa nội dung, không theo số thứ tự: quét lại CV khác thì không dính trạng thái cũ
+  renderJobs();
+}
+function renderJobs() {
+  const box = $('jobs-box'), ol = $('jobs-list');
+  box.hidden = !state.jobs.length;
+  ol.textContent = '';
+  state.jobs.forEach((j, i) => {
+    const done = state.jobDone.includes(jobKey(j));
+    const f = jobFields(j), m = f.meta;
+    const li = document.createElement('li'); if (done) li.className = 'done';
+    const t = document.createElement('div'); t.className = 'jt'; t.textContent = (done ? '✓ ' : '') + (j.cong_ty || '(không rõ đơn vị)') + (j.chuc_danh ? ' – ' + j.chuc_danh : '');
+    const mm = document.createElement('div'); mm.className = 'jm';
+    mm.textContent = 'Theo CV: ' + ([j.tu, j.den].filter(Boolean).join(' → ') || 'không ghi thời gian') +
+      (f.fields.ct_tu_ngay || f.fields.ct_den_ngay ? ' | Điền: ' + (f.fields.ct_tu_ngay || '…') + ' → ' + (f.fields.ct_den_ngay || (m.ongoing ? 'để trống (còn làm)' : '…')) : '') +
+      (m.approx ? ' (ngày ước lượng: đầu/cuối tháng, đầu/cuối năm)' : '') + (done ? ' | Đã điền' : '');
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = done ? 'Điền lại' : 'Điền';
+    b.onclick = () => fillJob(i);
+    li.append(t, mm, b); ol.appendChild(li);
+  });
+  const left = state.jobs.filter((j) => !state.jobDone.includes(jobKey(j))).length;
+  $('btn-job-next').disabled = !left;
+  $('btn-job-next').textContent = left ? 'Điền công việc tiếp theo (' + (state.jobs.length - left + 1) + '/' + state.jobs.length + ')' : 'Đã điền hết ' + state.jobs.length + ' công việc';
+}
+async function fillJob(i) {
+  const j = state.jobs[i]; if (!j) return;
+  const key = jobKey(j);
+  const info = $('job-info');
+  if (state.jobDone.includes(key) && !confirm('Công việc "' + (j.cong_ty || i + 1) + '" đã điền rồi.\n\nĐiền lại sẽ tạo trùng nếu bạn đã bấm Lưu ở FBO. Chỉ nên điền lại khi bản ghi đó chưa lưu hoặc đã bị xóa.\n\nVẫn điền lại?')) return;
+  info.textContent = 'Đang điền công việc ' + (i + 1) + '/' + state.jobs.length + '...'; info.className = 'hint';
+  const btns = Array.from(document.querySelectorAll('#jobs-box button')); btns.forEach((b) => { b.disabled = true; });
+  const cut = (v) => { v = String(v); return v.length > 40 ? v.slice(0, 40) + '…' : v; };
+  try {
+    const r = await fillActiveTab('CV_NHANVIEN', state.scan ? state.scan.data : {}, {
+      job: i,
+      required: ['ct_don_vi', 'ct_tu_ngay', 'ct_den_ngay'], // form đang có bản ghi khác (chưa Lưu) thì hỏi trước khi đè
+      confirmEditMode: async (title) => confirm('Form đang ở chế độ: "' + cut(title) + '" (không phải thêm mới).\n\nĐiền tiếp sẽ GHI ĐÈ lên bản ghi đang mở. Vẫn điền?'),
+      confirmPartial: async (x) => confirm('Form đang mở chỉ có ' + x.found + '/' + x.total + ' ô khớp với form Quá trình công tác.\n\nVẫn điền?'),
+      confirmOverwrite: async (over) => confirm('Form đang có dữ liệu khác (có thể là công việc trước chưa Lưu):\n\n' + over.map((o) => '• ' + (DERIVED_LABELS[o.k] || o.k) + ': "' + cut(o.old) + '" → "' + cut(o.v) + '"').join('\n') + '\n\nGhi đè?')
+    });
+    if (r.status === 'NO_FORM' || r.status === 'NO_MAPPING') { info.textContent = 'Chưa thấy form "Thêm thông tin quá trình công tác trước đây" ở tab hiện tại. Mở form đó rồi bấm Điền lại.'; info.className = 'warn'; }
+    else if (r.status === 'CANCELLED') { info.textContent = 'Đã hủy, không ghi gì vào form.'; info.className = 'warn'; }
+    else {
+      if (r.filled.length) { state.jobDone.push(key); }
+      const next = state.jobs.findIndex((x) => !state.jobDone.includes(jobKey(x)));
+      info.textContent = 'Đã điền ' + r.filled.length + '/' + r.total + ' trường của công việc ' + (i + 1) + '. Kiểm tra rồi bấm Lưu trên FBO' + (next >= 0 ? ', sau đó mở lại form thêm mới và bấm "Điền công việc tiếp theo".' : '. Đã hết công việc.');
+      info.className = r.filled.length ? 'ok' : 'warn';
+    }
+  } catch (e) { info.textContent = e instanceof FillStopped ? 'Đã dừng.' : e.message; info.className = 'warn'; }
+  finally { btns.forEach((b) => { b.disabled = false; }); renderJobs(); }
+}
+$('btn-job-next').onclick = () => { const i = state.jobs.findIndex((x) => !state.jobDone.includes(jobKey(x))); if (i >= 0) fillJob(i); };
 
 /* ---------- Bước 4: điền FBO ---------- */
 /* ---------- Ảnh chân dung trên CV: cắt theo khung AI trả về, hiện xem trước, gắn vào form khi điền ---------- */
