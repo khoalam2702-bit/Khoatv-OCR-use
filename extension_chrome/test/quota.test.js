@@ -13,3 +13,9 @@ test('formatWait', () => {
   assert.equal(formatWait(0.2), '00:01');
   assert.equal(formatWait(27000), '7 giờ 30 phút 00 giây');
 });
+
+test('giờ đặt lại hạn mức ngày theo giờ Việt Nam: mùa đông 15:00, mùa hè 14:00', async () => {
+  const { dailyResetTime } = await import('../lib/quota.js');
+  assert.equal(dailyResetTime(new Date('2026-11-26T08:56:00Z'), 'Asia/Ho_Chi_Minh'), '15:00');
+  assert.equal(dailyResetTime(new Date('2026-07-10T03:00:00Z'), 'Asia/Ho_Chi_Minh'), '14:00');
+});
