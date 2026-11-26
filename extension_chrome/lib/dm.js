@@ -37,7 +37,6 @@ export function buildDm({ tinh = [], xa = [], quocTich = [], diaChiCu = null, ch
 
 // Chuyên ngành: bỏ chữ "chuyên ngành/ngành/cử nhân/kỹ sư..." đứng đầu rồi so khớp không dấu
 const major = (t) => norm(t).replace(/^(chuyen nganh|nganh|cu nhan|ky su|thac si|tien si)\s+/, '').trim();
-const KHAC = '99'; // mã "KHÁC" trong danh mục chuyên ngành
 
 /**
  * Tìm mã chuyên ngành trong danh mục FBO: trùng tên > tên danh mục nằm trọn trong chuyên ngành ghi trên CV (lấy tên dài nhất)
@@ -62,7 +61,7 @@ export function lookupMajor(text, dm) {
     if (sc > bs) { bs = sc; best = m; }
   }
   if (best && bs >= 0.7) return hit(best, 'fuzzy');
-  const other = list.find((m) => m.ma === KHAC); return other ? hit(other, 'other') : null;
+  const other = list.find((m) => m.key === 'khac') || list.find((m) => m.ma === '99'); return other ? hit(other, 'other') : null;
 }
 
 // Dự phòng khi KHÔNG có bảng dia-chi-cu.json: tỉnh cũ đã nhập vào tỉnh khác từ 01/7/2025 (Nghị quyết 202/2025/QH15, 63 -> 34 tỉnh) -> mã tỉnh mới. Chỉ quy đổi cấp tỉnh.
