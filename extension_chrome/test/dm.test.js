@@ -236,3 +236,9 @@ test('CV ứng viên: Học từ/đến = 01/09 năm từ/đến, Ngày cấp = 
   const m = rd('../fbo-hrm.json').CV_UNGVIEN;
   assert.match(m.ngay_hoc_tu.selector, /_ngay_dt_tu"\]$/); assert.match(m.ngay_hoc_den.selector, /_ngay_dt_den"\]$/); assert.match(m.ngay_tot_nghiep.selector, /_ngay_cap_cc"\]$/);
 });
+
+test('CV nhân viên: số điện thoại và email điền đúng ô trên form Thông tin nhân viên', () => {
+  const m = rd('../fbo-hrm.json').CV_NHANVIEN;
+  assert.match(m.so_dien_thoai, /_form_dien_thoai_dd"\]$/);
+  assert.match(m.email, /_form_email_cty"\]$/);
+});
