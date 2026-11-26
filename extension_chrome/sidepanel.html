@@ -8,7 +8,7 @@
 </head>
 <body>
   <header>
-    <strong>Tool OCR - điền form FBO</strong>
+    <div class="brand"><img src="icons/fast-logo.png" alt="FAST"><strong>Tool OCR - điền form FBO</strong></div>
     <span id="who"></span>
     <button id="btn-fbo-login" class="link" title="Điền tài khoản đã lưu vào trang đăng nhập FBO ở tab hiện tại" hidden>Đăng nhập FBO</button>
     <button id="btn-inspect" class="link" hidden title="Dò các ô của form FBO đang xem và sao chép kết quả (để bổ sung ánh xạ)">Dò form</button>
@@ -78,6 +78,8 @@
       </div>
     </div>
   </section>
+
+  <footer id="doc-bar" role="status" hidden>Kết quả quét: <b id="doc-bar-type"></b><span id="doc-bar-file"></span></footer>
 
   <script src="lib/vendor/jsqr.js"></script>
   <script type="module" src="sidepanel.js"></script>

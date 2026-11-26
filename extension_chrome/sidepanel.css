@@ -1,8 +1,13 @@
 :root { --b:#d0d7e2; --bg:#f6f8fb; --pri:#2563eb; --err:#b91c1c; --ok:#15803d; font-size:15px; }
 * { box-sizing:border-box; }
 body { margin:0; font-family:system-ui,"Segoe UI",sans-serif; background:var(--bg); color:#111827; }
-header { display:flex; gap:8px; align-items:center; padding:8px 10px; background:#fff; border-bottom:1px solid var(--b); position:sticky; top:0; z-index:2; }
+header { display:flex; flex-wrap:wrap; row-gap:4px; column-gap:8px; align-items:center; padding:8px 10px; background:#fff; border-bottom:1px solid var(--b); position:sticky; top:0; z-index:2; }
 header #who { flex:1; color:#6b7280; font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.brand { display:flex; align-items:center; gap:10px; width:100%; }
+.brand img { height:28px; width:auto; flex:none; }
+footer#doc-bar { position:fixed; left:0; right:0; bottom:0; z-index:3; padding:7px 10px; background:var(--pri); color:#fff; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+footer#doc-bar b { font-size:15px; }
+body.has-doc-bar { padding-bottom:40px; }
 section { padding:10px; }
 h2 { font-size:13.5px; margin:12px 0 6px; color:#374151; text-transform:uppercase; letter-spacing:.03em; }
 /* label { display:block/flex } ghi đè thuộc tính hidden của trình duyệt: phải ép lại để các dòng ẩn thật sự ẩn */

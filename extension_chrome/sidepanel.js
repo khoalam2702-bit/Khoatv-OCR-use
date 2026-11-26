@@ -23,6 +23,19 @@ const state = { auth: null, anon: false, config: null, type: null, files: [], sc
 function show(view) {
   for (const v of ['login', 'scan', 'review']) $('view-' + v).hidden = v !== view;
   $('btn-logout').hidden = view === 'login';
+  renderDocBar(view === 'review');
+}
+/** Thanh dưới cùng: cho biết kết quả đang xem là của loại tài liệu nào (và tệp nào). */
+function renderDocBar(on) {
+  const t = on && state.config && state.config.types.find((x) => x.code === state.type);
+  $('doc-bar').hidden = !t;
+  document.body.classList.toggle('has-doc-bar', !!t);
+  if (!t) return;
+  const names = (state.scan && state.scan.fileNames) || [];
+  const file = names.length ? ' – ' + names[0] + (names.length > 1 ? ' (+' + (names.length - 1) + ' tệp)' : '') : '';
+  $('doc-bar-type').textContent = t.label;
+  $('doc-bar-file').textContent = file;
+  $('doc-bar').title = t.label + file;
 }
 function msg(text, kind) {
   const el = $('msg');
@@ -345,6 +358,7 @@ async function doScan() {
     r.data = r.data || {};
     const used = mergeQr(r.data, qr);
     if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
+    r.fileNames = state.files.map((f) => f.name);
     state.scan = r;
     renderReview(r.data);
     setJobs(r.data.cong_viec);
@@ -453,12 +467,12 @@ function thisPeriod() {
 /* ---------- Giữ kết quả quét: tắt/mở lại panel hay form FBO vẫn điền tiếp được, không phải quét lại ---------- */
 function persistDraft() {
   if (!state.scan || !state.type) return setScanDraft(null);
-  return setScanDraft({ type: state.type, data: state.scan.data, fileIds: state.scan.fileIds || [], photo: state.photo, jobDone: state.jobDone, saved: state.saved });
+  return setScanDraft({ type: state.type, data: state.scan.data, fileIds: state.scan.fileIds || [], fileNames: state.scan.fileNames || [], photo: state.photo, jobDone: state.jobDone, saved: state.saved });
 }
 async function restoreDraft() {
   const d = await getScanDraft();
   if (!d || !state.config || !state.config.types.some((x) => x.code === d.type)) return false;
-  state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [] };
+  state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [], fileNames: d.fileNames || [] };
   renderTypes(); renderReview(d.data);
   setJobs(d.data.cong_viec); state.jobDone = d.jobDone || []; renderJobs();
   setPhoto(d.photo || null, PHOTO_FORMS[d.type] ? PHOTO_NONE_NOTE : '');
