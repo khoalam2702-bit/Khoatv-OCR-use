@@ -3,6 +3,8 @@ const MARK = /\s*\[\[RETRY_AFTER:(\d+)\]\]\s*$/;
 
 // "[[OWN_QUOTA]]": hết hạn mức khoá API riêng của đơn vị (không phải khoá chung).
 const OWN = /\s*\[\[OWN_QUOTA\]\]/;
+// "[[OUT_OF_CREDIT]]": không đủ lượt quét.
+const NO_CREDIT = /\s*\[\[OUT_OF_CREDIT\]\]/;
 
 /** Tách dấu hiệu chờ khỏi thông báo lỗi. seconds = null nếu không phải lỗi hết hạn mức. */
 export function splitRetry(message) {
@@ -10,8 +12,10 @@ export function splitRetry(message) {
   const m = MARK.exec(s);
   if (m) s = s.replace(MARK, '');
   const ownQuota = OWN.test(s);
-  const out = { text: ownQuota ? s.replace(OWN, '') : s, seconds: m ? Number(m[1]) : null };
+  const outOfCredit = NO_CREDIT.test(s);
+  const out = { text: s.replace(OWN, '').replace(NO_CREDIT, ''), seconds: m ? Number(m[1]) : null };
   if (ownQuota) out.ownQuota = true;
+  if (outOfCredit) out.outOfCredit = true;
   return out;
 }
 

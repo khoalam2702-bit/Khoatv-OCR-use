@@ -75,7 +75,7 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 - **Đăng nhập FBO đã lưu** theo từng địa chỉ (Cài đặt, mục 3): nút "Đăng nhập FBO" ở Side Panel điền Công ty, Tên, Đơn vị, Mật khẩu và bấm Nhận ở tab hiện tại.
 - Địa chỉ FBO trong cấu hình chỉ cần cấp quyền một lần (banner "Cấp quyền FBO" ở Side Panel).
 
-**Không cần tài khoản OCR.** Màn hình đầu của Side Panel có nút "Dùng không cần tài khoản": quét qua action `scanAnonymous` (không token), **không** lưu Drive/Sheets/Web Admin, kết quả chỉ giữ ở `chrome.storage.session` (đóng trình duyệt là mất). Chế độ này không có bước Lưu: nút "Điền vào FBO" hiện ngay, không hỏi lưu. Hạn mức khai báo ở Web Admin → Cài đặt → "Quét không cần tài khoản": số lần / ngày / thiết bị (mặc định 10, mã thiết bị là UUID extension tự sinh) và tổng chung mỗi ngày (mặc định 500, chặn việc đổi mã thiết bị); nhập 0 để tắt. Lưu ở Script Properties `ANON_DAILY_LIMIT`, `ANON_GLOBAL_DAILY`; bộ đếm ở `ANON_USAGE`, đặt lại 0 giờ giờ Việt Nam. Quét lỗi không bị tính lượt.
+**Không cần tài khoản OCR.** Màn hình đầu của Side Panel có nút "Dùng không cần tài khoản": quét qua action `scanAnonymous` (không token), **không** lưu Drive/Sheets/Web Admin, kết quả chỉ giữ ở `chrome.storage.session` (đóng trình duyệt là mất). Chế độ này không có bước Lưu: nút "Điền vào FBO" hiện ngay, không hỏi lưu. Lượt dùng thử tính theo thiết bị (mã là UUID extension tự sinh), hết thì tự cấp lại sau 48 giờ; khai báo ở Web Admin → Lượt quét (Script Properties `ANON_DAILY_LIMIT` = lượt mỗi thiết bị, `ANON_GLOBAL_DAILY` = trần chung số lần quét dùng thử mỗi ngày, mặc định 500; nhập 0 để tắt). Chi tiết ở mục "Lượt quét".
 
 Kiểm thử: `cd extension_chrome && npm ci && npm test`.
 
@@ -253,3 +253,12 @@ Kết quả quét (kể cả ảnh chân dung và danh sách công việc) đư�
 
 #### Chuyên ngành (CV nhân viên)
 Chuyên ngành trên CV được đối chiếu với danh mục chuyên ngành của FBO (`presets/dm/chuyen-nganh.json`, dạng `[["mã","tên"],...]`) để điền mã vào ô `ma_cn`: trùng tên > tên danh mục nằm trong chuyên ngành trên CV > giống từ >= 70%; không khớp thì dùng mã `99` (KHÁC). Danh mục này chép từ site demo; khách hàng khác có danh mục riêng thì thay file này bằng danh mục của họ (mã sai sẽ điền nhầm chuyên ngành).
+
+## Lượt quét (bán theo gói)
+
+- Mỗi tài khoản OCR được tặng 100 lượt (một lần, không hết hạn); ADMIN không giới hạn. CV tính 2 lượt, loại khác 1 lượt; chỉ đọc QR CCCD không tính.
+- Extension chỉ trừ lượt khi điền được ít nhất một ô lên FBO. Quét trên web và loại chưa có form FBO trừ khi quét xong. Quét lỗi không trừ.
+- Không đăng nhập: lượt dùng thử theo thiết bị, hết thì tự cấp lại sau 48 giờ; có nút "Đề nghị gia hạn số lượt" (tên công ty, số điện thoại).
+- Web Admin > Lượt quét: bậc thang số tiền / số lượt, gia hạn (đã thu / chờ thanh toán), điều chỉnh, chuyển lượt, danh sách cần gia hạn, cài đặt.
+- Dữ liệu nằm trong file `OCR_USERS`: các sheet `LUOT_VI`, `LUOT_NHATKY`, `LUOT_DOT`, `LUOT_DENGHI` (tự tạo). Không sửa tay.
+

@@ -295,6 +295,22 @@ const API_ACTIONS = {
   getAiConfig: { fn: function (a) { return getAiConfig(a[0]); } },
   setAiConfig: { fn: function (a) { return setAiConfig(a[0], a[1]); } },
   testAiConfig: { fn: function (a) { return testAiConfig(a[0]); } },
+  // lượt quét: khách hàng
+  myCredit: { fn: function (a) { return myCredit(a[0]); } },
+  chargeScan: { fn: function (a) { return chargeScan(a[0], a[1]); } },
+  anonCredit: { fn: function (a) { return anonCredit(a[0], a[1]); } },
+  anonCharge: { fn: function (a) { return anonCharge(a[0], a[1]); } },
+  anonRequestTopup: { fn: function (a) { return anonRequestTopup(a[0], a[1], a[2]); } },
+  // lượt quét: quản trị (chỉ ADMIN, kiểm tra trong từng hàm)
+  creditAdmin: { fn: function (a) { return creditAdmin(a[0]); } },
+  creditSaveSettings: { fn: function (a) { return creditSaveSettings(a[0], a[1]); } },
+  creditSaveTiers: { fn: function (a) { return creditSaveTiers(a[0], a[1]); } },
+  creditTopup: { fn: function (a) { return creditTopup(a[0], a[1], a[2], a[3]); } },
+  creditOrder: { fn: function (a) { return creditOrder(a[0], a[1], a[2]); } },
+  creditAdjust: { fn: function (a) { return creditAdjust(a[0], a[1], a[2], a[3]); } },
+  creditTransfer: { fn: function (a) { return creditTransfer(a[0], a[1], a[2]); } },
+  creditReject: { fn: function (a) { return creditReject(a[0], a[1]); } },
+  creditHistory: { fn: function (a) { return creditHistory(a[0], a[1]); } },
   // hạn mức quét không cần tài khoản (chỉ ADMIN)
   getAnonConfig: { fn: function (a) { return getAnonConfig(a[0]); } },
   setAnonConfig: { fn: function (a) { return setAnonConfig(a[0], a[1]); } }
@@ -302,7 +318,7 @@ const API_ACTIONS = {
 
 /** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
  *  Quản lý tài khoản và đổi mật khẩu vẫn giữ nguyên quy tắc. Cờ chỉ sống trong một lần thực thi doPost. */
-const EXT_NO_FORCE_ACTIONS = ['scanDocument', 'saveRecord', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport'];
+const EXT_NO_FORCE_ACTIONS = ['scanDocument', 'saveRecord', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport', 'myCredit', 'chargeScan'];
 let skipMustChange_ = false;
 
 function apiJson_(obj) {
@@ -335,7 +351,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), anonPerDay: anonSettings_().perDevice, plateProvinces: PLATE_PROVINCES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), anonPerDay: anonSettings_().perDevice, anonResetHours: creditSettings_().resetHours, plateProvinces: PLATE_PROVINCES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
@@ -854,6 +870,7 @@ function deleteUser(token, username) {
     ctx.sh.deleteRow(u._row);
   });
   PropertiesService.getScriptProperties().deleteProperty(USER_KEY_PREFIX + username); // tạo lại cùng tên không được thừa hưởng khoá
+  withLock_(function () { creditForgetUser_(username); });
   audit_(admin.username, 'XOA_USER', username, 'Các bản ghi OCR do tài khoản này quét vẫn được giữ nguyên');
   return true;
 }
@@ -903,7 +920,23 @@ function canViewAll_(me) {
 function scanDocument(token, payload) {
   const me = auth_(token);
   if (!me.perms.perm_add) throw new Error('Tài khoản của bạn không có quyền thêm bản ghi.');
-  return scanCore_(me, payload, false);
+  payload = payload || {};
+  const unlimited = me.role === 'ADMIN';
+  const id = 'u:' + me.username;
+  // chỉ đọc mã QR (không gọi AI) thì không tính lượt
+  const cost = unlimited || (payload.skipAi === true && payload.docType === 'CCCD') ? 0 : scanCost_(payload.docType);
+  if (cost) {
+    const left = walletLeft_(walletOf_(id));
+    if (left < cost) throw new Error('Bạn còn ' + left + ' lượt, tài liệu này cần ' + cost + ' lượt. Liên hệ quản trị viên để gia hạn.' + OUT_OF_CREDIT_MARK);
+  }
+  const r = scanCore_(me, payload, false);
+  if (cost) {
+    const ticket = makeTicket_(id, cost);
+    if (payload.deferCharge === true) r.charge = { ticket: ticket, cost: cost }; // Extension: trừ khi điền được lên FBO
+    else withLock_(function () { chargeInLock_(id, ticket); });
+  }
+  if (!unlimited) r.credit = creditView_(walletOf_(id), false);
+  return r;
 }
 
 /**
@@ -1011,10 +1044,393 @@ function scanCore_(me, payload, anon) {
   return { data: data, fileIds: fileIds, ms: Date.now() - started, timing: timing, fallbackModel: FALLBACK_USED_ };
 }
 
+/* ============================ LƯỢT QUÉT (bán theo gói) ============================
+ * Mỗi tài khoản (id "u:<tên>") và mỗi thiết bị không đăng nhập (id "d:<mã băm>") có một ví lượt trong OCR_USERS.
+ * CV tính 2 lượt, loại khác 1 lượt. Extension: chỉ trừ khi điền được lên FBO (không điền thì không trừ).
+ * Web quét và loại chưa có form FBO: trừ khi quét thành công. Quét lỗi / lỗi Gemini không trừ. ADMIN không giới hạn.
+ * Tài khoản: tặng CREDIT_INITIAL lượt một lần, không hết hạn. Thiết bị: "thu" là lượt dùng thử (ANON_DAILY_LIMIT),
+ * hết thì CREDIT_RESET_HOURS giờ sau cấp lại; "con" là lượt được gia hạn.
+ */
+const CREDIT_SHEETS = {
+  LUOT_VI: ['id', 'con', 'thu', 'da_dung', 'da_mua', 'reset_at', 'cap_nhat'],
+  LUOT_NHATKY: ['time', 'id', 'loai', 'so_luot', 'so_du', 'ref', 'boi', 'ghi_chu'],
+  LUOT_DOT: ['ma', 'time', 'id', 'bac', 'so_tien', 'so_luot', 'trang_thai', 'ngay_thu', 'nguoi_thu', 'du_truoc', 'du_sau'],
+  LUOT_DENGHI: ['ma', 'time', 'id', 'cong_ty', 'sdt', 'trang_thai', 'xu_ly_boi', 'xu_ly_luc']
+};
+const OUT_OF_CREDIT_MARK = ' [[OUT_OF_CREDIT]]';
+
+/* Ba hàm đọc/ghi sheet dạng bảng; mọi giá trị lưu dạng chữ (giữ số 0 đầu của số điện thoại). */
+function tableRead_(name) {
+  const headers = CREDIT_SHEETS[name];
+  const sh = sheet_(usersBook_(), name, headers);
+  const last = sh.getLastRow();
+  if (last < 2) return [];
+  return sh.getRange(2, 1, last - 1, headers.length).getDisplayValues().map(function (r, i) {
+    const o = { _row: i + 2 };
+    headers.forEach(function (h, j) { o[h] = unesc_(String(r[j])); });
+    return o;
+  });
+}
+function tableWrite_(name, obj) {
+  const headers = CREDIT_SHEETS[name];
+  const sh = sheet_(usersBook_(), name, headers);
+  let row = obj._row;
+  if (!row) {
+    row = sh.getLastRow() + 1;
+    if (row > sh.getMaxRows()) sh.insertRowAfter(sh.getMaxRows());
+    obj._row = row;
+  }
+  sh.getRange(row, 1, 1, headers.length).setNumberFormat('@').setValues([headers.map(function (h) {
+    return cell_(obj[h] === undefined || obj[h] === null ? '' : String(obj[h]), 'string');
+  })]);
+  SpreadsheetApp.flush();
+  return obj;
+}
+
+function nowText_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'); }
+function creditSettings_() {
+  return { initial: anonNum_('CREDIT_INITIAL', 100), low: anonNum_('CREDIT_LOW', 20), resetHours: anonNum_('CREDIT_RESET_HOURS', 48) };
+}
+function creditTiers_() {
+  try {
+    const list = JSON.parse(PropertiesService.getScriptProperties().getProperty('CREDIT_TIERS') || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch (e) { return []; }
+}
+function scanCost_(docType) { return docType === 'CV_UNGVIEN' || docType === 'CV_NHANVIEN' ? 2 : 1; }
+function deviceCode_(id) { return 'TB-' + String(id).slice(2, 8).toUpperCase(); }
+
+function creditLog_(id, kind, amount, balance, ref, by, note) {
+  tableWrite_('LUOT_NHATKY', { time: nowText_(), id: id, loai: kind, so_luot: amount, so_du: balance, ref: ref || '', boi: by || '', ghi_chu: note || '' });
+}
+
+/** Ví của id; chưa có thì trả ví mặc định (chưa ghi). Thiết bị đã đủ thời gian chờ thì được cấp lại lượt dùng thử. */
+function walletOf_(id, list) {
+  const found = (list || tableRead_('LUOT_VI')).filter(function (w) { return w.id === id; })[0];
+  const device = id.indexOf('d:') === 0;
+  const w = found || { id: id, con: device ? 0 : creditSettings_().initial, thu: device ? anonSettings_().perDevice : 0, da_dung: 0, da_mua: 0, reset_at: '' };
+  ['con', 'thu', 'da_dung', 'da_mua'].forEach(function (k) { w[k] = Number(w[k]) || 0; });
+  w.reset_at = Number(w.reset_at) || 0;
+  w._new = !found;
+  if (device && w.reset_at && Date.now() >= w.reset_at) {
+    w.thu = Math.max(w.thu, anonSettings_().perDevice);
+    w.reset_at = 0; w._reset = true;
+  }
+  return w;
+}
+function walletLeft_(w) { return Math.max(0, w.con + w.thu); }
+
+/** Ghi ví (gọi trong khoá). Ví mới của tài khoản được ghi nhận lượt tặng. */
+function walletSave_(w) {
+  const isNew = w._new, wasReset = w._reset;
+  w._new = false; w._reset = false;
+  w.cap_nhat = nowText_();
+  w._row = tableWrite_('LUOT_VI', { _row: w._row, id: w.id, con: w.con, thu: w.thu, da_dung: w.da_dung, da_mua: w.da_mua, reset_at: w.reset_at || '', cap_nhat: w.cap_nhat })._row;
+  if (isNew && w.id.indexOf('u:') === 0) creditLog_(w.id, 'TANG', creditSettings_().initial, creditSettings_().initial, '', 'system', 'Lượt tặng ban đầu');
+  if (wasReset) { creditLog_(w.id, 'TU_CAP', w.thu, walletLeft_(w), '', 'system', ''); closeRequests_(w.id, 'TU_CAP', 'system'); }
+}
+function closeRequests_(id, status, by) {
+  tableRead_('LUOT_DENGHI').forEach(function (r) {
+    if (r.id !== id || r.trang_thai !== 'CHO') return;
+    r.trang_thai = status; r.xu_ly_boi = by; r.xu_ly_luc = nowText_();
+    tableWrite_('LUOT_DENGHI', r);
+  });
+}
+
+/** Thiết bị hết lượt: bắt đầu đếm thời gian cấp lại (nếu còn bật dùng thử). */
+function startReset_(w) {
+  if (w.id.indexOf('d:') === 0 && !w.reset_at && anonSettings_().perDevice > 0) w.reset_at = Date.now() + creditSettings_().resetHours * 3600000;
+}
+
+/* ---------- Phiếu trừ lượt: ký ở máy chủ, mỗi phiếu chỉ trừ một lần ---------- */
+function creditSecret_() {
+  const p = PropertiesService.getScriptProperties();
+  let s = p.getProperty('CREDIT_SECRET');
+  if (!s) { s = Utilities.getUuid() + Utilities.getUuid(); p.setProperty('CREDIT_SECRET', s); }
+  return s;
+}
+function ticketSign_(scanId, id, cost) { return hash_(creditSecret_() + '|' + scanId + '|' + id + '|' + cost); }
+function makeTicket_(id, cost) {
+  const scanId = Utilities.getUuid();
+  return scanId + '.' + cost + '.' + ticketSign_(scanId, id, cost);
+}
+/** Trừ lượt theo phiếu. Cho phép âm nhẹ (nhiều máy cùng điền), lần gia hạn sau bù vào. Gọi trong khoá. */
+function chargeInLock_(id, ticket) {
+  const p = String(ticket || '').split('.');
+  const cost = Number(p[1]);
+  if (p.length !== 3 || !(cost >= 1) || p[2] !== ticketSign_(p[0], id, cost)) throw new Error('Phiếu trừ lượt không hợp lệ.');
+  const w = walletOf_(id);
+  const done = tableRead_('LUOT_NHATKY').some(function (r) { return r.loai === 'TRU' && r.ref === p[0]; });
+  if (done) return w;
+  const fromTrial = Math.min(cost, Math.max(0, w.thu));
+  w.thu -= fromTrial; w.con -= cost - fromTrial; w.da_dung += cost;
+  if (walletLeft_(w) <= 0) startReset_(w);
+  walletSave_(w);
+  creditLog_(id, 'TRU', -cost, walletLeft_(w), p[0], '', '');
+  return w;
+}
+
+/* ---------- Phía khách hàng ---------- */
+function creditView_(w, unlimited) {
+  return unlimited ? { unlimited: true } : { unlimited: false, remaining: walletLeft_(w), low: creditSettings_().low };
+}
+function myCredit(token) {
+  const me = auth_(token);
+  if (me.role === 'ADMIN') return creditView_(null, true);
+  return creditView_(walletOf_('u:' + me.username), false);
+}
+function chargeScan(token, ticket) {
+  const me = auth_(token);
+  if (me.role === 'ADMIN') return creditView_(null, true);
+  let w;
+  withLock_(function () { w = chargeInLock_('u:' + me.username, ticket); });
+  return creditView_(w, false);
+}
+
+function deviceKey_(deviceId) {
+  const id = String(deviceId || '');
+  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) throw new Error('Mã thiết bị không hợp lệ. Tải lại extension rồi thử lại.');
+  return hash_('anon|' + id).slice(0, 12);
+}
+function deviceView_(w) {
+  const pending = tableRead_('LUOT_DENGHI').some(function (r) { return r.id === w.id && r.trang_thai === 'CHO'; });
+  return { remaining: walletLeft_(w), resetAt: w.reset_at || 0, requested: pending && !w._reset, code: deviceCode_(w.id), enabled: anonSettings_().perDevice > 0 || w.con > 0 };
+}
+/** Số lượt của thiết bị không đăng nhập. need: số lượt tài liệu đang chọn cần; không đủ thì bắt đầu đếm giờ cấp lại. */
+function anonCredit(deviceId, need) {
+  const id = 'd:' + deviceKey_(deviceId);
+  let w = walletOf_(id);
+  const short = walletLeft_(w) < Math.max(1, Math.min(2, Number(need) || 1));
+  if (w._reset || (short && !w.reset_at)) {
+    withLock_(function () {
+      w = walletOf_(id);
+      if (short) startReset_(w);
+      if (!w._new || w.reset_at) walletSave_(w);
+    });
+  }
+  return deviceView_(w);
+}
+function anonCharge(deviceId, ticket) {
+  const id = 'd:' + deviceKey_(deviceId);
+  let w;
+  withLock_(function () { w = chargeInLock_(id, ticket); });
+  return deviceView_(w);
+}
+function anonRequestTopup(deviceId, company, phone) {
+  const id = 'd:' + deviceKey_(deviceId);
+  company = String(company || '').replace(/\s+/g, ' ').trim();
+  phone = String(phone || '').trim();
+  const digits = phone.replace(/\D/g, '');
+  if (company.length < 2 || company.length > 100) throw new Error('Nhập tên công ty (2 đến 100 ký tự).');
+  if (!/^\+?[0-9 .-]+$/.test(phone) || digits.length < 9 || digits.length > 12) throw new Error('Số điện thoại không hợp lệ.');
+  let w;
+  withLock_(function () {
+    w = walletOf_(id);
+    if (walletLeft_(w) >= 2) throw new Error('Thiết bị vẫn còn lượt, chưa cần đề nghị gia hạn.');
+    startReset_(w);
+    const pending = tableRead_('LUOT_DENGHI').filter(function (r) { return r.trang_thai === 'CHO'; });
+    const sent = !w._reset && pending.some(function (r) { return r.id === id; });
+    if (!sent && pending.length >= 200) throw new Error('Đang có quá nhiều đề nghị chờ xử lý. Vui lòng thử lại sau.');
+    walletSave_(w);
+    if (sent) return;
+    tableWrite_('LUOT_DENGHI', { ma: Utilities.getUuid(), time: nowText_(), id: id, cong_ty: company, sdt: phone, trang_thai: 'CHO' });
+  });
+  return deviceView_(w);
+}
+
+/* ---------- Quản trị lượt (chỉ ADMIN) ---------- */
+function creditStatus_(w, low) {
+  const left = walletLeft_(w);
+  if (left <= 0) return 'HET';
+  if (left <= low) return 'SAP_HET';
+  return w.da_mua > 0 ? 'DA_MUA' : 'DUNG_THU';
+}
+function creditAdmin(token) {
+  requireAdmin_(token);
+  const st = creditSettings_(), anon = anonSettings_();
+  const wallets = tableRead_('LUOT_VI'), orders = tableRead_('LUOT_DOT'), requests = tableRead_('LUOT_DENGHI');
+  const pendingOrders = orders.filter(function (o) { return o.trang_thai === 'CHO_THU'; });
+  const row = function (id, extra) {
+    const w = walletOf_(id, wallets);
+    const mine = requests.filter(function (r) { return r.id === id; });
+    const req = mine.filter(function (r) { return r.trang_thai === 'CHO' && !w._reset; })[0];
+    const last = mine[mine.length - 1];
+    return Object.assign({
+      id: id, remaining: walletLeft_(w), used: w.da_dung, bought: w.da_mua, status: creditStatus_(w, st.low), resetAt: w.reset_at || 0,
+      contact: last ? { company: last.cong_ty, phone: last.sdt } : null,
+      request: req ? { id: req.ma, time: req.time, company: req.cong_ty, phone: req.sdt } : null,
+      pendingOrders: pendingOrders.filter(function (o) { return o.id === id; }).length
+    }, extra);
+  };
+  const users = readUsers_().list.filter(function (u) { return u.role !== 'ADMIN'; }).map(function (u) {
+    return row('u:' + u.username, { type: 'USER', name: u.username, fullName: u.full_name });
+  });
+  const devices = wallets.filter(function (w) { return w.id.indexOf('d:') === 0; }).map(function (w) {
+    return row(w.id, { type: 'DEVICE', name: deviceCode_(w.id), fullName: '' });
+  });
+  return {
+    settings: { initial: st.initial, low: st.low, resetHours: st.resetHours, perDevice: anon.perDevice, global: anon.global },
+    tiers: creditTiers_(), accounts: users.concat(devices),
+    pending: pendingOrders.map(function (o) { return { code: o.ma, time: o.time, id: o.id, amount: Number(o.so_tien), credits: Number(o.so_luot) }; })
+  };
+}
+
+function intIn_(v, min, max, label) {
+  const n = Number(v);
+  if (!isFinite(n) || Math.floor(n) !== n || n < min || n > max) throw new Error(label + ' phải là số nguyên từ ' + min + ' đến ' + max + '.');
+  return n;
+}
+function creditSaveSettings(token, patch) {
+  const admin = requireAdmin_(token);
+  patch = patch || {};
+  const p = PropertiesService.getScriptProperties(), changed = [];
+  [['initial', 'CREDIT_INITIAL', 0, 1000000, 'Lượt tặng'], ['low', 'CREDIT_LOW', 0, 1000000, 'Ngưỡng sắp hết'],
+    ['resetHours', 'CREDIT_RESET_HOURS', 1, 720, 'Số giờ cấp lại'], ['perDevice', 'ANON_DAILY_LIMIT', 0, 1000, 'Lượt dùng thử'],
+    ['global', 'ANON_GLOBAL_DAILY', 0, 100000, 'Trần chung mỗi ngày']].forEach(function (x) {
+    if (patch[x[0]] === undefined || patch[x[0]] === null || patch[x[0]] === '') return;
+    const n = intIn_(patch[x[0]], x[2], x[3], x[4]);
+    p.setProperty(x[1], String(n)); changed.push(x[0] + '=' + n);
+  });
+  if (changed.length) audit_(admin.username, 'LUOT_CAI_DAT', 'LUOT', changed.join('; '));
+  return creditAdmin(token);
+}
+/** tiers: [{id?, amount, credits}] — danh sách đầy đủ, thay thế bảng cũ. */
+function creditSaveTiers(token, tiers) {
+  const admin = requireAdmin_(token);
+  if (!Array.isArray(tiers) || tiers.length > 20) throw new Error('Danh sách bậc thang không hợp lệ (tối đa 20 bậc).');
+  const list = tiers.map(function (t) {
+    t = t || {};
+    return { id: /^[A-Za-z0-9-]{4,40}$/.test(String(t.id || '')) ? String(t.id) : Utilities.getUuid(), amount: intIn_(t.amount, 1000, 1000000000, 'Số tiền'), credits: intIn_(t.credits, 1, 1000000, 'Số lượt') };
+  }).sort(function (a, b) { return a.amount - b.amount; });
+  PropertiesService.getScriptProperties().setProperty('CREDIT_TIERS', JSON.stringify(list));
+  audit_(admin.username, 'LUOT_BAC_THANG', 'LUOT', list.map(function (t) { return t.amount + '=' + t.credits; }).join('; '));
+  return creditAdmin(token);
+}
+
+/** id phải là tài khoản USER đang có hoặc thiết bị đã có ví. */
+function creditTarget_(id) {
+  id = String(id || '');
+  if (id.indexOf('u:') === 0) {
+    const u = findUser_(id.slice(2));
+    if (u && u.role !== 'ADMIN') return 'u:' + u.username;
+  } else if (tableRead_('LUOT_VI').some(function (w) { return w.id === id && id.indexOf('d:') === 0; })) return id;
+  throw new Error('Không tìm thấy tài khoản hoặc thiết bị cần gia hạn.');
+}
+/** Cộng lượt cho đơn đã thu tiền (gọi trong khoá). */
+function applyOrder_(order, by) {
+  const w = walletOf_(order.id);
+  if (w._new) walletSave_(w);
+  const before = walletLeft_(w), n = Number(order.so_luot);
+  w.con += n; w.da_mua += n;
+  if (walletLeft_(w) >= 2) w.reset_at = 0;
+  walletSave_(w);
+  order.trang_thai = 'DA_THU'; order.ngay_thu = nowText_(); order.nguoi_thu = by; order.du_truoc = before; order.du_sau = walletLeft_(w);
+  tableWrite_('LUOT_DOT', order);
+  creditLog_(order.id, 'MUA', n, walletLeft_(w), order.ma, by, order.so_tien + 'đ');
+  closeRequests_(order.id, 'DA_GIA_HAN', by);
+  return { before: before, added: n, after: walletLeft_(w) };
+}
+/** Gia hạn theo bậc. paid = true: đã thu tiền, cộng ngay; false: chờ thanh toán. */
+function creditTopup(token, id, tierId, paid) {
+  const admin = requireAdmin_(token);
+  const tier = creditTiers_().filter(function (t) { return t.id === tierId; })[0];
+  if (!tier) throw new Error('Bậc thang không còn tồn tại, hãy tải lại trang.');
+  let result = null;
+  withLock_(function () {
+    const target = creditTarget_(id);
+    const order = tableWrite_('LUOT_DOT', { ma: Utilities.getUuid(), time: nowText_(), id: target, bac: tier.id, so_tien: tier.amount, so_luot: tier.credits, trang_thai: 'CHO_THU' });
+    if (paid === true) result = applyOrder_(order, admin.username);
+  });
+  audit_(admin.username, 'LUOT_GIA_HAN', id, tier.amount + 'đ = ' + tier.credits + ' lượt; ' + (paid === true ? 'đã thu' : 'chờ thu'));
+  return { paid: paid === true, result: result };
+}
+function creditOrder(token, code, action) {
+  const admin = requireAdmin_(token);
+  if (action !== 'PAY' && action !== 'CANCEL') throw new Error('Thao tác không hợp lệ.');
+  let result = null, target = '';
+  withLock_(function () {
+    const order = tableRead_('LUOT_DOT').filter(function (o) { return o.ma === code; })[0];
+    if (!order || order.trang_thai !== 'CHO_THU') throw new Error('Đợt này đã được xử lý. Hãy tải lại trang.');
+    target = order.id;
+    if (action === 'PAY') result = applyOrder_(order, admin.username);
+    else { order.trang_thai = 'HUY'; order.nguoi_thu = admin.username; order.ngay_thu = nowText_(); tableWrite_('LUOT_DOT', order); }
+  });
+  audit_(admin.username, action === 'PAY' ? 'LUOT_THU_TIEN' : 'LUOT_HUY_DOT', target, code);
+  return { result: result };
+}
+function creditAdjust(token, id, delta, reason) {
+  const admin = requireAdmin_(token);
+  const n = intIn_(delta, -1000000, 1000000, 'Số lượt điều chỉnh');
+  reason = String(reason || '').trim().slice(0, 200);
+  if (!n || !reason) throw new Error('Nhập số lượt khác 0 và lý do điều chỉnh.');
+  let after;
+  withLock_(function () {
+    const w = walletOf_(creditTarget_(id));
+    if (w._new) walletSave_(w);
+    if (w.con + n < 0) throw new Error('Không trừ quá số lượt đang có (' + Math.max(0, w.con) + ').');
+    w.con += n;
+    walletSave_(w);
+    after = walletLeft_(w);
+    creditLog_(w.id, 'DIEU_CHINH', n, after, '', admin.username, reason);
+  });
+  audit_(admin.username, 'LUOT_DIEU_CHINH', id, n + '; ' + reason);
+  return { after: after };
+}
+/** Chuyển lượt đã mua của một thiết bị sang thiết bị khác hoặc sang tài khoản (khách cài lại extension / mua tài khoản). */
+function creditTransfer(token, fromId, toId) {
+  const admin = requireAdmin_(token);
+  let moved = 0;
+  withLock_(function () {
+    const from = creditTarget_(fromId), to = creditTarget_(toId);
+    if (from.indexOf('d:') !== 0 || from === to) throw new Error('Chỉ chuyển lượt từ một thiết bị sang nơi khác.');
+    const a = walletOf_(from), b = walletOf_(to);
+    moved = Math.max(0, a.con);
+    if (!moved) throw new Error('Thiết bị này không có lượt đã mua để chuyển.');
+    if (b._new) walletSave_(b);
+    a.con -= moved; a.da_mua = Math.max(0, a.da_mua - moved); b.con += moved; b.da_mua += moved;
+    walletSave_(a); walletSave_(b);
+    creditLog_(from, 'CHUYEN', -moved, walletLeft_(a), to, admin.username, '');
+    creditLog_(to, 'CHUYEN', moved, walletLeft_(b), from, admin.username, '');
+  });
+  audit_(admin.username, 'LUOT_CHUYEN', fromId, '-> ' + toId + ': ' + moved);
+  return { moved: moved };
+}
+function creditReject(token, requestId) {
+  const admin = requireAdmin_(token);
+  withLock_(function () {
+    const r = tableRead_('LUOT_DENGHI').filter(function (x) { return x.ma === requestId; })[0];
+    if (!r || r.trang_thai !== 'CHO') throw new Error('Đề nghị này đã được xử lý. Hãy tải lại trang.');
+    r.trang_thai = 'TU_CHOI'; r.xu_ly_boi = admin.username; r.xu_ly_luc = nowText_();
+    tableWrite_('LUOT_DENGHI', r);
+  });
+  audit_(admin.username, 'LUOT_TU_CHOI', requestId, '');
+  return true;
+}
+function creditHistory(token, id) {
+  requireAdmin_(token);
+  const mine = function (r) { return r.id === id; };
+  return {
+    orders: tableRead_('LUOT_DOT').filter(mine).reverse().slice(0, 100).map(function (o) {
+      return { code: o.ma, time: o.time, amount: Number(o.so_tien), credits: Number(o.so_luot), status: o.trang_thai, paidAt: o.ngay_thu, by: o.nguoi_thu, before: o.du_truoc, after: o.du_sau };
+    }),
+    log: tableRead_('LUOT_NHATKY').filter(mine).reverse().slice(0, 200).map(function (r) {
+      return { time: r.time, kind: r.loai, amount: Number(r.so_luot), balance: Number(r.so_du), by: r.boi, note: r.ghi_chu };
+    })
+  };
+}
+/** Xoá tài khoản: cất ví sang id khác để tạo lại cùng tên không thừa hưởng lượt. Gọi trong khoá. */
+function creditForgetUser_(username) {
+  tableRead_('LUOT_VI').forEach(function (w) {
+    if (w.id !== 'u:' + username) return;
+    w.id = 'x:' + username + ':' + Date.now();
+    tableWrite_('LUOT_VI', w);
+  });
+}
+
 /* ---------- Quét không cần tài khoản (Extension) ----------
  * Không đăng nhập, không lưu Drive, không ghi Sheets: chỉ OCR rồi trả kết quả cho extension tự giữ trong phiên.
- * Hạn mức khai báo ở Web Admin (Cài đặt): ANON_DAILY_LIMIT = số lần / ngày / thiết bị (mặc định 10, 0 = tắt),
- * ANON_GLOBAL_DAILY = tổng số lần / ngày của mọi thiết bị (mặc định 500, chặn việc tự đổi mã thiết bị để lách hạn mức).
+ * Khai báo ở Web Admin (Lượt quét): ANON_DAILY_LIMIT = số lượt dùng thử mỗi thiết bị (mặc định 10, 0 = tắt),
+ * ANON_GLOBAL_DAILY = tổng số lần quét dùng thử / ngày của mọi thiết bị (mặc định 500, chặn việc tự đổi mã thiết bị để lách hạn mức).
  * Bộ đếm lưu ở Script Property ANON_USAGE (JSON), tự đặt lại khi sang ngày (giờ Việt Nam).
  */
 const ANON_DEFAULTS = { PER_DEVICE: 10, GLOBAL: 500, MAX_DEVICES: 400 };
@@ -1036,16 +1452,14 @@ function anonReadUsage_() {
   if (!u || u.day !== day || typeof u.dev !== 'object' || !u.dev) u = { day: day, total: 0, dev: {} };
   return u;
 }
-/** Giữ chỗ một lượt quét cho thiết bị. Trả { used, limit }; hết hạn mức thì throw. Gọi trong khoá. */
+/** Đếm một lượt quét dùng thử vào trần chung trong ngày; đạt trần thì throw. Gọi trong khoá. */
 function anonReserve_(deviceKey, st) {
   const u = anonReadUsage_();
   const used = Number(u.dev[deviceKey] || 0);
-  if (used >= st.perDevice) throw new Error('Thiết bị này đã dùng hết ' + st.perDevice + ' lượt quét không cần tài khoản trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
   if (u.total >= st.global) throw new Error('Quét không cần tài khoản đã đạt giới hạn chung của hệ thống trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
   if (used === 0 && Object.keys(u.dev).length >= ANON_DEFAULTS.MAX_DEVICES) throw new Error('Quét không cần tài khoản đang quá tải trong ngày. Hãy đăng nhập tài khoản OCR hoặc quay lại vào ngày mai.');
   u.dev[deviceKey] = used + 1; u.total += 1;
   PropertiesService.getScriptProperties().setProperty('ANON_USAGE', JSON.stringify(u));
-  return { used: used + 1, limit: st.perDevice };
 }
 function anonRelease_(deviceKey) {
   const u = anonReadUsage_();
@@ -1053,21 +1467,35 @@ function anonRelease_(deviceKey) {
   PropertiesService.getScriptProperties().setProperty('ANON_USAGE', JSON.stringify(u));
 }
 
-/** deviceId do extension tự sinh (UUID). Không có tài khoản nên chỉ dùng để đếm hạn mức. */
+/** deviceId do extension tự sinh (UUID). Lượt tính theo ví của thiết bị; lượt dùng thử còn bị chặn bởi trần chung mỗi ngày. */
 function scanAnonymous(deviceId, payload) {
   const st = anonSettings_();
-  if (st.perDevice <= 0 || st.global <= 0) throw new Error('Quét không cần tài khoản đang tắt. Hãy đăng nhập tài khoản OCR.');
-  const id = String(deviceId || '');
-  if (!/^[A-Za-z0-9-]{16,64}$/.test(id)) throw new Error('Mã thiết bị không hợp lệ. Tải lại extension rồi thử lại.');
-  const key = hash_('anon|' + id).slice(0, 12);
-  let quota;
-  withLock_(function () { quota = anonReserve_(key, st); });
+  const key = deviceKey_(deviceId), id = 'd:' + key;
+  payload = payload || {};
+  const cost = payload.skipAi === true && payload.docType === 'CCCD' ? 0 : scanCost_(payload.docType);
+  let w = walletOf_(id), trial = false;
+  if ((st.perDevice <= 0 || st.global <= 0) && w.con <= 0) throw new Error('Quét không cần tài khoản đang tắt. Hãy đăng nhập tài khoản OCR.');
+  if (cost && walletLeft_(w) < cost) {
+    withLock_(function () { w = walletOf_(id); startReset_(w); walletSave_(w); });
+    throw new Error('Thiết bị còn ' + walletLeft_(w) + ' lượt, tài liệu này cần ' + cost + ' lượt.' + OUT_OF_CREDIT_MARK);
+  }
+  trial = w.con < Math.max(1, cost); // lượt đã mua thì không tính vào trần chung của dùng thử
+  if (trial) withLock_(function () { anonReserve_(key, st); });
   try {
     const r = scanCore_({ username: 'anon_' + key, perms: {} }, payload, true); // scanCore_ đã áp rateLimit_ theo username
-    r.anon = quota;
+    const ticket = cost ? makeTicket_(id, cost) : '';
+    withLock_(function () {
+      w = walletOf_(id);
+      walletSave_(w);
+      if (cost && payload.deferCharge !== true) w = chargeInLock_(id, ticket);
+    });
+    if (cost && payload.deferCharge === true) r.charge = { ticket: ticket, cost: cost };
+    r.anon = deviceView_(w);
+    r.anon.limit = Math.max(st.perDevice, r.anon.remaining); // extension bản cũ hiển thị "còn limit - used"
+    r.anon.used = r.anon.limit - r.anon.remaining;
     return r;
   } catch (e) {
-    withLock_(function () { anonRelease_(key); }); // quét lỗi thì không tính lượt
+    if (trial) withLock_(function () { anonRelease_(key); }); // quét lỗi thì không tính vào trần chung
     throw e;
   }
 }

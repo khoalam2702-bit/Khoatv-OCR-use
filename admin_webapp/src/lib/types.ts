@@ -36,3 +36,17 @@ export interface UserLite {
 }
 
 export const SYNC_STATUSES = ['PENDING', 'FILLED', 'ERROR'] as const;
+
+export interface CreditSettings { initial: number; low: number; resetHours: number; perDevice: number; global: number }
+export interface CreditTier { id: string; amount: number; credits: number }
+export interface CreditAccount {
+  id: string; type: 'USER' | 'DEVICE'; name: string; fullName: string; remaining: number; used: number; bought: number;
+  status: 'HET' | 'SAP_HET' | 'DA_MUA' | 'DUNG_THU'; resetAt: number; pendingOrders: number;
+  contact: { company: string; phone: string } | null;
+  request: { id: string; time: string; company: string; phone: string } | null;
+}
+export interface CreditAdmin { settings: CreditSettings; tiers: CreditTier[]; accounts: CreditAccount[]; pending: { code: string; time: string; id: string; amount: number; credits: number }[] }
+export interface CreditHistory {
+  orders: { code: string; time: string; amount: number; credits: number; status: string; paidAt: string; by: string; before: string; after: string }[];
+  log: { time: string; kind: string; amount: number; balance: number; by: string; note: string }[];
+}

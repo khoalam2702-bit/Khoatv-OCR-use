@@ -16,6 +16,7 @@ export default function Nav({ name, role }: { name: string; role: 'ADMIN' | 'USE
         {item('/scan', 'Quét OCR')}
         {item('/records', 'Bản ghi')}
         {role === 'ADMIN' && item('/users', 'Tài khoản')}
+        {role === 'ADMIN' && item('/credits', 'Lượt quét')}
         {role === 'ADMIN' && item('/settings', 'Cài đặt AI')}
       </nav>
       <div className="mt-auto flex flex-col gap-2 border-t pt-3">
