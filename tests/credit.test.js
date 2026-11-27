@@ -95,4 +95,38 @@ assert.strictEqual(v.remaining, 101); assert.strictEqual(v.requested, false); as
 assert.strictEqual(call('creditTransfer', 'admin', dev.id, 'u:cty').moved, 100);
 assert.strictEqual(left(), 100);
 assert.ok(call('creditHistory', 'admin', 'u:cty').orders.length === 1);
+// tableRead_ / tableWrite_ thật trên sheet giả: giữ số 0 đầu, số âm, cập nhật đúng dòng
+{
+  const books = {};
+  const sheet = () => {
+    const rows = []; let max = 2;
+    return {
+      rows,
+      getLastRow: () => rows.length, getLastColumn: () => (rows[0] || []).length, getMaxRows: () => max, insertRowAfter() { max++; }, setFrozenRows() {},
+      getRange(r, c, n = 1, m = 1) {
+        const api = {
+          setValues(v) { v.forEach((line, i) => { const row = rows[r - 1 + i] = rows[r - 1 + i] || []; line.forEach((x, j) => { row[c - 1 + j] = String(x); }); }); return api; },
+          getDisplayValues: () => Array.from({ length: n }, (_, i) => Array.from({ length: m }, (_, j) => String((rows[r - 1 + i] || [])[c - 1 + j] || '').replace(/^'/, ''))),
+          setFontWeight: () => api, setNumberFormat: () => api
+        };
+        return api;
+      }
+    };
+  };
+  const c2 = { console, SpreadsheetApp: { flush() {} } };
+  vm.createContext(c2);
+  vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'backend_gas', 'Code.js'), 'utf8'), c2);
+  c2.__ss = { getSheetByName: (n) => books[n] || null, insertSheet: (n) => (books[n] = sheet()) };
+  vm.runInContext('usersBook_ = function () { return __ss; };', c2);
+  const go = (code) => JSON.parse(vm.runInContext('JSON.stringify(' + code + ')', c2));
+  go("tableWrite_('LUOT_DENGHI', { ma: 'a', sdt: '0905123456', cong_ty: '=HYPERLINK(1)', trang_thai: 'CHO' })._row");
+  go("tableWrite_('LUOT_DENGHI', { ma: 'b', sdt: '+84905123456', trang_thai: 'CHO' })._row");
+  let rows = go("tableRead_('LUOT_DENGHI')");
+  assert.deepStrictEqual(rows.map((r) => [r._row, r.sdt]), [[2, '0905123456'], [3, '+84905123456']]);
+  assert.strictEqual(rows[0].cong_ty, '=HYPERLINK(1)');
+  assert.strictEqual(books.LUOT_DENGHI.rows[1][3].charAt(0), "'", 'chuỗi giống công thức được thoát');
+  go("(function () { const r = tableRead_('LUOT_DENGHI')[0]; r.trang_thai = 'TU_CHOI'; tableWrite_('LUOT_DENGHI', r); return 1; })()");
+  rows = go("tableRead_('LUOT_DENGHI')");
+  assert.deepStrictEqual(rows.map((r) => r.trang_thai), ['TU_CHOI', 'CHO']);
+}
 console.log('credit test ok');

@@ -189,6 +189,7 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
     <div class="logo">OCR</div>
     <div class="title">Quét tài liệu</div>
     <span class="who" id="who"></span>
+    <span class="badge b-blue hidden" id="creditBadge" role="status"></span>
     <span class="badge hidden" id="whoRole" style="color:var(--amber);background:var(--amber-bg);border-color:var(--amber-bd)">ADMIN</span>
     <button class="btn btn-ghost btn-xs" id="btnPw" type="button" title="Đổi mật khẩu">Mật khẩu</button>
     <button class="btn btn-ghost btn-xs" id="btnTheme" type="button" title="Đổi giao diện sáng/tối">Sáng/Tối</button>
@@ -411,6 +412,7 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
       $(x[1]).classList.toggle('hidden', x[0] !== page);
       $(x[2]).classList.toggle('active', x[0] === page);
     });
+    if (page === 'scan') loadCredit();
     if (page === 'rec') loadRecords();
     if (page === 'users') loadUsers();
   }
@@ -424,7 +426,7 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
   });
   function signOut(silent) {
     if (S.token && !silent) google.script.run.logout(S.token);
-    S.token = null; S.me = null; store('ocr_token', null);
+    S.token = null; S.me = null; setCredit(null); store('ocr_token', null);
     stopCam(); $('pwOverlay').classList.add('hidden');
     Array.prototype.forEach.call(document.querySelectorAll('.overlay:not(#pwOverlay):not(#camOverlay)'), function (o) { o.remove(); });
     resetAll(); showLogin();
@@ -830,13 +832,28 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
     $('resEmpty').classList.add('hidden'); $('resBody').classList.remove('hidden');
   }
   function resetAll() { S.type = null; S.files = []; clearResult(); if (S.cfg) { renderTypes(); renderThumbs(); } refresh(); }
+  /* ---------- Lượt quét: CV 2 lượt, loại khác 1; ADMIN không giới hạn ---------- */
+  function setCredit(c) {
+    S.credit = c && !c.unlimited ? c : null;
+    var b = $('creditBadge');
+    b.classList.toggle('hidden', !S.credit);
+    if (S.credit) b.textContent = S.credit.remaining > 0 ? 'Còn ' + S.credit.remaining + ' lượt' + (S.credit.remaining <= S.credit.low ? ' (sắp hết)' : '') : 'Đã hết lượt';
+  }
+  function loadCredit() {
+    if (S.token) rpc('myCredit', [S.token]).then(function (c) { setCredit(c); refresh(); }).catch(function () { /* không hiện số lượt */ });
+  }
+  function outOfCredit() {
+    var cost = S.type && (S.type.code === 'CV_UNGVIEN' || S.type.code === 'CV_NHANVIEN') ? 2 : 1;
+    return !!S.credit && S.credit.remaining < cost;
+  }
   function refresh() {
     var hasScan = !!S.scan;
     $('btnScan').classList.toggle('hidden', hasScan);
     $('btnSave').classList.toggle('hidden', !hasScan || S.scan.saved);
-    $('btnScan').disabled = S.busy || !S.type || !S.files.length || quotaLeft() > 0;
+    $('btnScan').disabled = S.busy || !S.type || !S.files.length || quotaLeft() > 0 || outOfCredit();
     $('btnScan').textContent = !S.type ? 'Chọn loại tài liệu' : (!S.files.length ? 'Thêm tệp để quét' :
       (S.files.length > 1 ? 'Quét ' + S.files.length + ' tệp' : 'Bắt đầu quét'));
+    if (outOfCredit()) $('btnScan').textContent = S.credit.remaining > 0 ? 'Còn ' + S.credit.remaining + ' lượt, không đủ cho loại này' : 'Đã hết lượt, liên hệ quản trị viên';
     $('btnReset').textContent = hasScan && S.scan.saved ? 'Quét tài liệu khác' : 'Làm lại';
     ['btnCam', 'btnImg', 'btnPdf'].forEach(function (id) { $(id).disabled = hasScan; });
     Array.prototype.forEach.call(document.querySelectorAll('.thumb .rm'), function (b) { b.disabled = hasScan && S.scan.saved; });
@@ -881,6 +898,7 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
     })
       .then(function (r) {
         S.scan = { fileIds: r.fileIds, saved: false };
+        if (r.credit) setCredit(r.credit);
         renderForm($('form'), S.type, r.data || {}, 'f_');
         var note = $('resNote');
         note.className = 'note';
@@ -895,6 +913,7 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
       })
       .catch(function (err) {
         S.busy = false; btn.textContent = label;
+        loadCredit();
         if (err.retryAfter) startQuotaWait(err.retryAfter); else { refresh(); toast(err.message, 'err'); }
       });
   });

@@ -5,56 +5,7 @@ import { api, errMsg } from '@/lib/api';
 
 interface Slot { set: boolean; hint: string; waitSec?: number }
 interface AiConfig { model: string; defaultModel: string; tier: '' | 'free' | 'paid'; main: Slot; backup: Slot; backups?: Slot[]; tested?: string[] }
-interface AnonConfig { perDevice: number; global: number; defaults: { perDevice: number; global: number }; today: { total: number; devices: number } }
 interface TestRow { slot: string; label: string; set: boolean; hint?: string; ok?: boolean; warn?: boolean; message?: string }
-
-/** Hạn mức quét không cần tài khoản (Extension): số lượt / ngày / thiết bị và tổng chung. 0 = tắt. */
-function AnonSection() {
-  const [cfg, setCfg] = useState<AnonConfig | null>(null);
-  const [perDevice, setPerDevice] = useState('');
-  const [global, setGlobal] = useState('');
-  const [err, setErr] = useState('');
-  const [ok, setOk] = useState('');
-  const [busy, setBusy] = useState(false);
-  const apply = (c: AnonConfig) => { setCfg(c); setPerDevice(String(c.perDevice)); setGlobal(String(c.global)); };
-  useEffect(() => { api<AnonConfig>('getAnonConfig').then(apply).catch((e) => setErr(errMsg(e))); }, []);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault(); setErr(''); setOk(''); setBusy(true);
-    try {
-      apply(await api<AnonConfig>('setAnonConfig', [{ perDevice: perDevice.trim(), global: global.trim() }]));
-      setOk('Đã lưu hạn mức quét không cần tài khoản.');
-    } catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
-  }
-  const off = cfg && (cfg.perDevice === 0 || cfg.global === 0);
-  return (
-    <div className="max-w-2xl space-y-4">
-      <h1 className="text-lg font-semibold">Quét không cần tài khoản (Extension)</h1>
-      <div className="rounded-lg border bg-sky-50 p-3 text-sm text-sky-900">
-        <p>Người dùng Extension chưa có tài khoản OCR vẫn quét được để điền form FBO. Kết quả <b>không</b> lưu vào Web Admin và không lưu ảnh lên Drive; mất khi đóng trình duyệt. Mỗi lượt quét vẫn dùng hạn mức Gemini của hệ thống nên cần giới hạn.</p>
-      </div>
-      {err && <p className="rounded bg-red-50 p-2 text-sm text-red-700">{err}</p>}
-      {ok && <p className="rounded bg-green-50 p-2 text-sm text-green-700">{ok}</p>}
-      <form onSubmit={save} className="space-y-3 rounded-lg border bg-white p-4">
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block text-sm">Số lần quét / ngày / thiết bị
-            <input type="number" min={0} max={1000} step={1} className="mt-1 w-full rounded border px-2 py-1.5" value={perDevice} onChange={(e) => setPerDevice(e.target.value)} />
-            <span className="text-xs text-slate-500">Mặc định {cfg?.defaults.perDevice ?? 10}. Nhập 0 để tắt.</span>
-          </label>
-          <label className="block text-sm">Tổng số lần quét / ngày (mọi thiết bị)
-            <input type="number" min={0} max={100000} step={1} className="mt-1 w-full rounded border px-2 py-1.5" value={global} onChange={(e) => setGlobal(e.target.value)} />
-            <span className="text-xs text-slate-500">Mặc định {cfg?.defaults.global ?? 500}. Chặn việc đổi mã thiết bị để lách hạn mức. Nhập 0 để tắt.</span>
-          </label>
-        </div>
-        <p className="text-xs text-slate-600">
-          Trạng thái: {cfg ? (off ? 'đang TẮT, Extension không hiện nút "Dùng không cần tài khoản".' : 'đang BẬT.') : '...'}
-          {cfg && <> Hôm nay đã quét {cfg.today.total} lần từ {cfg.today.devices} thiết bị. Bộ đếm đặt lại lúc 0 giờ (giờ Việt Nam).</>}
-        </p>
-        <button className="btn btn-primary" disabled={busy}>{busy ? 'Đang lưu...' : 'Lưu hạn mức'}</button>
-      </form>
-    </div>
-  );
-}
 
 export default function SettingsPage() {
   const { data } = useSession();
@@ -154,7 +105,6 @@ export default function SettingsPage() {
         </ul>
       )}
     </div>
-    <AnonSection />
     </div>
   );
 }
