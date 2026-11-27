@@ -1307,7 +1307,7 @@ function callGemini_(type, files, opts) {
   // Khoá đang "nghỉ" (vừa hết hạn mức/bị từ chối) được bỏ qua để khỏi tốn lượt gọi; hết khoá khả dụng thì báo ngay, không gọi mạng.
   const split = splitKeysByCooldown_(keys);
   if (!split.ready.length) {
-    throw new Error((USER_AI_ ? 'Khoá API riêng của công ty bạn đang hết hạn mức hoặc bị từ chối. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' : 'Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.') + retryMarker_(split.minWaitSec));
+    throw new Error((USER_AI_ ? 'Khoá API riêng của công ty bạn đang hết hạn mức hoặc bị từ chối. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + OWN_QUOTA_MARK : 'Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.') + retryMarker_(split.minWaitSec));
   }
   const ready = split.ready;
   function post_(key, m) {
@@ -1403,7 +1403,7 @@ function callGemini_(type, files, opts) {
   if (code !== 200) {
     console.error('Gemini ' + code + ' (khoá ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + '): ' + resp.getContentText().slice(0, 800));
     if (USER_AI_ && (isBadKey_(resp) || code === 403)) throw new Error('Khoá API riêng của công ty bạn không hợp lệ hoặc bị từ chối. Liên hệ quản trị viên để cập nhật khoá.');
-    if (USER_AI_ && code === 429) throw new Error('Khoá API riêng của công ty bạn đã hết hạn mức. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
+    if (USER_AI_ && code === 429) throw new Error('Khoá API riêng của công ty bạn đã hết hạn mức. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + OWN_QUOTA_MARK + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
     if (isBadKey_(resp)) throw new Error('Khoá Gemini API không hợp lệ hoặc đã bị thu hồi. Quản trị viên vào Cài đặt AI để cập nhật khoá.');
     if (code === 403) throw new Error('Khoá Gemini API bị từ chối (403): chưa bật API hoặc khoá bị giới hạn. Quản trị viên kiểm tra khoá ở Cài đặt AI.');
     if (code === 404) throw new Error('Model Gemini "' + model + '" không tồn tại hoặc đã ngừng. Kiểm tra Script Property GEMINI_MODEL.');
@@ -2263,6 +2263,7 @@ function retryAfterSec_(bodyText, nowMs) {
 }
 
 /** Dấu hiệu gắn cuối thông báo lỗi để giao diện đếm ngược; giao diện sẽ cắt dấu hiệu này khi hiển thị. */
+const OWN_QUOTA_MARK = ' [[OWN_QUOTA]]'; // hết hạn mức khoá riêng: extension mời người dùng quét không đăng nhập
 function retryMarker_(sec) { return ' [[RETRY_AFTER:' + Math.max(1, Math.round(sec)) + ']]'; }
 
 /** Thống kê một lượt quét (số lần gọi, số lần thử lại, thời gian chờ) để biết chậm ở đâu. */

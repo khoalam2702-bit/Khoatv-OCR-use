@@ -101,14 +101,14 @@ async function renderAnonOption() {
   const n = state.config.limits.anonPerDay;
   if (!(n > 0)) return;
   btn.hidden = false; hint.hidden = false;
-  hint.textContent = 'Không cần tài khoản: quét tối đa ' + n + ' lần mỗi ngày trên thiết bị này, kết quả không lưu lên hệ thống (đóng trình duyệt là mất), chỉ dùng để điền form FBO.';
+  hint.textContent = 'Không cần tài khoản: quét tối đa ' + n + ' lần mỗi ngày trên thiết bị này, chỉ dùng để điền form FBO.';
 }
 
-/** Vào chế độ không cần tài khoản: không có phiên đăng nhập, không lưu lên Web Admin. */
+/** Vào chế độ không cần tài khoản: không có phiên đăng nhập. */
 async function enterAnon() {
   state.anon = true; state.auth = null;
   await setAnonMode(true);
-  $('who').textContent = 'Không lưu'; $('who').title = 'Đang dùng không đăng nhập: kết quả không lưu lên hệ thống';
+  $('who').textContent = ''; $('who').title = '';
   $('btn-inspect').hidden = true; $('btn-fbo-login').hidden = false;
   $('btn-logout').textContent = 'Đăng nhập OCR';
   await loadConfig();
@@ -272,7 +272,7 @@ function renderLimits() {
   const items = [
     'Tối đa ' + L.maxFiles + ' tệp mỗi tài liệu (ví dụ CCCD 2 mặt = 2 ảnh).',
     'Dung lượng: mỗi tệp tối đa ' + mb(L.maxFileBytes) + ' MB, tổng các tệp tối đa ' + mb(L.maxTotalBytes) + ' MB. Chỉ nhận JPG, PNG, WEBP, PDF; ảnh tự nén JPG, cạnh dài tối đa 2400 px.',
-    state.anon ? 'Đăng nhập tài khoản OCR để lưu kết quả và không giới hạn theo ngày. PDF dài nên tách 5-10 trang mỗi lượt.'
+    state.anon ? 'Đăng nhập tài khoản OCR để không giới hạn theo ngày. PDF dài nên tách 5-10 trang mỗi lượt.'
       : 'Số lần quét: tối đa ' + L.scanPer10Min + ' lần mỗi 10 phút cho mỗi tài khoản. PDF dài nên tách 5-10 trang mỗi lượt.',
     'Mỗi lần quét chờ tối đa 120 giây; quá thời gian sẽ tự dừng, hãy quét lại với ít trang hơn. Đang quét có thể bấm Dừng.',
     ...(state.anon ? [] : ['Phiên đăng nhập kéo dài ' + L.sessionHours + ' giờ.']),
@@ -291,7 +291,7 @@ function renderLimits() {
     // Chế độ không đăng nhập bị giới hạn lượt: cảnh báo đứng đầu phần thu gọn.
     const w = document.createElement('div');
     w.className = 'anon-warn';
-    w.textContent = '⚠ Bạn đang dùng không đăng nhập: tối đa ' + L.anonPerDay + ' lần quét mỗi ngày trên thiết bị này, tính lại từ 0 giờ. Kết quả không được lưu, đóng trình duyệt là mất. Lượt AI dùng chung có thể hết sớm hơn, khi đó quét lại sau ' + dailyResetTime() + '.';
+    w.textContent = '⚠ Bạn đang dùng không đăng nhập: tối đa ' + L.anonPerDay + ' lần quét mỗi ngày trên thiết bị này, tính lại từ 0 giờ. Lượt AI dùng chung có thể hết sớm hơn, khi đó quét lại sau ' + dailyResetTime() + '.';
     det.appendChild(w);
   }
   const ul = document.createElement('ul');
@@ -303,6 +303,7 @@ function renderLimits() {
 }
 
 function resetScan() {
+  showOwnQuota('');
   state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]); setScanDraft(null);
   renderTypes(); renderFiles(); updateScanBtn();
   renderLimits();
@@ -345,7 +346,16 @@ function stopScanProgress(success, detail) {
 }
 
 let scanStop = null; // lượt quét đang chạy, để nút Dừng huỷ
-async function doScan() {
+function showOwnQuota(text) {
+  $('own-quota-text').textContent = text || '';
+  $('btn-scan-anon').hidden = !(state.config && state.config.limits.anonPerDay > 0);
+  $('own-quota').hidden = !text;
+}
+
+/** forceAnon: người dùng bấm "Quét không đăng nhập" sau khi hết hạn mức; chỉ áp dụng cho lượt này. */
+async function doScan(forceAnon) {
+  const asAnon = state.anon || forceAnon === true;
+  showOwnQuota('');
   msg('');
   const btn = $('btn-scan');
   busy(btn, true, 'Đang quét...');
@@ -369,7 +379,7 @@ async function doScan() {
     const skipAiUsed = !!qr; // chỉ true ở chế độ chỉ QR khi QR hợp lệ: backend không gọi AI
     if (qrFirst) setScanStage(skipAiUsed ? 'save' : 'ai');
     const [r, qr2] = await Promise.all([
-      state.anon
+      asAnon
         ? call('scanAnonymous', [await getDeviceId(), { docType: state.type, files, skipAi: skipAiUsed }], { signal: stop.signal })
         : api('scanDocument', [{ docType: state.type, files, skipAi: skipAiUsed }], false, { signal: stop.signal }),
       qrTask
@@ -378,11 +388,12 @@ async function doScan() {
     stopScanProgress(true); // quét xong: dừng bộ đếm ngay (trước đây không dừng nên giây vẫn chạy tiếp)
     qr = qr || qr2;
     if (!skipAiUsed) clearQuotaWait(); // AI trả kết quả được thì hạn mức không còn là vấn đề
-    if (state.anon && r.anon) setAnonLimit(Number(r.anon.limit));
+    if (asAnon && r.anon) setAnonLimit(Number(r.anon.limit));
     r.data = r.data || {};
     const used = mergeQr(r.data, qr);
     if (qr && skipAiUsed) r.data.quoc_tich = r.data.quoc_tich || 'Việt Nam'; // thẻ CCCD chỉ cấp cho công dân Việt Nam
     r.fileNames = state.files.map((f) => f.name);
+    r.anonResult = asAnon;
     state.scan = r;
     renderReview(r.data);
     setJobs(r.data.cong_viec);
@@ -394,12 +405,13 @@ async function doScan() {
     else if (qrFirst) msg('Không đọc được mã QR, đã quét bằng OCR như thường.', 'info');
     if (r.fallbackModel) msg('Máy chủ AI chính đang quá tải nên lượt này đọc bằng model dự phòng (' + r.fallbackModel + '). Hãy kiểm tra kỹ dấu tiếng Việt và các con số.', 'info');
     const tm = r && r.timing;
-    const left = state.anon && r.anon ? 'Còn ' + Math.max(0, r.anon.limit - r.anon.used) + '/' + r.anon.limit + ' lượt quét không cần tài khoản hôm nay.' : '';
-    stopScanProgress(true, ((tm ? '(lưu tệp ' + (tm.driveMs / 1000).toFixed(1) + 's, AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ') ' : '') + left).trim());
+    const left = asAnon && r.anon ? 'Còn ' + Math.max(0, r.anon.limit - r.anon.used) + '/' + r.anon.limit + ' lượt quét không cần tài khoản hôm nay.' : '';
+    stopScanProgress(true, ((tm ? '(AI ' + (tm.aiMs / 1000).toFixed(1) + 's' + (tm.retries ? ', thử lại ' + tm.retries + ' lần' : '') + ') ' : '') + left).trim());
   } catch (e) {
     stopScanProgress(false);
     const r = splitRetry(e.message);
     if (e.code === 'CANCELLED') msg('Đã dừng quét. Máy chủ có thể vẫn xử lý nốt lượt đã gửi.', 'info');
+    else if (r.ownQuota) { msg(''); showOwnQuota(r.text); }
     else if (r.seconds) { startQuotaWait(r.seconds); msg(''); } // hết hạn mức: banner đếm ngược thay cho thông báo lỗi
     else msg(r.text);
   }
@@ -407,6 +419,8 @@ async function doScan() {
 }
 
 /* ---------- Bước 3: xem, sửa, lưu ---------- */
+/** Kết quả không có bước Lưu: đang dùng không đăng nhập, hoặc lượt này quét không đăng nhập vì hết hạn mức. */
+const noSave = () => state.anon || !!(state.scan && state.scan.anonResult);
 const typeDef = () => state.config.types.find((t) => t.code === state.type);
 
 function renderReview(data) {
@@ -432,14 +446,14 @@ function renderReview(data) {
   }
   $('fill-info').textContent = ''; $('fill-progress').hidden = true;
   $('review-actions').hidden = false;
-  if (state.anon) {
+  if (noSave()) {
     // Không tài khoản: không có bước Lưu; nút Điền vào FBO hiện ngay, không hỏi lưu. Bản nháp chỉ giữ trong phiên trình duyệt.
     $('btn-save').hidden = true; $('btn-next').hidden = false;
     $('after-save').hidden = false;
-    $('save-info').textContent = 'Không lưu lên hệ thống (chế độ không cần tài khoản). Kiểm tra, sửa nếu cần rồi bấm Điền vào FBO.';
+    $('save-info').textContent = 'Kiểm tra, sửa nếu cần rồi bấm Điền vào FBO.';
     getSettings().then(({ fboMappings }) => { $('btn-fill').hidden = !hasMapping(fboMappings, state.type); });
-    form.oninput = () => { setAnonDraft({ type: state.type, data: readForm().data }); };
-    setAnonDraft({ type: state.type, data });
+    form.oninput = state.anon ? () => { setAnonDraft({ type: state.type, data: readForm().data }); } : null;
+    if (state.anon) setAnonDraft({ type: state.type, data });
   } else {
     $('btn-save').hidden = false; form.oninput = null;
     $('after-save').hidden = true;
@@ -493,19 +507,19 @@ function thisPeriod() {
 /* ---------- Giữ kết quả quét: tắt/mở lại panel hay form FBO vẫn điền tiếp được, không phải quét lại ---------- */
 function persistDraft() {
   if (!state.scan || !state.type) return setScanDraft(null);
-  return setScanDraft({ type: state.type, data: state.scan.data, fileIds: state.scan.fileIds || [], fileNames: state.scan.fileNames || [], photo: state.photo, jobDone: state.jobDone, saved: state.saved });
+  return setScanDraft({ type: state.type, data: state.scan.data, fileIds: state.scan.fileIds || [], fileNames: state.scan.fileNames || [], anonResult: !!state.scan.anonResult, photo: state.photo, jobDone: state.jobDone, saved: state.saved });
 }
 async function restoreDraft() {
   const d = await getScanDraft();
   if (!d || !state.config || !state.config.types.some((x) => x.code === d.type)) return false;
-  state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [], fileNames: d.fileNames || [] };
+  state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [], fileNames: d.fileNames || [], anonResult: !!d.anonResult };
   renderTypes(); renderReview(d.data);
   setJobs(d.data.cong_viec); state.jobDone = d.jobDone || []; renderJobs();
   setPhoto(d.photo || null, PHOTO_FORMS[d.type] ? PHOTO_NONE_NOTE : '');
   show('review');
   if (d.saved) { // đã Lưu/đã sẵn sàng điền: hiện luôn nút điền
     state.saved = d.saved; setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
-    $('save-info').textContent = d.saved.anon ? 'Kết quả quét đang giữ lại (chưa lưu lên hệ thống).' : 'Đã lưu bản ghi.';
+    $('save-info').textContent = d.saved.anon ? 'Kết quả quét đang giữ lại.' : 'Đã lưu bản ghi.';
     const { fboMappings } = await getSettings(); $('btn-fill').hidden = !hasMapping(fboMappings, d.type);
   }
   msg('Đã khôi phục kết quả quét trước. Không cần quét lại.');
@@ -639,14 +653,14 @@ $('photo-file').onchange = async (ev) => {
 async function doFill() {
   msg('');
   const btn = $('btn-fill'), info = $('fill-info'), bar = $('fill-progress');
-  if (state.anon) {
+  if (noSave()) {
     // Không tài khoản: lấy dữ liệu đang hiển thị trên form, không lưu, không hỏi lưu
     const { data, errors, t: tt } = readForm();
     if (errors.length) { msg('Có trường số sai định dạng (tô đỏ). Nhập lại bằng số.'); return; }
     const miss = missingRequired(tt.required, data);
     if (miss.length) { msg('Còn thiếu trường bắt buộc: ' + miss.map((k) => tt.fields.find((f) => f.k === k).label).join(', ') + '.'); return; }
     state.saved = { data, anon: true };
-    setAnonDraft({ type: state.type, data });
+    if (state.anon) setAnonDraft({ type: state.type, data });
     persistDraft();
   }
   busy(btn, true, 'Đang chuẩn bị...');
@@ -784,6 +798,7 @@ $('btn-pick').onclick = () => $('in-files').click();
 $('in-files').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
 $('btn-scan').onclick = doScan;
 $('btn-stop-scan').onclick = () => { if (scanStop) scanStop.abort(); };
+$('btn-scan-anon').onclick = () => doScan(true);
 $('btn-back').onclick = () => { state.scan = null; if (state.anon) setAnonDraft(null); show('scan'); refreshAnonLimit(); };
 $('btn-save').onclick = doSave;
 $('btn-fill').onclick = doFill;

@@ -19,7 +19,7 @@ export async function api<T>(action: string, args: unknown[] = []): Promise<T> {
     window.location.href = '/password';
     throw new ApiError('Cần đổi mật khẩu trước khi tiếp tục.');
   }
-  if (!j?.ok) throw new ApiError(j?.error || 'Không kết nối được máy chủ.');
+  if (!j?.ok) throw new ApiError((j?.error || 'Không kết nối được máy chủ.').replace(/\s*\[\[[A-Z_]+(:\d+)?\]\]/g, '')); // bỏ dấu hiệu nội bộ của máy chủ
   return j.data as T;
 }
 

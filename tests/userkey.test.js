@@ -35,7 +35,7 @@ sent.length = 0; plan = [OK];
 assert.strictEqual(scan().so_cccd, '9');
 assert.deepStrictEqual(sent, [OWN]);
 sent.length = 0; plan = [resp(429)];     // hết hạn mức khoá riêng: báo lỗi, KHÔNG dùng khoá chung
-assert.throws(scan, /Khoá API riêng.*hết hạn mức/);
+assert.throws(scan, /Khoá API riêng.*hết hạn mức.*\[\[OWN_QUOTA\]\] \[\[RETRY_AFTER:\d+\]\]$/);
 assert.deepStrictEqual(sent, [OWN]);
 
 js('USER_AI_ = null'); sent.length = 0; plan = [OK]; // tài khoản chưa khai khoá: khoá chung
