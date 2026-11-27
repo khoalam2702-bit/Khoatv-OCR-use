@@ -4,7 +4,7 @@
 
 ## Kiến trúc
 - **Đăng nhập:** NextAuth (Credentials) gọi `login` của Apps Script, dùng chính tài khoản trong file `OCR_USERS` (ADMIN tạo ở tab Tài khoản). Token phiên của Apps Script nằm trong cookie JWT đã mã hoá, **không** gửi xuống trình duyệt dưới dạng đọc được. Phiên 6 giờ, bằng thời hạn phiên Apps Script.
-- **Dữ liệu:** trình duyệt gọi `/api/gas`; server thêm token rồi gọi cổng `doPost` của Apps Script (`GAS_WEB_APP_URL` chỉ nằm ở server). Mọi thao tác ghi đều do Apps Script thực hiện, nên luật chống trùng, phân quyền, khoá và nhật ký không bị nhân đôi.
+- **Dữ liệu:** trình duyệt gọi `/api/gas`; server thêm token rồi gọi cổng `doPost` của Apps Script (địa chỉ Apps Script do server đọc từ `public/index.html`, dự phòng `GAS_WEB_APP_URL`). Mọi thao tác ghi đều do Apps Script thực hiện, nên luật chống trùng, phân quyền, khoá và nhật ký không bị nhân đôi.
 - **Phân quyền:** Apps Script kiểm tra lại quyền ở mỗi lần gọi; giao diện chỉ ẩn / hiện nút theo quyền.
 - **Service Account (Tier 2):** chưa cần. Chỉ thêm khi muốn Next.js đọc thẳng Google Sheets để thống kê cả năm.
 
