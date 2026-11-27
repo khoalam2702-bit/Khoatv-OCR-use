@@ -37,11 +37,21 @@ export interface UserLite {
 
 export const SYNC_STATUSES = ['PENDING', 'FILLED', 'ERROR'] as const;
 
-export interface CreditSettings { initial: number; low: number; resetHours: number; perDevice: number; global: number }
+export interface CreditSettings {
+  initial: number; low: number; resetHours: number; perDevice: number; global: number;
+  blockTrial: boolean; trialKey: 'paid' | 'free'; trialKeyHint: string; priceIn: number; priceOut: number; usdRate: number;
+}
+export interface CreditReport {
+  customers: { users: number; bought: number; trial: number; out: number; low: number; idle: number; devices: number; devicesBlocked: number };
+  totals: { collected: number; pendingAmount: number; pendingCount: number; owed: number; sold: number; used: number; cost: number };
+  months: { month: string; collected: number; sold: number; used: number; scans: number; tokensIn: number; tokensOut: number; cost: number }[];
+  list: { id: string; name: string; type: 'USER' | 'DEVICE'; collected: number; used: number; scans: number; cost: number; last: string; idle: boolean }[];
+}
 export interface CreditTier { id: string; amount: number; credits: number }
 export interface CreditAccount {
   id: string; type: 'USER' | 'DEVICE'; name: string; fullName: string; remaining: number; used: number; bought: number;
   status: 'HET' | 'SAP_HET' | 'DA_MUA' | 'DUNG_THU'; resetAt: number; pendingOrders: number;
+  blocked?: boolean;
   contact: { company: string; phone: string } | null;
   request: { id: string; time: string; company: string; phone: string } | null;
 }

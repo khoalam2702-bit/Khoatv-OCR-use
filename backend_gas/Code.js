@@ -298,6 +298,8 @@ const API_ACTIONS = {
   // lượt quét: khách hàng
   myCredit: { fn: function (a) { return myCredit(a[0]); } },
   chargeScan: { fn: function (a) { return chargeScan(a[0], a[1]); } },
+  bindDevice: { fn: function (a) { return bindDevice(a[0], a[1]); } },
+  creditReport: { fn: function (a) { return creditReport(a[0]); } },
   anonCredit: { fn: function (a) { return anonCredit(a[0], a[1]); } },
   anonCharge: { fn: function (a) { return anonCharge(a[0], a[1]); } },
   anonRequestTopup: { fn: function (a) { return anonRequestTopup(a[0], a[1], a[2]); } },
@@ -318,7 +320,7 @@ const API_ACTIONS = {
 
 /** Extension không bắt đổi mật khẩu mặc định: chỉ các thao tác OCR dưới đây được bỏ qua must_change khi client = EXTENSION.
  *  Quản lý tài khoản và đổi mật khẩu vẫn giữ nguyên quy tắc. Cờ chỉ sống trong một lần thực thi doPost. */
-const EXT_NO_FORCE_ACTIONS = ['scanDocument', 'saveRecord', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport', 'myCredit', 'chargeScan'];
+const EXT_NO_FORCE_ACTIONS = ['scanDocument', 'saveRecord', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport', 'myCredit', 'chargeScan', 'bindDevice'];
 let skipMustChange_ = false;
 
 function apiJson_(obj) {
@@ -351,7 +353,7 @@ function getAppConfig() {
     const t = DOC_TYPES[code];
     return { code: code, label: t.label, required: t.required, fields: t.fields };
   });
-  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), anonPerDay: anonSettings_().perDevice, anonResetHours: creditSettings_().resetHours, plateProvinces: PLATE_PROVINCES };
+  return { types: types, itemFields: ITEM_FIELDS, maxFileBytes: LIMITS.MAX_FILE_BYTES, maxTotalBytes: LIMITS.MAX_TOTAL_BYTES, maxFiles: LIMITS.MAX_FILES, scanPer10Min: LIMITS.SCAN_PER_10_MIN, sessionHours: Math.round(LIMITS.SESSION_SECONDS / 3600), anonPerDay: anonSettings_().perDevice, anonResetHours: creditSettings_().resetHours, blockTrial: blockTrialOn_(), plateProvinces: PLATE_PROVINCES };
 }
 
 /* ============================ TÀI KHOẢN & PHÂN QUYỀN ============================
@@ -925,11 +927,14 @@ function scanDocument(token, payload) {
   const id = 'u:' + me.username;
   // chỉ đọc mã QR (không gọi AI) thì không tính lượt
   const cost = unlimited || (payload.skipAi === true && payload.docType === 'CCCD') ? 0 : scanCost_(payload.docType);
+  let trial = false;
   if (cost) {
-    const left = walletLeft_(walletOf_(id));
+    const wallet = walletOf_(id);
+    trial = wallet.da_mua === 0; // chưa mua đợt nào
+    const left = walletLeft_(wallet);
     if (left < cost) throw new Error('Bạn còn ' + left + ' lượt, tài liệu này cần ' + cost + ' lượt. Liên hệ quản trị viên để gia hạn.' + OUT_OF_CREDIT_MARK);
   }
-  const r = scanCore_(me, payload, false);
+  const r = scanCore_(me, payload, false, trial);
   if (cost) {
     const ticket = makeTicket_(id, cost);
     if (payload.deferCharge === true) r.charge = { ticket: ticket, cost: cost }; // Extension: trừ khi điền được lên FBO
@@ -978,7 +983,7 @@ function fillCvPersonal_(docType, data) {
   return data;
 }
 
-function scanCore_(me, payload, anon) {
+function scanCore_(me, payload, anon, trial) {
   const started = Date.now();
   payload = payload || {};
   const type = DOC_TYPES[payload.docType];
@@ -1003,7 +1008,9 @@ function scanCore_(me, payload, anon) {
   resetFetchStats_();
   FALLBACK_USED_ = '';
   const ownKey = anon ? '' : userKeyOf_(me.username);
-  USER_AI_ = ownKey ? { user: me.username, key: ownKey } : null;
+  const freeKey = trial && !ownKey ? trialKey_() : '';
+  USER_AI_ = ownKey ? { user: me.username, key: ownKey } : freeKey ? { user: '_dung_thu', key: freeKey, trial: true } : null;
+  USAGE_ = [];
 
   const blobs = items.map(function (it) {
     try { return Utilities.base64Decode(it.b64); } catch (e) { throw new Error('Dữ liệu tệp không hợp lệ.'); }
@@ -1029,10 +1036,16 @@ function scanCore_(me, payload, anon) {
   const tAi = Date.now();
   // skipAi: extension đã đọc được mã QR trên CCCD và người dùng chọn chế độ nhanh: chỉ lưu tệp gốc, không gọi Gemini.
   const skipAi = payload.skipAi === true && payload.docType === 'CCCD';
-  const data = skipAi ? {} : (callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {});
-  const tFix = Date.now();
+  let data, tFix;
+  try {
+  data = skipAi ? {} : (callGemini_(type, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; })) || {});
+  tFix = Date.now();
   // Đọc lại dấu là lần gọi AI thứ hai: bỏ qua nếu lượt đầu đã quá 60 giây, tránh bị dừng ở 120 giây và mất cả kết quả
   if (!skipAi && !FALLBACK_USED_ && tFix - started < 60000) fixNameDiacritics_(payload.docType, type, data, items.map(function (it) { return { mimeType: it.mimeType, b64: it.b64 }; }));
+  } finally {
+    // Ghi token đã dùng kể cả khi lượt quét báo lỗi sau khi AI đã trả lời (Google vẫn tính tiền)
+    logTokens_(anon ? 'd:' + me.username.replace(/^anon_/, '') : 'u:' + me.username, USAGE_, ownKey ? 'rieng' : freeKey ? 'thu_free' : 'chung');
+  }
   const fixMs = Date.now() - tFix;
   console.log('scanDocument ' + payload.docType + ': tổng ' + (Date.now() - started) + 'ms, chuẩn bị+Drive ' + (tAi - tDrive) + 'ms, Gemini ' + (tFix - tAi) + 'ms, đọc lại dấu ' + fixMs + 'ms, ' + (skipAi ? '[chỉ QR, không gọi Gemini] ' : '') + items.length + ' tệp, ' + Math.round(total / 1024) + 'KB');
   fillCvPersonal_(payload.docType, data);
@@ -1052,10 +1065,11 @@ function scanCore_(me, payload, anon) {
  * hết thì CREDIT_RESET_HOURS giờ sau cấp lại; "con" là lượt được gia hạn.
  */
 const CREDIT_SHEETS = {
-  LUOT_VI: ['id', 'con', 'thu', 'da_dung', 'da_mua', 'reset_at', 'cap_nhat'],
+  LUOT_VI: ['id', 'con', 'thu', 'da_dung', 'da_mua', 'reset_at', 'cap_nhat', 'khoa_thu'],
   LUOT_NHATKY: ['time', 'id', 'loai', 'so_luot', 'so_du', 'ref', 'boi', 'ghi_chu'],
   LUOT_DOT: ['ma', 'time', 'id', 'bac', 'so_tien', 'so_luot', 'trang_thai', 'ngay_thu', 'nguoi_thu', 'du_truoc', 'du_sau'],
-  LUOT_DENGHI: ['ma', 'time', 'id', 'cong_ty', 'sdt', 'trang_thai', 'xu_ly_boi', 'xu_ly_luc']
+  LUOT_DENGHI: ['ma', 'time', 'id', 'cong_ty', 'sdt', 'trang_thai', 'xu_ly_boi', 'xu_ly_luc'],
+  LUOT_TOKEN: ['ngay', 'id', 'model', 'khoa', 'so_lan', 'token_vao', 'token_ra']
 };
 const OUT_OF_CREDIT_MARK = ' [[OUT_OF_CREDIT]]';
 
@@ -1091,6 +1105,47 @@ function nowText_() { return Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH
 function creditSettings_() {
   return { initial: anonNum_('CREDIT_INITIAL', 100), low: anonNum_('CREDIT_LOW', 20), resetHours: anonNum_('CREDIT_RESET_HOURS', 48) };
 }
+function propNum_(key, fallback) {
+  const raw = PropertiesService.getScriptProperties().getProperty(key);
+  const n = Number(raw);
+  return raw !== null && raw !== '' && isFinite(n) && n >= 0 ? n : fallback;
+}
+/** Đơn giá dùng để ước tính chi phí: USD cho 1 triệu token và tỷ giá. Quản trị viên sửa theo bảng giá Google. */
+function priceSettings_() {
+  return { priceIn: propNum_('CREDIT_PRICE_IN', 0.75), priceOut: propNum_('CREDIT_PRICE_OUT', 3.75), usdRate: propNum_('CREDIT_USD_RATE', 26000) };
+}
+function blockTrialOn_() { return PropertiesService.getScriptProperties().getProperty('CREDIT_BLOCK_TRIAL') !== 'off'; }
+const TRIAL_KEY_PROP = 'GEMINI_TRIAL_KEY';
+/** Khoá dùng cho lượt dùng thử; rỗng = dùng khoá chung (trả phí). */
+function trialKey_() {
+  const p = PropertiesService.getScriptProperties();
+  return p.getProperty('CREDIT_TRIAL_KEY') === 'free' ? String(p.getProperty(TRIAL_KEY_PROP) || '').trim() : '';
+}
+
+/* ---------- Token đã dùng: cộng dồn theo ngày / khách / model / loại khoá ---------- */
+let USAGE_ = []; // các lần gọi Gemini của lượt quét đang chạy
+function logTokens_(id, calls, keyKind) {
+  if (!calls || !calls.length) return;
+  try {
+    const day = nowText_().slice(0, 10);
+    withLock_(function () {
+      const rows = tableRead_('LUOT_TOKEN');
+      const byModel = {};
+      calls.forEach(function (c) {
+        const m = byModel[c.model] = byModel[c.model] || { vao: 0, ra: 0 };
+        m.vao += c.vao; m.ra += c.ra;
+      });
+      Object.keys(byModel).forEach(function (model, i) {
+        const row = rows.filter(function (r) { return r.ngay === day && r.id === id && r.model === model && r.khoa === keyKind; })[0]
+          || { ngay: day, id: id, model: model, khoa: keyKind };
+        row.so_lan = (Number(row.so_lan) || 0) + (i === 0 ? 1 : 0);
+        row.token_vao = (Number(row.token_vao) || 0) + byModel[model].vao;
+        row.token_ra = (Number(row.token_ra) || 0) + byModel[model].ra;
+        tableWrite_('LUOT_TOKEN', row);
+      });
+    });
+  } catch (e) { console.error('Không ghi được token: ' + e.message); } // không để việc ghi số liệu làm hỏng lượt quét
+}
 function creditTiers_() {
   try {
     const list = JSON.parse(PropertiesService.getScriptProperties().getProperty('CREDIT_TIERS') || '[]');
@@ -1112,20 +1167,22 @@ function walletOf_(id, list) {
   ['con', 'thu', 'da_dung', 'da_mua'].forEach(function (k) { w[k] = Number(w[k]) || 0; });
   w.reset_at = Number(w.reset_at) || 0;
   w._new = !found;
-  if (device && w.reset_at && Date.now() >= w.reset_at) {
+  // Máy đã đăng nhập tài khoản OCR không còn được dùng thử (công tắc ở Cài đặt lượt)
+  w._blocked = device && w.khoa_thu === '1' && blockTrialOn_();
+  if (device && !w._blocked && w.reset_at && Date.now() >= w.reset_at) {
     w.thu = Math.max(w.thu, anonSettings_().perDevice);
     w.reset_at = 0; w._reset = true;
   }
   return w;
 }
-function walletLeft_(w) { return Math.max(0, w.con + w.thu); }
+function walletLeft_(w) { return Math.max(0, w.con + (w._blocked ? 0 : w.thu)); }
 
 /** Ghi ví (gọi trong khoá). Ví mới của tài khoản được ghi nhận lượt tặng. */
 function walletSave_(w) {
   const isNew = w._new, wasReset = w._reset;
   w._new = false; w._reset = false;
   w.cap_nhat = nowText_();
-  w._row = tableWrite_('LUOT_VI', { _row: w._row, id: w.id, con: w.con, thu: w.thu, da_dung: w.da_dung, da_mua: w.da_mua, reset_at: w.reset_at || '', cap_nhat: w.cap_nhat })._row;
+  w._row = tableWrite_('LUOT_VI', { _row: w._row, id: w.id, con: w.con, thu: w.thu, da_dung: w.da_dung, da_mua: w.da_mua, reset_at: w.reset_at || '', cap_nhat: w.cap_nhat, khoa_thu: w.khoa_thu || '' })._row;
   if (isNew && w.id.indexOf('u:') === 0) creditLog_(w.id, 'TANG', creditSettings_().initial, creditSettings_().initial, '', 'system', 'Lượt tặng ban đầu');
   if (wasReset) { creditLog_(w.id, 'TU_CAP', w.thu, walletLeft_(w), '', 'system', ''); closeRequests_(w.id, 'TU_CAP', 'system'); }
 }
@@ -1139,7 +1196,7 @@ function closeRequests_(id, status, by) {
 
 /** Thiết bị hết lượt: bắt đầu đếm thời gian cấp lại (nếu còn bật dùng thử). */
 function startReset_(w) {
-  if (w.id.indexOf('d:') === 0 && !w.reset_at && anonSettings_().perDevice > 0) w.reset_at = Date.now() + creditSettings_().resetHours * 3600000;
+  if (w.id.indexOf('d:') === 0 && !w._blocked && !w.reset_at && anonSettings_().perDevice > 0) w.reset_at = Date.now() + creditSettings_().resetHours * 3600000;
 }
 
 /* ---------- Phiếu trừ lượt: ký ở máy chủ, mỗi phiếu chỉ trừ một lần ---------- */
@@ -1194,7 +1251,7 @@ function deviceKey_(deviceId) {
 }
 function deviceView_(w) {
   const pending = tableRead_('LUOT_DENGHI').some(function (r) { return r.id === w.id && r.trang_thai === 'CHO'; });
-  return { remaining: walletLeft_(w), resetAt: w.reset_at || 0, requested: pending && !w._reset, code: deviceCode_(w.id), enabled: anonSettings_().perDevice > 0 || w.con > 0 };
+  return { remaining: walletLeft_(w), resetAt: w.reset_at || 0, requested: pending && !w._reset, code: deviceCode_(w.id), blocked: !!w._blocked, enabled: anonSettings_().perDevice > 0 || w.con > 0 };
 }
 /** Số lượt của thiết bị không đăng nhập. need: số lượt tài liệu đang chọn cần; không đủ thì bắt đầu đếm giờ cấp lại. */
 function anonCredit(deviceId, need) {
@@ -1216,6 +1273,22 @@ function anonCharge(deviceId, ticket) {
   withLock_(function () { w = chargeInLock_(id, ticket); });
   return deviceView_(w);
 }
+const BLOCKED_TRIAL_MSG = 'Máy này đã đăng nhập tài khoản OCR nên không còn lượt dùng thử. Hãy đăng nhập tài khoản OCR để quét.';
+/** Extension gọi sau khi đăng nhập (không áp dụng cho ADMIN để quản trị viên còn thử được). */
+function bindDevice(token, deviceId) {
+  const me = auth_(token);
+  if (me.role === 'ADMIN') return false;
+  const id = 'd:' + deviceKey_(deviceId);
+  withLock_(function () {
+    const w = walletOf_(id);
+    if (w.khoa_thu === '1') return;
+    w.khoa_thu = '1';
+    walletSave_(w);
+    closeRequests_(id, 'DA_DANG_NHAP', me.username);
+  });
+  return true;
+}
+
 function anonRequestTopup(deviceId, company, phone) {
   const id = 'd:' + deviceKey_(deviceId);
   company = String(company || '').replace(/\s+/g, ' ').trim();
@@ -1226,6 +1299,7 @@ function anonRequestTopup(deviceId, company, phone) {
   let w;
   withLock_(function () {
     w = walletOf_(id);
+    if (w._blocked) throw new Error(BLOCKED_TRIAL_MSG);
     if (walletLeft_(w) >= 2) throw new Error('Thiết bị vẫn còn lượt, chưa cần đề nghị gia hạn.');
     startReset_(w);
     const pending = tableRead_('LUOT_DENGHI').filter(function (r) { return r.trang_thai === 'CHO'; });
@@ -1266,10 +1340,16 @@ function creditAdmin(token) {
     return row('u:' + u.username, { type: 'USER', name: u.username, fullName: u.full_name });
   });
   const devices = wallets.filter(function (w) { return w.id.indexOf('d:') === 0; }).map(function (w) {
-    return row(w.id, { type: 'DEVICE', name: deviceCode_(w.id), fullName: '' });
+    return row(w.id, { type: 'DEVICE', name: deviceCode_(w.id), fullName: '', blocked: blockTrialOn_() && w.khoa_thu === '1' });
   });
+  const props = PropertiesService.getScriptProperties(), price = priceSettings_();
   return {
-    settings: { initial: st.initial, low: st.low, resetHours: st.resetHours, perDevice: anon.perDevice, global: anon.global },
+    settings: {
+      initial: st.initial, low: st.low, resetHours: st.resetHours, perDevice: anon.perDevice, global: anon.global,
+      blockTrial: blockTrialOn_(), trialKey: props.getProperty('CREDIT_TRIAL_KEY') === 'free' ? 'free' : 'paid',
+      trialKeyHint: keyHint_(String(props.getProperty(TRIAL_KEY_PROP) || '').trim()),
+      priceIn: price.priceIn, priceOut: price.priceOut, usdRate: price.usdRate
+    },
     tiers: creditTiers_(), accounts: users.concat(devices),
     pending: pendingOrders.map(function (o) { return { code: o.ma, time: o.time, id: o.id, amount: Number(o.so_tien), credits: Number(o.so_luot) }; })
   };
@@ -1291,6 +1371,28 @@ function creditSaveSettings(token, patch) {
     const n = intIn_(patch[x[0]], x[2], x[3], x[4]);
     p.setProperty(x[1], String(n)); changed.push(x[0] + '=' + n);
   });
+  // giá token và tỷ giá (số thập phân)
+  const decimals = [];
+  [['priceIn', 'CREDIT_PRICE_IN', 1000, 'Giá token vào'], ['priceOut', 'CREDIT_PRICE_OUT', 1000, 'Giá token ra'], ['usdRate', 'CREDIT_USD_RATE', 1000000, 'Tỷ giá']].forEach(function (x) {
+    if (patch[x[0]] === undefined || patch[x[0]] === null || patch[x[0]] === '') return;
+    const n = Number(patch[x[0]]);
+    if (!isFinite(n) || n < 0 || n > x[2]) throw new Error(x[3] + ' phải là số từ 0 đến ' + x[2] + '.');
+    decimals.push([x[1], String(n), x[0]]);
+  });
+  // khoá dùng thử: thử gọi Gemini trước khi lưu
+  const newKey = String(patch.trialApiKey || '').trim();
+  const mode = patch.trialKey === 'free' || patch.trialKey === 'paid' ? patch.trialKey : '';
+  if (newKey) {
+    checkKeyFormat_(newKey);
+    if (geminiKeysSafe_().indexOf(newKey) >= 0) throw new Error('Khoá này đang là khoá chung (trả phí). Khoá dùng thử phải là khoá khác. Chưa lưu.');
+    const t = testGeminiKey_(newKey, prop_('GEMINI_MODEL', DEFAULTS.GEMINI_MODEL));
+    if (!t.ok) throw new Error('Khoá dùng thử: ' + t.message + ' Chưa lưu.');
+  }
+  if (mode === 'free' && !newKey && !p.getProperty(TRIAL_KEY_PROP)) throw new Error('Chưa khai khoá miễn phí cho dùng thử. Chưa lưu.');
+  decimals.forEach(function (d) { p.setProperty(d[0], d[1]); changed.push(d[2] + '=' + d[1]); });
+  if (newKey) { p.setProperty(TRIAL_KEY_PROP, newKey); changed.push('khoa_dung_thu ' + keyHint_(newKey)); }
+  if (mode) { p.setProperty('CREDIT_TRIAL_KEY', mode); changed.push('trialKey=' + mode); }
+  if (patch.blockTrial === true || patch.blockTrial === false) { p.setProperty('CREDIT_BLOCK_TRIAL', patch.blockTrial ? 'on' : 'off'); changed.push('blockTrial=' + patch.blockTrial); }
   if (changed.length) audit_(admin.username, 'LUOT_CAI_DAT', 'LUOT', changed.join('; '));
   return creditAdmin(token);
 }
@@ -1418,6 +1520,76 @@ function creditHistory(token, id) {
     })
   };
 }
+/** Số liệu cho hai màn hình Khách hàng và Doanh thu - chi phí. */
+function creditReport(token) {
+  requireAdmin_(token);
+  const price = priceSettings_(), low = creditSettings_().low;
+  const wallets = tableRead_('LUOT_VI'), orders = tableRead_('LUOT_DOT'), log = tableRead_('LUOT_NHATKY'), tokens = tableRead_('LUOT_TOKEN');
+  const users = readUsers_().list.filter(function (u) { return u.role !== 'ADMIN'; });
+  const cost = function (t) {
+    // khoá miễn phí không tốn tiền; khoá chung và khoá riêng tính theo đơn giá đã khai
+    return t.khoa === 'thu_free' ? 0 : ((Number(t.token_vao) || 0) * price.priceIn + (Number(t.token_ra) || 0) * price.priceOut) / 1e6 * price.usdRate;
+  };
+  const months = {}, per = {};
+  const month = function (m) { return months[m] = months[m] || { month: m, collected: 0, sold: 0, used: 0, scans: 0, tokensIn: 0, tokensOut: 0, cost: 0 }; };
+  const cust = function (id) { return per[id] = per[id] || { collected: 0, used: 0, scans: 0, cost: 0, last: '' }; };
+  let pendingAmount = 0, pendingCount = 0;
+  orders.forEach(function (o) {
+    if (o.trang_thai === 'CHO_THU') { pendingAmount += Number(o.so_tien) || 0; pendingCount++; }
+    if (o.trang_thai !== 'DA_THU') return;
+    const m = month(o.ngay_thu.slice(0, 7));
+    m.collected += Number(o.so_tien) || 0; m.sold += Number(o.so_luot) || 0;
+    cust(o.id).collected += Number(o.so_tien) || 0;
+  });
+  log.forEach(function (r) {
+    if (r.loai !== 'TRU') return;
+    const n = -(Number(r.so_luot) || 0);
+    month(r.time.slice(0, 7)).used += n;
+    const c = cust(r.id);
+    c.used += n; if (r.time.slice(0, 10) > c.last) c.last = r.time.slice(0, 10);
+  });
+  tokens.forEach(function (t) {
+    const m = month(t.ngay.slice(0, 7)), c = cust(t.id), v = cost(t);
+    m.scans += Number(t.so_lan) || 0; m.tokensIn += Number(t.token_vao) || 0; m.tokensOut += Number(t.token_ra) || 0; m.cost += v;
+    c.scans += Number(t.so_lan) || 0; c.cost += v; if (t.ngay > c.last) c.last = t.ngay;
+  });
+  // Lượt đã bán mà khách chưa dùng (còn nợ khách)
+  const owed = wallets.reduce(function (sum, w) {
+    if (w.id.indexOf('x:') === 0) return sum;
+    return sum + Math.max(0, Math.min(Number(w.con) || 0, Number(w.da_mua) || 0));
+  }, 0);
+  const idleBefore = Utilities.formatDate(new Date(Date.now() - 30 * 86400000), TZ, 'yyyy-MM-dd');
+  const customers = { users: users.length, bought: 0, trial: 0, out: 0, low: 0, idle: 0, devices: 0, devicesBlocked: 0 };
+  const names = {};
+  users.forEach(function (u) {
+    const id = 'u:' + u.username, w = walletOf_(id, wallets), left = walletLeft_(w);
+    names[id] = u.username + (u.full_name ? ' – ' + u.full_name : '');
+    if (w.da_mua > 0) customers.bought++; else customers.trial++;
+    if (left <= 0) customers.out++; else if (left <= low) customers.low++;
+    if (!(per[id] && per[id].last >= idleBefore)) customers.idle++;
+  });
+  wallets.forEach(function (w) {
+    if (w.id.indexOf('d:') !== 0) return;
+    customers.devices++; if (w.khoa_thu === '1') customers.devicesBlocked++;
+    names[w.id] = deviceCode_(w.id);
+  });
+  return {
+    customers: customers,
+    totals: {
+      collected: Object.keys(months).reduce(function (a, k) { return a + months[k].collected; }, 0),
+      pendingAmount: pendingAmount, pendingCount: pendingCount, owed: owed,
+      sold: Object.keys(months).reduce(function (a, k) { return a + months[k].sold; }, 0),
+      used: Object.keys(months).reduce(function (a, k) { return a + months[k].used; }, 0),
+      cost: Math.round(Object.keys(months).reduce(function (a, k) { return a + months[k].cost; }, 0))
+    },
+    months: Object.keys(months).sort().reverse().slice(0, 12).map(function (k) { const m = months[k]; m.cost = Math.round(m.cost); return m; }),
+    list: Object.keys(names).map(function (id) {
+      const c = per[id] || cust(id);
+      return { id: id, name: names[id], type: id.indexOf('u:') === 0 ? 'USER' : 'DEVICE', collected: c.collected, used: c.used, scans: c.scans, cost: Math.round(c.cost), last: c.last, idle: !(c.last >= idleBefore) };
+    }).sort(function (a, b) { return b.collected - a.collected || b.used - a.used; })
+  };
+}
+
 /** Xoá tài khoản: cất ví sang id khác để tạo lại cùng tên không thừa hưởng lượt. Gọi trong khoá. */
 function creditForgetUser_(username) {
   tableRead_('LUOT_VI').forEach(function (w) {
@@ -1477,12 +1649,13 @@ function scanAnonymous(deviceId, payload) {
   if ((st.perDevice <= 0 || st.global <= 0) && w.con <= 0) throw new Error('Quét không cần tài khoản đang tắt. Hãy đăng nhập tài khoản OCR.');
   if (cost && walletLeft_(w) < cost) {
     withLock_(function () { w = walletOf_(id); startReset_(w); walletSave_(w); });
+    if (w._blocked) throw new Error(BLOCKED_TRIAL_MSG + OUT_OF_CREDIT_MARK);
     throw new Error('Thiết bị còn ' + walletLeft_(w) + ' lượt, tài liệu này cần ' + cost + ' lượt.' + OUT_OF_CREDIT_MARK);
   }
   trial = w.con < Math.max(1, cost); // lượt đã mua thì không tính vào trần chung của dùng thử
   if (trial) withLock_(function () { anonReserve_(key, st); });
   try {
-    const r = scanCore_({ username: 'anon_' + key, perms: {} }, payload, true); // scanCore_ đã áp rateLimit_ theo username
+    const r = scanCore_({ username: 'anon_' + key, perms: {} }, payload, true, trial); // scanCore_ đã áp rateLimit_ theo username
     const ticket = cost ? makeTicket_(id, cost) : '';
     withLock_(function () {
       w = walletOf_(id);
@@ -1731,11 +1904,12 @@ function callGemini_(type, files, opts) {
   };
   function url_(m) { return 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(m) + ':generateContent'; }
   const keys = USER_AI_ ? [USER_AI_.key] : geminiKeys_();
+  const own = !!USER_AI_ && !USER_AI_.trial; // khoá riêng của khách (khoá dùng thử báo lỗi như khoá chung)
   const scope = USER_AI_ ? model + '|' + USER_AI_.user : model; // quá tải được nhớ riêng theo bộ khoá
   // Khoá đang "nghỉ" (vừa hết hạn mức/bị từ chối) được bỏ qua để khỏi tốn lượt gọi; hết khoá khả dụng thì báo ngay, không gọi mạng.
   const split = splitKeysByCooldown_(keys);
   if (!split.ready.length) {
-    throw new Error((USER_AI_ ? 'Khoá API riêng của công ty bạn đang hết hạn mức hoặc bị từ chối. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + OWN_QUOTA_MARK : 'Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.') + retryMarker_(split.minWaitSec));
+    throw new Error((own ? 'Khoá API riêng của công ty bạn đang hết hạn mức hoặc bị từ chối. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + OWN_QUOTA_MARK : 'Gemini đang quá tải hoặc hết hạn mức. Vui lòng thử lại sau.') + retryMarker_(split.minWaitSec));
   }
   const ready = split.ready;
   function post_(key, m) {
@@ -1830,8 +2004,8 @@ function callGemini_(type, files, opts) {
   const code = resp.getResponseCode();
   if (code !== 200) {
     console.error('Gemini ' + code + ' (khoá ' + (keyIdx === 0 ? 'chính' : 'dự phòng') + '): ' + resp.getContentText().slice(0, 800));
-    if (USER_AI_ && (isBadKey_(resp) || code === 403)) throw new Error('Khoá API riêng của công ty bạn không hợp lệ hoặc bị từ chối. Liên hệ quản trị viên để cập nhật khoá.');
-    if (USER_AI_ && code === 429) throw new Error('Khoá API riêng của công ty bạn đã hết hạn mức. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + OWN_QUOTA_MARK + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
+    if (own && (isBadKey_(resp) || code === 403)) throw new Error('Khoá API riêng của công ty bạn không hợp lệ hoặc bị từ chối. Liên hệ quản trị viên để cập nhật khoá.');
+    if (own && code === 429) throw new Error('Khoá API riêng của công ty bạn đã hết hạn mức. Vui lòng thử lại sau hoặc liên hệ quản trị viên.' + OWN_QUOTA_MARK + retryMarker_(retryAfterSec_(resp.getContentText(), Date.now())));
     if (isBadKey_(resp)) throw new Error('Khoá Gemini API không hợp lệ hoặc đã bị thu hồi. Quản trị viên vào Cài đặt AI để cập nhật khoá.');
     if (code === 403) throw new Error('Khoá Gemini API bị từ chối (403): chưa bật API hoặc khoá bị giới hạn. Quản trị viên kiểm tra khoá ở Cài đặt AI.');
     if (code === 404) throw new Error('Model Gemini "' + model + '" không tồn tại hoặc đã ngừng. Kiểm tra Script Property GEMINI_MODEL.');
@@ -1840,6 +2014,8 @@ function callGemini_(type, files, opts) {
     throw new Error('Gemini trả lỗi ' + code + '. Xem nhật ký Apps Script để biết chi tiết.');
   }
   const json = JSON.parse(resp.getContentText());
+  const um = json.usageMetadata || {};
+  USAGE_.push({ model: FALLBACK_USED_ || model, vao: Number(um.promptTokenCount) || 0, ra: (Number(um.candidatesTokenCount) || 0) + (Number(um.thoughtsTokenCount) || 0) });
   const cand = json.candidates && json.candidates[0];
   const text = cand && cand.content && cand.content.parts
     ? cand.content.parts.filter(function (p) { return p.text && !p.thought; }).map(function (p) { return p.text; }).join('')

@@ -22,6 +22,7 @@ export function creditStatus(view, need = 1) {
   const n = view.remaining, device = view.resetAt !== undefined;
   const short = n < Math.max(1, need);
   const blocked = need > 0 && n < need;
+  if (view.blocked && short) return { line: 'Máy này đã đăng nhập tài khoản OCR nên không còn lượt dùng thử. Hãy đăng nhập tài khoản OCR.', warn: true, blocked, short };
   let line = 'Còn ' + n + ' lượt';
   if (n <= 0) line = device ? 'Đã hết lượt dùng thử.' : 'Đã hết lượt, liên hệ quản trị viên.';
   else if (n < need) line = 'Còn ' + n + ' lượt, tài liệu này cần ' + need + ' lượt.' + (device ? '' : ' Liên hệ quản trị viên.');

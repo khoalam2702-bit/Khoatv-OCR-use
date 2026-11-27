@@ -11,7 +11,7 @@ const AUTHED = new Set([
   'listUsers', 'createUser', 'updateUser', 'resetUserPassword', 'deleteUser', 'setUserAiKey',
   'getAiConfig', 'setAiConfig', 'testAiConfig',
   'getAnonConfig', 'setAnonConfig',
-  'myCredit', 'creditAdmin', 'creditSaveSettings', 'creditSaveTiers', 'creditTopup', 'creditOrder', 'creditAdjust', 'creditTransfer', 'creditReject', 'creditHistory'
+  'myCredit', 'creditAdmin', 'creditSaveSettings', 'creditSaveTiers', 'creditTopup', 'creditOrder', 'creditAdjust', 'creditTransfer', 'creditReject', 'creditHistory', 'creditReport'
 ]);
 /** Không cần phiên (cấu hình công khai, quên mật khẩu). */
 const PUBLIC = new Set(['getAppConfig', 'requestPasswordReset', 'resetPasswordWithCode']);

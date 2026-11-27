@@ -6,13 +6,13 @@ const ctx = {
   console: { log() {}, error() {} },
   Date: class extends Date { static now() { return now; } },
   Utilities: {
-    formatDate: () => '2026-11-27 10:00:00', getUuid: () => 'uuid-' + (++uuid),
+    formatDate: (d, tz, f) => (f === 'yyyy-MM-dd' ? '2026-10-28' : '2026-11-27 10:00:00'), getUuid: () => 'uuid-' + (++uuid),
     computeDigest: (_a, s) => Array.from(crypto.createHash('sha256').update(String(s)).digest()),
     base64EncodeWebSafe: (b) => Buffer.from(b).toString('base64url'), DigestAlgorithm: { SHA_256: 1 }
   },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
   PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => (k in props ? props[k] : null), setProperty: (k, v) => { props[k] = String(v); }, deleteProperty: (k) => { delete props[k]; } }) },
-  __tables: tables, __users: users, __fail: false
+  __tables: tables, __users: users, __fail: false, __trial: []
 };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(require('path').join(__dirname, '..', 'backend_gas', 'Code.js'), 'utf8'), ctx);
@@ -24,7 +24,9 @@ run(`
   findUser_ = function (n) { return __users.filter(function (u) { return u.username === n; })[0] || null; };
   auth_ = function (t) { const u = findUser_(t); if (!u) throw new Error('SESSION_EXPIRED'); return { username: u.username, role: u.role, perms: { perm_add: true } }; };
   audit_ = function () {};
-  scanCore_ = function () { if (__fail) throw new Error('Gemini lỗi'); return { data: {}, fileIds: [] }; };
+  scanCore_ = function (me, payload, anon, trial) { __trial.push(trial); if (__fail) throw new Error('Gemini lỗi'); return { data: {}, fileIds: [] }; };
+  testGeminiKey_ = function () { return { ok: true }; };
+  geminiKeysSafe_ = function () { return ['AIzaSy' + 'A'.repeat(33)]; };
 `);
 const call = (fn, ...a) => { ctx.__a = a; return JSON.parse(JSON.stringify(run(`${fn}(...__a)`) ?? null)); };
 const left = () => call('myCredit', 'cty').remaining;
@@ -95,6 +97,49 @@ assert.strictEqual(v.remaining, 101); assert.strictEqual(v.requested, false); as
 assert.strictEqual(call('creditTransfer', 'admin', dev.id, 'u:cty').moved, 100);
 assert.strictEqual(left(), 100);
 assert.ok(call('creditHistory', 'admin', 'u:cty').orders.length === 1);
+// khoá dùng thử, token, chặn dùng thử trên máy đã đăng nhập, báo cáo
+users.push({ username: 'moi', role: 'USER', full_name: 'Mới' });
+call('scanDocument', 'moi', { docType: 'CCCD' }); assert.strictEqual(ctx.__trial.pop(), true, 'chưa mua = dùng thử');
+call('scanDocument', 'cty', { docType: 'CCCD' }); assert.strictEqual(ctx.__trial.pop(), false);
+const KEY = 'AIzaSy' + 'B'.repeat(33);
+assert.throws(() => call('creditSaveSettings', 'admin', { trialKey: 'free' }), /Chưa khai khoá/);
+assert.throws(() => call('creditSaveSettings', 'admin', { trialApiKey: 'AIzaSy' + 'A'.repeat(33) }), /khoá chung/);
+assert.strictEqual(run('trialKey_()'), '');
+let set = call('creditSaveSettings', 'admin', { trialKey: 'free', trialApiKey: KEY, priceIn: '0.75', priceOut: '3.75', usdRate: '26000' }).settings;
+assert.strictEqual(set.trialKeyHint, '••••BBBB'); assert.ok(!JSON.stringify(set).includes(KEY));
+assert.strictEqual(run('trialKey_()'), KEY);
+call('creditSaveSettings', 'admin', { trialKey: 'paid' }); assert.strictEqual(run('trialKey_()'), '');
+
+run("logTokens_('u:moi', [{ model: 'm', vao: 1000000, ra: 100000 }, { model: 'm', vao: 0, ra: 100000 }], 'chung')");
+run("logTokens_('u:moi', [{ model: 'm', vao: 1000000, ra: 0 }], 'chung')");
+run("logTokens_('d:zz', [{ model: 'm', vao: 5000000, ra: 0 }], 'thu_free')");
+assert.strictEqual(tables.LUOT_TOKEN.length, 2, 'cộng dồn theo ngày/khách/model/khoá');
+assert.deepStrictEqual([Number(tables.LUOT_TOKEN[0].so_lan), Number(tables.LUOT_TOKEN[0].token_vao), Number(tables.LUOT_TOKEN[0].token_ra)], [2, 2000000, 200000]);
+
+const E = 'device-eeeeeeeeeeeeeeee';
+r = call('scanAnonymous', E, { docType: 'CCCD' }); assert.strictEqual(r.anon.remaining, 2);
+assert.strictEqual(call('bindDevice', 'admin', E), false, 'ADMIN đăng nhập không khoá máy');
+assert.strictEqual(call('anonCredit', E, 1).blocked, false);
+assert.strictEqual(call('bindDevice', 'moi', E), true);
+v = call('anonCredit', E, 1);
+assert.deepStrictEqual([v.blocked, v.remaining, v.resetAt], [true, 0, 0]);
+assert.throws(() => call('scanAnonymous', E, { docType: 'CCCD' }), /đã đăng nhập tài khoản OCR.*OUT_OF_CREDIT/);
+assert.throws(() => call('anonRequestTopup', E, 'Cty', '0905123456'), /đã đăng nhập/);
+call('creditSaveSettings', 'admin', { blockTrial: false });
+assert.strictEqual(call('anonCredit', E, 1).remaining, 2);
+call('creditSaveSettings', 'admin', { blockTrial: true });
+
+const rep = call('creditReport', 'admin');
+assert.strictEqual(rep.customers.users, 2);
+assert.strictEqual(rep.customers.devicesBlocked, 1);
+const nov = rep.months.filter((m) => m.month === '2026-11')[0];
+// token vào 2 triệu * 0,75 + ra 0,2 triệu * 3,75 = 2,25 USD * 26000; khoá miễn phí tính 0 đồng
+assert.strictEqual(nov.cost, 58500);
+assert.strictEqual(nov.collected, 620000); // 500.000 (chờ thu rồi đã thu) + 120.000
+assert.strictEqual(rep.totals.pendingCount, 0);
+assert.ok(rep.totals.owed > 0);
+assert.throws(() => call('creditReport', 'cty'), /ADMIN/);
+
 // tableRead_ / tableWrite_ thật trên sheet giả: giữ số 0 đầu, số âm, cập nhật đúng dòng
 {
   const books = {};

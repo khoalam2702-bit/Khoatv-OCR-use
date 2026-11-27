@@ -4,6 +4,7 @@ import { useSession } from 'next-auth/react';
 import { api, errMsg } from '@/lib/api';
 import { nf } from '@/lib/format';
 import Modal from '@/components/Modal';
+import Report from './Report';
 import type { CreditAccount, CreditAdmin, CreditHistory, CreditSettings, CreditTier } from '@/lib/types';
 
 const STATUS: Record<CreditAccount['status'], [string, string]> = {
@@ -17,7 +18,7 @@ const unit = (a: number, c: number) => (c > 0 ? `${nf.format(Math.round(a / c))}
 const custName = (a: CreditAccount) => (a.type === 'USER' ? `${a.name}${a.fullName ? ` – ${a.fullName}` : ''}` : `${a.name}${a.contact ? ` – ${a.contact.company}` : ''}`);
 const needsAttention = (a: CreditAccount) => !!a.request || a.pendingOrders > 0 || ((a.type === 'USER' || a.bought > 0) && (a.status === 'HET' || a.status === 'SAP_HET'));
 
-type Tab = 'need' | 'all' | 'tiers' | 'settings';
+type Tab = 'need' | 'all' | 'customers' | 'money' | 'tiers' | 'settings';
 
 export default function CreditsPage() {
   const { data: session } = useSession();
@@ -59,7 +60,7 @@ export default function CreditsPage() {
         {cards.map(([label, n]) => <div key={label} className="rounded-lg border bg-white p-3"><div className="text-xs text-slate-500">{label}</div><div className="text-2xl font-semibold">{data ? nf.format(n) : '…'}</div></div>)}
       </div>
       <div className="flex flex-wrap gap-1">
-        {([['need', `Cần gia hạn (${need.length})`], ['all', 'Tất cả tài khoản và thiết bị'], ['tiers', 'Bậc thang'], ['settings', 'Cài đặt lượt']] as [Tab, string][]).map(([k, label]) =>
+        {([['need', `Cần gia hạn (${need.length})`], ['all', 'Tất cả tài khoản và thiết bị'], ['customers', 'Khách hàng'], ['money', 'Doanh thu và chi phí'], ['tiers', 'Bậc thang'], ['settings', 'Cài đặt lượt']] as [Tab, string][]).map(([k, label]) =>
           <button key={k} className={`btn ${tab === k ? 'btn-primary' : ''}`} onClick={() => setTab(k)}>{label}</button>)}
       </div>
 
@@ -79,6 +80,7 @@ export default function CreditsPage() {
                     <td className="px-2 py-1.5">{nf.format(a.bought)}</td>
                     <td className="whitespace-nowrap px-2 py-1.5">
                       <span className={`rounded px-1.5 py-0.5 text-xs ${STATUS[a.status][1]}`}>{STATUS[a.status][0]}</span>
+                      {a.blocked && <div className="mt-1 text-xs text-slate-500">Đã đăng nhập: chặn dùng thử</div>}
                       {a.pendingOrders > 0 && <div className="mt-1 text-xs text-amber-700">{a.pendingOrders} đợt chờ thanh toán</div>}
                       {a.type === 'DEVICE' && a.resetAt > 0 && <div className="mt-1 text-xs text-slate-500">Tự cấp lại: {new Date(a.resetAt).toLocaleString('vi-VN')}</div>}
                     </td>
@@ -96,6 +98,7 @@ export default function CreditsPage() {
           </div>
         </>
       )}
+      {(tab === 'customers' || tab === 'money') && <Report key={tab} view={tab} />}
       {tab === 'tiers' && data && <Tiers tiers={data.tiers} onSaved={(d) => { setData(d); setErr(''); setOk('Đã lưu bậc thang.'); }} onError={setErr} />}
       {tab === 'settings' && data && <Settings settings={data.settings} onSaved={(d) => { setData(d); setErr(''); setOk('Đã lưu cài đặt lượt.'); }} onError={setErr} />}
       {topup && data && <TopupModal account={topup} tiers={data.tiers} onClose={() => setTopup(null)} onDone={(m) => { setTopup(null); setErr(''); setOk(m); load(); }} />}
@@ -246,29 +249,48 @@ function Tiers({ tiers, onSaved, onError }: { tiers: CreditTier[]; onSaved: (d: 
   );
 }
 
-const FIELDS: [keyof CreditSettings, string, string][] = [
+type NumKey = 'initial' | 'low' | 'perDevice' | 'resetHours' | 'global' | 'priceIn' | 'priceOut' | 'usdRate';
+const FIELDS: [NumKey, string, string][] = [
   ['initial', 'Lượt tặng cho tài khoản mới', 'Cấp một lần, không hết hạn. Tài khoản ADMIN không giới hạn.'],
   ['low', 'Ngưỡng báo sắp hết (lượt)', 'Còn bằng hoặc ít hơn thì vào danh sách Cần gia hạn.'],
   ['perDevice', 'Lượt dùng thử mỗi thiết bị không đăng nhập', 'Nhập 0 để tắt quét không đăng nhập.'],
   ['resetHours', 'Số giờ tự cấp lại lượt dùng thử', 'Tính từ lúc thiết bị hết lượt.'],
-  ['global', 'Trần tổng số lần quét dùng thử mỗi ngày', 'Mọi thiết bị cộng lại, kể cả lần quét chưa điền. Nhập 0 để tắt.']
+  ['global', 'Trần tổng số lần quét dùng thử mỗi ngày', 'Mọi thiết bị cộng lại, kể cả lần quét chưa điền. Nhập 0 để tắt.'],
+  ['priceIn', 'Giá token vào (USD / 1 triệu token)', 'Theo bảng giá Gemini hiện hành; chỉ dùng để ước tính chi phí.'],
+  ['priceOut', 'Giá token ra (USD / 1 triệu token)', 'Gồm cả token suy luận.'],
+  ['usdRate', 'Tỷ giá (đồng / USD)', 'Dùng để quy chi phí ra đồng.']
 ];
+const DECIMAL: NumKey[] = ['priceIn', 'priceOut'];
 function Settings({ settings, onSaved, onError }: { settings: CreditSettings; onSaved: (d: CreditAdmin) => void; onError: (m: string) => void }) {
   const [form, setForm] = useState(() => Object.fromEntries(FIELDS.map(([k]) => [k, String(settings[k])])));
   const [busy, setBusy] = useState(false);
+  const [blockTrial, setBlockTrial] = useState(settings.blockTrial);
+  const [trialKey, setTrialKey] = useState(settings.trialKey);
+  const [trialApiKey, setTrialApiKey] = useState('');
   async function save(e: React.FormEvent) {
     e.preventDefault(); setBusy(true); onError('');
-    try { onSaved(await api<CreditAdmin>('creditSaveSettings', [form])); } catch (x) { onError(errMsg(x)); } finally { setBusy(false); }
+    try {
+      onSaved(await api<CreditAdmin>('creditSaveSettings', [{ ...form, blockTrial, trialKey, trialApiKey: trialApiKey.trim() }]));
+      setTrialApiKey('');
+    } catch (x) { onError(errMsg(x)); } finally { setBusy(false); }
   }
   return (
     <form onSubmit={save} className="max-w-2xl space-y-3 rounded-lg border bg-white p-4 text-sm">
       <p className="text-slate-600">CV tính 2 lượt, loại khác 1 lượt. Extension chỉ trừ khi điền được lên FBO; quét trên web và loại chưa có form FBO trừ khi quét xong.</p>
       {FIELDS.map(([k, label, hint]) => (
         <label key={k} className="block">{label}
-          <input type="number" min={0} step={1} required className="input mt-1 max-w-xs" value={form[k]} onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))} />
+          <input type="number" min={0} step={DECIMAL.includes(k) ? 'any' : 1} required className="input mt-1 block max-w-xs" value={form[k]} onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))} />
           <span className="block text-xs text-slate-500">{hint}</span>
         </label>
       ))}
+      <label className="flex gap-2"><input type="checkbox" checked={blockTrial} onChange={(e) => setBlockTrial(e.target.checked)} />
+        <span>Máy đã đăng nhập tài khoản OCR thì không được dùng thử nữa<span className="block text-xs text-slate-500">Đăng nhập bằng ADMIN không khoá máy. Lượt đã mua cho máy vẫn dùng được.</span></span></label>
+      <fieldset className="space-y-1 border-t pt-3"><legend className="label">Khoá Gemini cho lượt dùng thử (máy không đăng nhập và tài khoản chưa mua)</legend>
+        <label className="flex gap-2"><input type="radio" name="trialKey" checked={trialKey === 'paid'} onChange={() => setTrialKey('paid')} />Khoá chung (trả phí)</label>
+        <label className="flex gap-2"><input type="radio" name="trialKey" checked={trialKey === 'free'} onChange={() => setTrialKey('free')} />Khoá riêng miễn phí {settings.trialKeyHint && <span className="text-slate-500">(đang lưu {settings.trialKeyHint})</span>}</label>
+        <input type="password" autoComplete="off" className="input max-w-md" placeholder={settings.trialKeyHint ? 'Nhập khoá mới nếu muốn đổi' : 'Dán khoá miễn phí'} value={trialApiKey} onChange={(e) => setTrialApiKey(e.target.value)} />
+        <p className="rounded bg-amber-50 p-2 text-xs text-amber-800">Với gói miễn phí, Google được phép dùng dữ liệu gửi lên để cải thiện sản phẩm. Hồ sơ có CCCD, CV là dữ liệu cá nhân: cân nhắc trước khi chọn. Hạn mức miễn phí thấp, hết hạn mức thì lượt dùng thử báo lỗi (không tự chuyển sang khoá trả phí).</p>
+      </fieldset>
       <button className="btn btn-primary" disabled={busy}>{busy ? 'Đang lưu...' : 'Lưu cài đặt'}</button>
     </form>
   );
