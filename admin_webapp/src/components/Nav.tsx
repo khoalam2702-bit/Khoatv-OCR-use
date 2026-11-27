@@ -27,8 +27,8 @@ export default function Nav({ name, role }: { name: string; role: 'ADMIN' | 'USE
         {role === 'ADMIN' && item('/credits', 'Lượt quét', Coins)}
         {role === 'ADMIN' && item('/settings', 'Cài đặt AI', Sparkles)}
       </nav>
-      <div className="mt-auto flex flex-col gap-2 border-t pt-3">
-        <span className="flex items-center gap-2 px-1 text-sm">
+      <div className="mt-auto flex flex-wrap items-center gap-2 border-t pt-3 md:flex-col md:items-stretch">
+        <span className="mr-auto flex items-center gap-2 px-1 text-sm md:mr-0">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-200 font-semibold uppercase text-slate-600">{name.slice(0, 1)}</span>
           <span className="min-w-0"><span className="block truncate font-medium">{name}</span><span className={`text-xs font-semibold ${role === 'ADMIN' ? 'text-amber-600' : 'text-slate-500'}`}>{role}</span></span>
         </span>

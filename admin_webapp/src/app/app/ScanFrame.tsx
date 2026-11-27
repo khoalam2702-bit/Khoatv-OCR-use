@@ -11,6 +11,8 @@ export default function ScanFrame({ url, newTabUrl = url, embedded = false }: { 
   return (
     <>
       <iframe
+        // khung nhúng tải không kèm cookie Google: máy đăng nhập nhiều tài khoản Google không bị lỗi "không thể mở tệp"
+        {...(embedded ? { credentialless: '' } : {})}
         title="OCR Tài liệu" src={url} onLoad={() => setLoaded(true)}
         allow="camera; microphone; clipboard-write; fullscreen" referrerPolicy="no-referrer"
         style={{ position: pos, inset: 0, width: '100%', height: '100%', border: 0 }}
