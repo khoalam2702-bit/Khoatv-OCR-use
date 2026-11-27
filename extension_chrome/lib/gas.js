@@ -6,7 +6,7 @@ const CODES = ['SESSION_EXPIRED', 'MUST_CHANGE_PASSWORD'];
 // Quét: chờ tối đa 120 giây rồi dừng (người dùng cũng có thể bấm Dừng sớm hơn).
 const SLOW_ACTIONS = ['scanDocument', 'scanAnonymous'];
 // Chỉ đọc, gọi lại không tạo dữ liệu hay tốn lượt quét: rớt kết nối thì tự thử lại một lần.
-const SAFE_RETRY_ACTIONS = ['getAppConfig', 'checkSession'];
+const SAFE_RETRY_ACTIONS = ['getAppConfig', 'checkSession', 'myCredit', 'anonCredit', 'chargeScan', 'anonCharge']; // trừ lượt theo phiếu nên gửi lại không trừ hai lần
 
 /**
  * Client gọi cổng doPost của Apps Script.

@@ -18,6 +18,18 @@
   <div id="msg" class="msg" hidden></div>
   <details id="inspect-box" hidden><summary>Kết quả dò form (đã sao chép; bấm để xem)</summary><textarea id="inspect-out" readonly rows="10" style="width:100%"></textarea></details>
   <div id="quota-bar" class="msg warn" role="status" hidden></div>
+  <div id="credit-bar" class="credit" role="status" hidden>
+    <div id="credit-line"></div>
+    <div id="credit-note" class="credit-note" hidden></div>
+    <button id="btn-topup" type="button" hidden>Đề nghị gia hạn số lượt</button>
+    <div id="topup-form" hidden>
+      <label>Tên công ty<input id="in-company" maxlength="100" autocomplete="organization"></label>
+      <label>Số điện thoại<input id="in-phone" maxlength="20" inputmode="tel" autocomplete="tel"></label>
+      <div class="credit-note">Số điện thoại chỉ dùng để liên hệ gia hạn.</div>
+      <button id="btn-topup-send" type="button" class="primary">Gửi đề nghị</button>
+      <div id="topup-error" class="err-text" role="alert"></div>
+    </div>
+  </div>
   <div id="perm-bar" class="msg info" hidden><span id="perm-text">Cần cấp quyền để điền form FBO.</span> <button id="btn-perm" class="primary">Cấp quyền FBO</button></div>
 
   <section id="view-login" hidden>
