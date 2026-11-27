@@ -3,10 +3,19 @@
 @tailwind utilities;
 
 @layer components {
-  .btn { @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50; }
-  .btn-primary { @apply border-blue-600 bg-blue-600 text-white hover:bg-blue-700; }
+  .btn { @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50; }
+  .btn-primary { @apply border-blue-600 bg-blue-600 text-white shadow-sm hover:bg-blue-700; }
+  .btn-success { @apply border-emerald-600 bg-emerald-600 text-white shadow-sm hover:bg-emerald-700; }
   .btn-danger { @apply border-red-600 bg-red-600 text-white hover:bg-red-700; }
-  .input { @apply w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500; }
+  .btn-outline-danger { @apply border-red-300 text-red-700 hover:bg-red-50; }
+  .input { @apply w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100; }
   .label { @apply mb-1 block text-xs font-medium text-slate-600; }
+  .card { @apply rounded-xl border border-slate-200 bg-white shadow-sm; }
+  .th { @apply whitespace-nowrap px-3 py-2 text-left font-semibold; }
+  .th-num { @apply whitespace-nowrap px-3 py-2 text-right font-semibold; }
+  .td { @apply px-3 py-2; }
+  .td-num { @apply whitespace-nowrap px-3 py-2 text-right tabular-nums; }
+  .thead { @apply bg-slate-100 text-xs text-slate-600; }
+  .row { @apply border-t border-slate-100 hover:bg-slate-50; }
 }
 body { @apply bg-slate-50 text-slate-900; }

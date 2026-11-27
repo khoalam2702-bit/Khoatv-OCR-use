@@ -264,3 +264,5 @@ Chuyên ngành trên CV được đối chiếu với danh mục chuyên ngành 
 - Khoá dùng thử: chọn khoá chung (trả phí) hoặc khoá miễn phí riêng (Script Property `GEMINI_TRIAL_KEY`, khai ở Cài đặt lượt), áp cho máy không đăng nhập và tài khoản chưa mua đợt nào.
 - Máy đã đăng nhập tài khoản OCR (không phải ADMIN) không còn dùng thử; có công tắc ở Cài đặt lượt.
 - Token mỗi lần gọi Gemini được cộng dồn theo ngày ở sheet `LUOT_TOKEN`; Web Admin có mục Khách hàng và Doanh thu - chi phí (chi phí là ước tính theo đơn giá khai báo).
+- Trang Quét trong Web Admin dùng mã đăng nhập một lần (`createWebHandoff` / `redeemWebHandoff`, 90 giây) nên không phải đăng nhập lần hai.
+- Chưa lưu bậc thang lần nào thì dùng 6 bậc đề xuất trong `DEFAULT_TIERS`.

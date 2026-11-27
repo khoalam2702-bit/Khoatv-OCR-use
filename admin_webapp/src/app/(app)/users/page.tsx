@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { api, errMsg } from '@/lib/api';
 import Modal from '@/components/Modal';
+import { PageTitle } from '@/components/ui';
+import { UserPlus, Users } from 'lucide-react';
 import { PERM_KEYS, PERM_LABELS, type PermKey, type UserLite } from '@/lib/types';
 
 interface Form { username: string; full_name: string; email: string; role: 'ADMIN' | 'USER'; password: string; active: boolean; perms: Record<PermKey, boolean> }
@@ -61,7 +63,7 @@ export default function UsersPage() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center"><h1 className="text-lg font-semibold">Tài khoản</h1><button className="btn btn-primary ml-auto" onClick={() => open()}>+ Tạo tài khoản</button></div>
+      <PageTitle icon={Users} title="Tài khoản"><button className="btn btn-primary" onClick={() => open()}><UserPlus size={15} aria-hidden />Tạo tài khoản</button></PageTitle>
       {err && !edit && <p className="rounded bg-red-50 p-2 text-sm text-red-700">{err}</p>}
       {ok && <p role="status" className="rounded bg-green-50 p-2 text-sm text-green-700">{ok}</p>}
       <div className="overflow-auto rounded-lg border bg-white">

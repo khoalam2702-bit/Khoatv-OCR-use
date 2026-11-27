@@ -1,9 +1,11 @@
 'use client';
+import NumberInput from './NumberInput';
 import type { FieldDef, ItemRow } from '@/lib/types';
 
 export default function ItemsEditor({ fields, rows, onChange, readOnly }: { fields: FieldDef[]; rows: ItemRow[]; onChange: (rows: ItemRow[]) => void; readOnly: boolean }) {
-  const set = (i: number, k: string, v: string, num: boolean) => {
-    const next = rows.map((r, j) => (j === i ? { ...r, [k]: num ? (v === '' ? null : Number(v)) : v } : r));
+  // ô số giữ chuỗi trong lúc gõ; RecordModal đổi sang số khi lưu
+  const set = (i: number, k: string, v: string | null) => {
+    const next = rows.map((r, j) => (j === i ? { ...r, [k]: v } : r)) as ItemRow[];
     onChange(next);
   };
   return (
@@ -17,8 +19,9 @@ export default function ItemsEditor({ fields, rows, onChange, readOnly }: { fiel
             <tr key={i} className="border-t">
               {fields.map((f) => (
                 <td key={f.k} className="px-1 py-1">
-                  <input className="input" disabled={readOnly} type={f.type === 'number' ? 'number' : 'text'} step="any"
-                    value={r[f.k] === null || r[f.k] === undefined ? '' : String(r[f.k])} onChange={(e) => set(i, f.k, e.target.value, f.type === 'number')} />
+                  {f.type === 'number'
+                    ? <NumberInput decimal signed disabled={readOnly} value={r[f.k] === null || r[f.k] === undefined ? '' : String(r[f.k])} onValue={(v) => set(i, f.k, v === '' ? null : v)} />
+                    : <input className="input" disabled={readOnly} value={r[f.k] === null || r[f.k] === undefined ? '' : String(r[f.k])} onChange={(e) => set(i, f.k, e.target.value)} />}
                 </td>
               ))}
               {!readOnly && <td className="px-1"><button type="button" className="text-red-600" onClick={() => onChange(rows.filter((_, j) => j !== i))} aria-label="Xoá dòng">✕</button></td>}

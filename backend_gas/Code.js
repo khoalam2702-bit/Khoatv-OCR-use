@@ -270,6 +270,7 @@ const API_ACTIONS = {
   resetPasswordWithCode: { fn: function (a) { return resetPasswordWithCode(a[0], a[1], a[2]); } },
   // phiên đăng nhập
   logout: { fn: function (a) { return logout(a[0]); } },
+  createWebHandoff: { fn: function (a) { return createWebHandoff(a[0]); } },
   checkSession: { fn: function (a) { return checkSession(a[0]); } },
   getMe: { fn: function (a) { return getMe(a[0]); } },
   changeMyPassword: { fn: function (a) { return changeMyPassword(a[0], a[1], a[2]); } },
@@ -553,6 +554,28 @@ function login(username, password) {
     throw new Error('Sai tên đăng nhập hoặc mật khẩu.');
   }
   cache.remove(failKey);
+  return { token: newSession_(u), me: me_(u) };
+}
+
+/* Web Admin mở trang quét trong khung: đổi phiên đang đăng nhập lấy mã dùng một lần (90 giây) để khung không bắt đăng nhập lại.
+ * Khung nhận một phiên RIÊNG, nên đăng xuất ở khung không làm mất phiên Web Admin. */
+function createWebHandoff(token) {
+  const me = auth_(token);
+  const code = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('handoff_' + code, me.username, 90);
+  return { code: code };
+}
+
+function redeemWebHandoff(code) {
+  if (!/^[a-f0-9]{64}$/.test(String(code || ''))) return null;
+  const cache = CacheService.getScriptCache();
+  let username = null;
+  withLock_(function () {
+    username = cache.get('handoff_' + code);
+    if (username) cache.remove('handoff_' + code);
+  });
+  const u = username ? findUser_(username) : null;
+  if (!u || !u.active) return null;
   return { token: newSession_(u), me: me_(u) };
 }
 
@@ -1146,9 +1169,14 @@ function logTokens_(id, calls, keyKind) {
     });
   } catch (e) { console.error('Không ghi được token: ' + e.message); } // không để việc ghi số liệu làm hỏng lượt quét
 }
+/** Bậc thang đề xuất, dùng khi quản trị viên chưa lưu lần nào (đã lưu thì theo bản đã lưu, kể cả danh sách rỗng). */
+const DEFAULT_TIERS = [[120000, 100], [300000, 260], [500000, 450], [1000000, 1000], [3000000, 3200], [5000000, 5500]]
+  .map(function (t, i) { return { id: 'bac-' + (i + 1), amount: t[0], credits: t[1] }; });
 function creditTiers_() {
   try {
-    const list = JSON.parse(PropertiesService.getScriptProperties().getProperty('CREDIT_TIERS') || '[]');
+    const raw = PropertiesService.getScriptProperties().getProperty('CREDIT_TIERS');
+    if (raw === null || raw === undefined || raw === '') return DEFAULT_TIERS.slice();
+    const list = JSON.parse(raw);
     return Array.isArray(list) ? list : [];
   } catch (e) { return []; }
 }
