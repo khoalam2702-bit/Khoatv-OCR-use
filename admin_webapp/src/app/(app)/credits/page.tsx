@@ -37,6 +37,8 @@ export default function CreditsPage() {
 
   const load = useCallback(() => api<CreditAdmin>('creditAdmin').then(setData).catch((e) => setErr(errMsg(e))), []);
   useEffect(() => { load(); }, [load]);
+  // thông báo thành công tự ẩn; lỗi giữ lại đến khi đóng
+  useEffect(() => { if (!ok) return; const t = setTimeout(() => setOk(''), 8000); return () => clearTimeout(t); }, [ok]);
 
   if (session && session.me.role !== 'ADMIN') return <p className="rounded bg-amber-50 p-3 text-sm text-amber-800">Chỉ quản trị viên được xem trang này.</p>;
 
@@ -62,8 +64,11 @@ export default function CreditsPage() {
       <PageTitle icon={Coins} title="Lượt quét">
         <button className="btn" onClick={() => { setErr(''); setOk(''); load(); }}><RefreshCw size={15} aria-hidden />Tải lại</button>
       </PageTitle>
-      {err && <p className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700"><XCircle size={16} aria-hidden />{err}</p>}
-      {ok && <p role="status" className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-800"><CheckCircle2 size={16} aria-hidden />{ok}</p>}
+      {/* Thông báo nổi: nút Lưu thường nằm cuối trang nên thông báo ở đầu trang sẽ bị khuất */}
+      <div className="fixed bottom-4 right-4 z-[60] flex w-[min(28rem,calc(100vw-2rem))] flex-col gap-2 text-sm">
+        {err && <p role="alert" className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-red-800 shadow-lg"><XCircle size={18} className="shrink-0" aria-hidden /><span className="flex-1">{err}</span><button aria-label="Đóng thông báo" onClick={() => setErr('')}><X size={16} aria-hidden /></button></p>}
+        {ok && <p role="status" className="flex items-start gap-2 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-emerald-900 shadow-lg"><CheckCircle2 size={18} className="shrink-0" aria-hidden /><span className="flex-1">{ok}</span><button aria-label="Đóng thông báo" onClick={() => setOk('')}><X size={16} aria-hidden /></button></p>}
+      </div>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cards.map(([label, n, icon, tone]) => <StatCard key={label} label={label} value={data ? nf.format(n) : '…'} icon={icon} tone={tone} />)}
       </div>
@@ -120,7 +125,7 @@ export default function CreditsPage() {
       )}
       {(tab === 'customers' || tab === 'money') && <Report key={tab} view={tab} />}
       {tab === 'tiers' && data && <Tiers tiers={data.tiers} onSaved={(d) => { setData(d); setErr(''); setOk('Đã lưu bậc thang.'); }} onError={setErr} />}
-      {tab === 'settings' && data && <Settings settings={data.settings} onSaved={(d) => { setData(d); setErr(''); setOk('Đã lưu cài đặt lượt.'); }} onError={setErr} />}
+      {tab === 'settings' && data && <Settings settings={data.settings} onSaved={(d) => { setData(d); setErr(''); setOk('Đã lưu cài đặt lượt.'); }} onError={(m) => { setErr(m); if (m) setOk(''); }} />}
       {topup && data && <TopupModal account={topup} tiers={data.tiers} onClose={() => setTopup(null)} onDone={(m) => { setTopup(null); setErr(''); setOk(m); load(); }} />}
       {detail && data && <DetailModal account={accounts.find((a) => a.id === detail.id) ?? detail} accounts={accounts} onClose={() => setDetail(null)} onChanged={load} />}
     </div>
