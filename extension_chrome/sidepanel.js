@@ -13,6 +13,7 @@ import { hasMapping } from './lib/mapping.js';
 import { splitRetry, formatWait, dailyResetTime } from './lib/quota.js';
 import { FORM_WAIT_MS, FillStopped } from './lib/formcheck.js';
 import { pushDuration, expectedMs, estimatePercent, stageText } from './lib/scanprogress.js';
+import { createSilentSaver } from './lib/silentsave.js';
 
 const $ = (id) => document.getElementById(id);
 const call = createGasClient({ getUrl: async () => (await getSettings()).gasUrl });
@@ -105,7 +106,7 @@ async function renderAnonOption() {
 }
 
 /** Vào chế độ không cần tài khoản: không có phiên đăng nhập. */
-async function enterAnon() {
+async function enterAnon(keepDraft) {
   state.anon = true; state.auth = null;
   await setAnonMode(true);
   $('who').textContent = ''; $('who').title = '';
@@ -113,7 +114,7 @@ async function enterAnon() {
   $('btn-logout').textContent = 'Đăng nhập OCR';
   await loadConfig();
   checkFboPermission();
-  resetScan();
+  resetScan(keepDraft);
   show('scan');
 }
 async function exitAnon() {
@@ -151,14 +152,14 @@ async function loadConfig() {
   };
 }
 
-async function enter() {
+async function enter(keepDraft) {
   state.anon = false; await setAnonMode(false); $('btn-logout').textContent = 'Đăng xuất OCR'; $('who').title = '';
   $('who').textContent = state.auth.me.name + ' (' + state.auth.me.username + ')';
   $('btn-inspect').hidden = state.auth.me.role !== 'ADMIN'; // "Dò form" chỉ dành cho quản trị viên (người lập ánh xạ)
   $('btn-fbo-login').hidden = false;
   await loadConfig();
   checkFboPermission();
-  resetScan();
+  resetScan(keepDraft);
   show('scan');
 }
 
@@ -302,9 +303,11 @@ function renderLimits() {
   box.appendChild(det);
 }
 
-function resetScan() {
+/** keepDraft: lúc mở lại panel, giữ bản nháp để restoreDraft đọc được. */
+function resetScan(keepDraft) {
   showOwnQuota('');
-  state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]); setScanDraft(null);
+  state.files = []; state.scan = null; state.saved = null; setPhoto(null); setJobs([]);
+  if (!keepDraft) setScanDraft(null);
   renderTypes(); renderFiles(); updateScanBtn();
   renderLimits();
 }
@@ -330,7 +333,7 @@ function startScanProgress(btn, n, stage) {
 function setScanStage(stage) {
   if (scanProg.stage === stage) return;
   scanProg.stage = stage;
-  if (stage === 'save') scanProg.expected = 4000; // chỉ lưu ảnh lên Drive
+  if (stage === 'save') scanProg.expected = 4000; // chế độ chỉ QR: không gọi AI
   else if (stage === 'ai') { scanProg.t0 = Date.now(); scanProg.expected = expectedMs(scanHist()); } // bắt đầu đếm lại cho bước gọi AI
   tickScan();
 }
@@ -418,8 +421,8 @@ async function doScan(forceAnon) {
   finally { scanStop = null; $('btn-stop-scan').hidden = true; if (scanProg.timer) stopScanProgress(false); busy(btn, false); updateScanBtn(); }
 }
 
-/* ---------- Bước 3: xem, sửa, lưu ---------- */
-/** Kết quả không có bước Lưu: đang dùng không đăng nhập, hoặc lượt này quét không đăng nhập vì hết hạn mức. */
+/* ---------- Bước 3: xem, sửa, điền ---------- */
+/** Kết quả không ghi bản ghi: đang dùng không đăng nhập, hoặc lượt này quét không đăng nhập vì hết hạn mức. */
 const noSave = () => state.anon || !!(state.scan && state.scan.anonResult);
 const typeDef = () => state.config.types.find((t) => t.code === state.type);
 
@@ -445,23 +448,19 @@ function renderReview(data) {
     label.appendChild(el); form.appendChild(label);
   }
   $('fill-info').textContent = ''; $('fill-progress').hidden = true;
-  $('review-actions').hidden = false;
-  if (noSave()) {
-    // Không tài khoản: không có bước Lưu; nút Điền vào FBO hiện ngay, không hỏi lưu. Bản nháp chỉ giữ trong phiên trình duyệt.
-    $('btn-save').hidden = true; $('btn-next').hidden = false;
-    $('after-save').hidden = false;
-    $('save-info').textContent = 'Kiểm tra, sửa nếu cần rồi bấm Điền vào FBO.';
-    getSettings().then(({ fboMappings }) => { $('btn-fill').hidden = !hasMapping(fboMappings, state.type); });
-    form.oninput = state.anon ? () => { setAnonDraft({ type: state.type, data: readForm().data }); } : null;
-    if (state.anon) setAnonDraft({ type: state.type, data });
-  } else {
-    $('btn-save').hidden = false; form.oninput = null;
-    $('after-save').hidden = true;
-  }
-  setFormDisabled(false);
+  // Không có nút Lưu: nút Điền vào FBO hiện ngay; tài khoản đăng nhập được ghi bản ghi ngầm khi bấm Điền.
+  $('btn-next').hidden = false; $('after-save').hidden = false;
+  $('save-info').textContent = 'Kiểm tra, sửa nếu cần rồi bấm Điền vào FBO.';
+  const type = state.type;
+  getSettings().then(({ fboMappings }) => {
+    if (state.type !== type) return;
+    const mapped = hasMapping(fboMappings, type);
+    $('btn-fill').hidden = !mapped;
+    if (!mapped) $('save-info').textContent = 'Loại này chưa có form FBO để điền.';
+  });
+  form.oninput = state.anon ? () => { setAnonDraft({ type: state.type, data: readForm().data }); } : null;
+  if (state.anon) setAnonDraft({ type: state.type, data });
 }
-
-function setFormDisabled(on) { for (const el of $('form').elements) el.disabled = on; }
 
 function readForm() {
   const t = typeDef();
@@ -472,36 +471,13 @@ function readForm() {
   return { data, errors, t };
 }
 
-async function doSave() {
-  msg('');
-  const { data, errors, t } = readForm();
-  if (errors.length) { msg('Có trường số sai định dạng (tô đỏ). Nhập lại bằng số.'); return; }
-  const miss = missingRequired(t.required, data);
-  if (miss.length) {
-    const names = miss.map((k) => t.fields.find((f) => f.k === k).label).join(', ');
-    msg('Còn thiếu trường bắt buộc: ' + names + '.'); return;
-  }
-  const btn = $('btn-save');
-  busy(btn, true, 'Đang lưu...');
-  try {
-    const r = await api('saveRecord', [state.type, data, state.scan.fileIds]);
-    state.saved = { data, period: r.period || thisPeriod(), fileId: r.fileId || state.scan.fileIds[0], updated: !!r.updated };
-    persistDraft();
-    setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
-    $('save-info').textContent = r.updated ? 'Đã lưu (ghi đè bản ghi trùng).' : 'Đã lưu bản ghi.';
-    // Loại chưa có form FBO: chỉ lưu, trạng thái đồng bộ giữ PENDING để điền sau khi bổ sung ánh xạ
-    const { fboMappings } = await getSettings();
-    const mapped = hasMapping(fboMappings, state.type);
-    $('btn-fill').hidden = !mapped;
-    $('fill-info').className = 'hint';
-    $('fill-info').textContent = mapped ? '' : 'Loại này chưa có form FBO nên chỉ lưu. Bản ghi giữ trạng thái chờ điền (PENDING) cho đến khi bổ sung ánh xạ.';
-  } catch (e) { msg(e.message); }
-  finally { busy(btn, false); }
-}
+const silentSave = createSilentSaver((type, data, fileIds) => api('saveRecord', [type, data, fileIds]));
 
-function thisPeriod() {
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+/** Loại chưa có form FBO không có nút Điền: ghi ngầm khi bấm Quét tiếp. */
+async function saveUnmapped() {
+  if (noSave() || !state.scan || !$('btn-fill').hidden) return;
+  const { data, errors, t } = readForm();
+  if (!errors.length && !missingRequired(t.required, data).length) silentSave(state.type, data, state.scan.fileIds);
 }
 
 /* ---------- Giữ kết quả quét: tắt/mở lại panel hay form FBO vẫn điền tiếp được, không phải quét lại ---------- */
@@ -513,15 +489,11 @@ async function restoreDraft() {
   const d = await getScanDraft();
   if (!d || !state.config || !state.config.types.some((x) => x.code === d.type)) return false;
   state.type = d.type; state.scan = { data: d.data, fileIds: d.fileIds || [], fileNames: d.fileNames || [], anonResult: !!d.anonResult };
-  renderTypes(); renderReview(d.data);
+  renderTypes(); renderReview(d.saved ? { ...d.data, ...d.saved.data } : d.data); // giữ phần người dùng đã sửa
   setJobs(d.data.cong_viec); state.jobDone = d.jobDone || []; renderJobs();
   setPhoto(d.photo || null, PHOTO_FORMS[d.type] ? PHOTO_NONE_NOTE : '');
   show('review');
-  if (d.saved) { // đã Lưu/đã sẵn sàng điền: hiện luôn nút điền
-    state.saved = d.saved; setFormDisabled(true); $('review-actions').hidden = true; $('after-save').hidden = false;
-    $('save-info').textContent = d.saved.anon ? 'Kết quả quét đang giữ lại.' : 'Đã lưu bản ghi.';
-    const { fboMappings } = await getSettings(); $('btn-fill').hidden = !hasMapping(fboMappings, d.type);
-  }
+  state.saved = d.saved || null;
   msg('Đã khôi phục kết quả quét trước. Không cần quét lại.');
   return true;
 }
@@ -653,16 +625,18 @@ $('photo-file').onchange = async (ev) => {
 async function doFill() {
   msg('');
   const btn = $('btn-fill'), info = $('fill-info'), bar = $('fill-progress');
-  if (noSave()) {
-    // Không tài khoản: lấy dữ liệu đang hiển thị trên form, không lưu, không hỏi lưu
-    const { data, errors, t: tt } = readForm();
-    if (errors.length) { msg('Có trường số sai định dạng (tô đỏ). Nhập lại bằng số.'); return; }
-    const miss = missingRequired(tt.required, data);
-    if (miss.length) { msg('Còn thiếu trường bắt buộc: ' + miss.map((k) => tt.fields.find((f) => f.k === k).label).join(', ') + '.'); return; }
-    state.saved = { data, anon: true };
-    if (state.anon) setAnonDraft({ type: state.type, data });
-    persistDraft();
-  }
+  // Lấy dữ liệu đang hiển thị trên form
+  const { data, errors, t: tt } = readForm();
+  if (errors.length) { msg('Có trường số sai định dạng (tô đỏ). Nhập lại bằng số.'); return; }
+  const miss = missingRequired(tt.required, data);
+  if (miss.length) { msg('Còn thiếu trường bắt buộc: ' + miss.map((k) => tt.fields.find((f) => f.k === k).label).join(', ') + '.'); return; }
+  state.saved = { data, anon: noSave() };
+  if (state.anon) setAnonDraft({ type: state.type, data });
+  persistDraft();
+  const type = state.type;
+  // Ghi ngầm song song với việc điền: không làm chậm, không báo gì trên giao diện
+  const record = state.saved.anon ? Promise.resolve(null) : silentSave(type, data, state.scan.fileIds);
+  const syncStatus = (status) => record.then((r) => (r ? api('updateSyncStatus', [type, r.period, r.fileId, status]) : null)).catch(() => {});
   busy(btn, true, 'Đang chuẩn bị...');
   info.textContent = ''; info.className = 'hint';
   bar.hidden = false; bar.removeAttribute('value'); // thanh chạy không xác định trong lúc chờ form
@@ -727,16 +701,13 @@ async function doFill() {
     info.textContent = parts.join('\n'); // mỗi ý một dòng
     info.className = r.status === 'FILLED' && !r.away ? 'ok' : 'warn';
     bar.max = r.total || 1; bar.value = r.filled.length; done = true; // thanh hiện tỉ lệ đã điền, giữ lại để NSD xem
-    if (!state.saved.anon) {
-      try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, r.status]); }
-      catch (e) { info.textContent += ' (Chưa cập nhật được trạng thái đồng bộ: ' + e.message + ')'; }
-    }
+    syncStatus(r.status);
   } catch (e) {
     if (e instanceof FillStopped) { // bấm Dừng: không đánh dấu lỗi, cho điền lại
       info.textContent = 'Đã dừng. Mở lại tab và form FBO cần điền, rồi bấm "Điền vào FBO" để điền lại.'; info.className = 'warn';
     } else {
       info.textContent = e.message; info.className = 'warn';
-      if (!state.saved.anon) { try { await api('updateSyncStatus', [state.type, state.saved.period, state.saved.fileId, 'ERROR']); } catch { /* bỏ qua */ } }
+      syncStatus('ERROR');
     }
   } finally { stop.hidden = true; stop.onclick = null; if (!done) bar.hidden = true; busy(btn, false); }
 }
@@ -800,9 +771,8 @@ $('btn-scan').onclick = doScan;
 $('btn-stop-scan').onclick = () => { if (scanStop) scanStop.abort(); };
 $('btn-scan-anon').onclick = () => doScan(true);
 $('btn-back').onclick = () => { state.scan = null; if (state.anon) setAnonDraft(null); show('scan'); refreshAnonLimit(); };
-$('btn-save').onclick = doSave;
 $('btn-fill').onclick = doFill;
-$('btn-next').onclick = () => { if (state.anon) setAnonDraft(null); resetScan(); msg(''); show('scan'); refreshAnonLimit(); };
+$('btn-next').onclick = async () => { await saveUnmapped(); if (state.anon) setAnonDraft(null); resetScan(); msg(''); show('scan'); refreshAnonLimit(); };
 
 const drop = $('drop');
 drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
@@ -822,7 +792,7 @@ document.addEventListener('paste', (e) => {
   if (!gasUrl) { show('login'); msg('Chưa lấy được địa chỉ máy chủ OCR từ Web Admin. Kiểm tra mạng, hoặc liên hệ quản trị viên (biến GAS_WEB_APP_URL trên Vercel).'); return; }
   if (await getAnonMode()) { // còn trong phiên trình duyệt đang dùng chế độ không tài khoản
     try {
-      await enterAnon();
+      await enterAnon(true);
       const d = await getAnonDraft();
       if (d && state.config.types.some((x) => x.code === d.type)) { state.type = d.type; state.scan = { data: d.data, fileIds: [] }; renderTypes(); renderReview(d.data); show('review'); }
       await restoreDraft(); // bản đầy đủ (ảnh, danh sách công việc, trạng thái) nếu có
@@ -833,9 +803,9 @@ document.addEventListener('paste', (e) => {
   if (auth) {
     try {
       const me = await call('checkSession', [auth.token]);
-      if (me) { state.auth = { token: auth.token, me }; await enter(); await restoreDraft(); return; }
+      if (me) { state.auth = { token: auth.token, me }; await enter(true); await restoreDraft(); return; }
     } catch (e) { msg(e.message); }
   }
-  if (await tryAutoLogin()) { await enter(); await restoreDraft(); return; }
+  if (await tryAutoLogin()) { await enter(true); await restoreDraft(); return; }
   await showLogin();
 })();

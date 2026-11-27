@@ -98,7 +98,7 @@ Nguồn dữ liệu: Dorabot (dorabot.io/dia-chi/sap-nhap), chép từ nghị qu
 
 #### Quá trình công tác (từng công việc)
 - AI trả thêm danh sách `cong_viec` (đơn vị, chức danh, từ, đến, mô tả); danh sách chỉ dùng để điền form, không thành cột trong Sheet.
-- Sau khi Lưu, panel hiện danh sách công việc. Mở form "Thêm thông tin quá trình công tác trước đây" ở FBO, bấm **Điền công việc tiếp theo**; mỗi lần điền một công việc, tool không tự bấm Lưu.
+- Sau khi quét, panel hiện danh sách công việc. Mở form "Thêm thông tin quá trình công tác trước đây" ở FBO, bấm **Điền công việc tiếp theo**; mỗi lần điền một công việc, tool không tự bấm Lưu.
 - Chống trùng/ghi đè: công việc đã điền được đánh dấu ✓ (điền lại phải xác nhận); form đang ở chế độ Sửa (tiêu đề không phải "Thêm") thì hỏi trước; form còn dữ liệu của bản ghi chưa Lưu thì hỏi trước khi ghi đè.
 - Ngày theo quy ước khi CV thiếu: Từ không có → hôm nay; chỉ năm → 01/01; tháng/năm → đầu tháng. Đến không có → bằng ngày Từ; chỉ năm → 31/12; tháng/năm → cuối tháng; "Nay" → hôm nay (ô Đến của form bắt buộc). Thời gian gốc ghi vào Ghi chú. Ánh xạ nằm ở khóa `CV_NHANVIEN@CONGTAC` trong `presets/fbo-hrm.json`.
 
@@ -228,7 +228,8 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 - Phiên đăng nhập lưu trong CacheService: tối đa 6 giờ, có thể mất sớm hơn.
 - Tệp tối đa 14 MB; PDF dài nên tách 5-10 trang mỗi lượt.
 - Một số trình duyệt chặn camera trực tiếp trong khung Apps Script; khi đó nút "Chụp ảnh" tự chuyển sang ứng dụng camera của máy.
-- Quét xong nhưng không bấm lưu thì tệp gốc vẫn nằm trên Drive, không có dòng tương ứng.
+- Quét xong nhưng không bấm lưu (Web) hoặc không bấm Điền vào FBO (Extension) thì tệp gốc vẫn nằm trên Drive, không có dòng tương ứng.
+- Extension không có nút Lưu: tài khoản đăng nhập được ghi bản ghi ngầm khi bấm Điền vào FBO (loại chưa có form FBO: khi bấm Quét tiếp); ghi lỗi không báo trên Extension và không chặn việc điền.
 
 ## Gộp về một domain (Web Admin + giao diện quét)
 

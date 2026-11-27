@@ -40,6 +40,6 @@ test('gọi API: không tài khoản dùng scanAnonymous (không token); có tà
   assert.match(src, /api\('scanDocument'/);
   // chế độ không tài khoản không bao giờ gọi saveRecord / updateSyncStatus
   const anonFill = src.slice(src.indexOf('async function doFill'), src.indexOf('Dò form: liệt kê'));
-  assert.match(anonFill, /if \(!state\.saved\.anon\)/);
+  assert.match(anonFill, /state\.saved\.anon \? Promise\.resolve\(null\) : silentSave/);
   assert.ok(!/saveRecord/.test(anonFill));
 });
