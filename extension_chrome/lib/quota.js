@@ -1,11 +1,18 @@
 // Thông báo hết hạn mức Gemini: backend gắn cuối lỗi "[[RETRY_AFTER:<giây>]]"; giao diện tách ra để đếm ngược.
 const MARK = /\s*\[\[RETRY_AFTER:(\d+)\]\]\s*$/;
 
+// "[[OWN_QUOTA]]": hết hạn mức khoá API riêng của đơn vị (không phải khoá chung).
+const OWN = /\s*\[\[OWN_QUOTA\]\]/;
+
 /** Tách dấu hiệu chờ khỏi thông báo lỗi. seconds = null nếu không phải lỗi hết hạn mức. */
 export function splitRetry(message) {
-  const s = String(message == null ? '' : message);
+  let s = String(message == null ? '' : message);
   const m = MARK.exec(s);
-  return { text: m ? s.replace(MARK, '') : s, seconds: m ? Number(m[1]) : null };
+  if (m) s = s.replace(MARK, '');
+  const ownQuota = OWN.test(s);
+  const out = { text: ownQuota ? s.replace(OWN, '') : s, seconds: m ? Number(m[1]) : null };
+  if (ownQuota) out.ownQuota = true;
+  return out;
 }
 
 /** 95 -> "01:35"; 27000 -> "7 giờ 30 phút 00 giây" khi từ 1 giờ trở lên. */

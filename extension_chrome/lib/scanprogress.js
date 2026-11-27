@@ -25,7 +25,7 @@ export function stageText(stage, elapsedMs, expected, nFiles) {
   const s = Math.floor(elapsedMs / 1000), exp = Math.max(1, Math.round(expected / 1000));
   const files = nFiles > 1 ? nFiles + ' tệp' : '1 tệp';
   if (stage === 'qr') return 'Bước 1/2: đọc mã QR trên CCCD... ' + s + ' giây';
-  if (stage === 'save') return 'Bước 2/2: lưu ảnh gốc lên Drive (không dùng AI)... ' + s + ' giây';
+  if (stage === 'save') return 'Bước 2/2: xử lý dữ liệu mã QR (không dùng AI)... ' + s + ' giây';
   let t = 'Bước ' + (stage === 'ai' ? '2/2' : '1/1') + ': gửi ' + files + ' lên máy chủ, AI đang đọc... ' + s + ' giây (thường mất khoảng ' + exp + ' giây)';
   if (elapsedMs > expected * 1.5 && elapsedMs <= CLIENT_TIMEOUT_MS) t += '. Lâu hơn thường lệ, vẫn đang xử lý';
   return t;
