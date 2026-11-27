@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import Modal from './Modal';
 import ItemsEditor from './ItemsEditor';
+import NumberInput from './NumberInput';
 import RawViewer from './RawViewer';
 import { api, errMsg } from '@/lib/api';
 import { SYNC_STATUSES, type AppConfig, type DocTypeDef, type FieldDef, type ItemRow, type RecordRow } from '@/lib/types';
@@ -24,7 +25,20 @@ export default function RecordModal({ type, row, cfg, onClose, onChanged }: {
     setBusy(true); setErr('');
     try { await fn(); onChanged(); if (done) onClose(); } catch (e) { setErr(errMsg(e)); } finally { setBusy(false); }
   }
-  const save = () => run(() => api('updateRecord', [type.code, row._period, row.raw_file_id, draft]));
+  const num = (v: unknown) => (v === null || v === undefined || v === '' || v === '-' ? null : Number(v));
+  const clean = () => {
+    const d: Draft = { ...draft };
+    type.fields.forEach((f) => {
+      if (f.type === 'number') d[f.k] = num(d[f.k]);
+      if (f.type === 'items' && Array.isArray(d[f.k])) d[f.k] = (d[f.k] as ItemRow[]).map((r) => {
+        const x: Record<string, unknown> = { ...r };
+        cfg.itemFields.forEach((c) => { if (c.type === 'number') x[c.k] = num(x[c.k]); });
+        return x;
+      });
+    });
+    return d;
+  };
+  const save = () => run(() => api('updateRecord', [type.code, row._period, row.raw_file_id, clean()]));
   const del = () => { if (confirm('Xoá bản ghi này? Tệp gốc trên Drive vẫn được giữ để đối soát.')) void run(() => api('deleteRecord', [type.code, row._period, row.raw_file_id])); };
   const saveStatus = () => run(() => api('updateSyncStatus', [type.code, row._period, row.raw_file_id, status]), false);
 
@@ -32,7 +46,8 @@ export default function RecordModal({ type, row, cfg, onClose, onChanged }: {
     if (f.type === 'items') return <ItemsEditor fields={cfg.itemFields} rows={(draft[f.k] as ItemRow[] | null) || []} readOnly={readOnly} onChange={(v) => set(f.k, v)} />;
     const val = draft[f.k] === null || draft[f.k] === undefined ? '' : String(draft[f.k]);
     if (f.type === 'long') return <textarea className="input" rows={3} disabled={readOnly} value={val} onChange={(e) => set(f.k, e.target.value)} />;
-    if (f.type === 'number') return <input className="input" type="number" step="any" disabled={readOnly} value={val} onChange={(e) => set(f.k, e.target.value === '' ? null : Number(e.target.value))} />;
+    // giữ chuỗi trong lúc gõ (ví dụ "1234."), đổi sang số khi lưu
+    if (f.type === 'number') return <NumberInput decimal signed disabled={readOnly} value={val} onValue={(v) => set(f.k, v === '' ? null : v)} />;
     return <input className="input" disabled={readOnly} value={val} onChange={(e) => set(f.k, e.target.value)} />;
   };
 

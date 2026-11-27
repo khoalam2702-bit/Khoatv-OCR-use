@@ -2,6 +2,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { api, errMsg } from '@/lib/api';
+import { PageTitle } from '@/components/ui';
+import { Sparkles } from 'lucide-react';
 
 interface Slot { set: boolean; hint: string; waitSec?: number }
 interface AiConfig { model: string; defaultModel: string; tier: '' | 'free' | 'paid'; main: Slot; backup: Slot; backups?: Slot[]; tested?: string[] }
@@ -51,7 +53,7 @@ export default function SettingsPage() {
   return (
     <div className="space-y-8">
     <div className="max-w-2xl space-y-4">
-      <h1 className="text-lg font-semibold">Cài đặt AI (Gemini)</h1>
+      <PageTitle icon={Sparkles} title="Cài đặt AI (Gemini)" />
       <div className="rounded-lg border bg-sky-50 p-3 text-sm text-sky-900">
         <p className="font-medium">Gói Google AI Pro / Ultra (đăng ký ở ứng dụng Gemini) không áp dụng cho khoá API.</p>
         <p className="mt-1">Muốn quét nhiều và ổn định: tạo khoá ở Google AI Studio (aistudio.google.com/apikey), gắn tài khoản thanh toán (Cloud Billing) cho project của khoá, rồi dán vào ô &quot;Khoá chính&quot; bên dưới. Khoá chỉ lưu trên máy chủ Apps Script, không hiện lại trên giao diện.</p>

@@ -7,7 +7,7 @@ export const maxDuration = 60;
 
 /** Hành động cần phiên đăng nhập: token Apps Script được thêm vào đầu danh sách tham số ở phía server. */
 const AUTHED = new Set([
-  'getMe', 'changeMyPassword', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport',
+  'getMe', 'changeMyPassword', 'createWebHandoff', 'listRecords', 'getRawFile', 'updateRecord', 'deleteRecord', 'updateSyncStatus', 'logExport',
   'listUsers', 'createUser', 'updateUser', 'resetUserPassword', 'deleteUser', 'setUserAiKey',
   'getAiConfig', 'setAiConfig', 'testAiConfig',
   'getAnonConfig', 'setAnonConfig',

@@ -4,8 +4,11 @@ import { api, errMsg } from '@/lib/api';
 import { fmtCell, monthStart, rowKey, SOURCE_LABEL, today } from '@/lib/format';
 import { exportRecords } from '@/lib/exportXlsx';
 import RecordModal from '@/components/RecordModal';
+import { Badge, PageTitle, type Tone } from '@/components/ui';
+import { AlertTriangle, CheckCircle2, Clock, Database, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import type { AppConfig, ListResult, RecordRow } from '@/lib/types';
 
+const SYNC: Record<string, [Tone, typeof Clock]> = { PENDING: ['amber', Clock], FILLED: ['green', CheckCircle2], ERROR: ['red', AlertTriangle] };
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').toLowerCase();
 
 export default function RecordsPage() {
@@ -47,7 +50,8 @@ export default function RecordsPage() {
   const cols = type?.fields || [];
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-white p-3">
+      <PageTitle icon={Database} title="Bản ghi" />
+      <div className="card flex flex-wrap items-end gap-3 p-3">
         <div><label className="label">Loại tài liệu</label>
           <select className="input" value={code} onChange={(e) => setCode(e.target.value)}>{cfg?.types.map((t) => <option key={t.code} value={t.code}>{t.label}</option>)}</select></div>
         <div><label className="label">Từ ngày</label><input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
@@ -55,8 +59,8 @@ export default function RecordsPage() {
         <div><label className="label">Đồng bộ FBO</label>
           <select className="input" value={sync} onChange={(e) => setSync(e.target.value)}><option value="">Tất cả</option><option>PENDING</option><option>FILLED</option><option>ERROR</option></select></div>
         <div className="min-w-[200px] flex-1"><label className="label">Lọc chữ (không phân biệt hoa thường, dấu)</label><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tên, số, nơi…" /></div>
-        <button className="btn" onClick={() => void load()} disabled={loading}>{loading ? 'Đang tải…' : 'Tải lại'}</button>
-        <button className="btn btn-primary" onClick={() => void doExport()} disabled={!rows.length}>Xuất Excel</button>
+        <button className="btn" onClick={() => void load()} disabled={loading}><RefreshCw size={15} aria-hidden />{loading ? 'Đang tải…' : 'Tải lại'}</button>
+        <button className="btn btn-primary" onClick={() => void doExport()} disabled={!rows.length}><FileSpreadsheet size={15} aria-hidden />Xuất Excel</button>
       </div>
 
       {err && <p className="rounded bg-red-50 p-2 text-sm text-red-700">{err}</p>}
@@ -76,7 +80,7 @@ export default function RecordsPage() {
                 <td className="whitespace-nowrap px-2 py-1.5">{r.scan_timestamp}</td>
                 <td className="px-2 py-1.5">{r.scanned_by}</td>
                 <td className="px-2 py-1.5">{SOURCE_LABEL[r.source || ''] || r.source || ''}</td>
-                <td className="px-2 py-1.5"><span className={`rounded px-1.5 py-0.5 text-xs ${r.fbo_sync_status === 'FILLED' ? 'bg-green-100 text-green-800' : r.fbo_sync_status === 'ERROR' ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700'}`}>{r.fbo_sync_status || 'PENDING'}</span></td>
+                <td className="px-2 py-1.5"><Badge tone={(SYNC[r.fbo_sync_status || 'PENDING'] ?? SYNC.PENDING)[0]} icon={(SYNC[r.fbo_sync_status || 'PENDING'] ?? SYNC.PENDING)[1]}>{r.fbo_sync_status || 'PENDING'}</Badge></td>
                 {cols.map((f) => <td key={f.k} className={`max-w-[260px] truncate px-2 py-1.5 ${f.type === 'number' ? 'text-right' : ''}`} title={fmtCell(f, r[f.k])}>{fmtCell(f, r[f.k])}</td>)}
               </tr>
             ))}
