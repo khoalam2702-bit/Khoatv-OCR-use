@@ -350,7 +350,7 @@ body.embed #tabs,body.embed #btnPw{display:none!important}
         if (m.indexOf('SESSION_EXPIRED') >= 0) { signOut(true); reject(new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')); }
         else if (m.indexOf('MUST_CHANGE_PASSWORD') >= 0) { openPw(true); reject(new Error('Bạn phải đổi mật khẩu trước khi tiếp tục.')); }
         else {
-          var mk = /\s*\[\[RETRY_AFTER:(\d+)\]\]\s*$/.exec(m), er = new Error(m.replace(/^Error:\s*/, '').replace(/\s*\[\[RETRY_AFTER:\d+\]\]\s*$/, '').replace(/\s*\[\[OWN_QUOTA\]\]/, ''));
+          var mk = /\s*\[\[RETRY_AFTER:(\d+)\]\]\s*$/.exec(m), er = new Error(m.replace(/^Error:\s*/, '').replace(/\s*\[\[RETRY_AFTER:\d+\]\]\s*$/, '').replace(/\s*\[\[OWN_QUOTA\]\]/, '').replace(/\s*\[\[OUT_OF_CREDIT\]\]/, ''));
           if (mk) er.retryAfter = Number(mk[1]);
           reject(er);
         }
