@@ -44,4 +44,14 @@ assert.deepStrictEqual(sent, [SHARED]);
 
 set('ctya', { clear: true });
 assert.strictEqual(props.USER_GEMINI_KEY_ctya, undefined);
+// khoá dùng thử: chỉ dùng khoá đó, báo lỗi như khoá chung (không nhắc khoá riêng); ghi lại token của lần gọi
+const TRIAL = 'AIzaSy' + 'D'.repeat(33);
+Object.keys(store).forEach((k) => delete store[k]);
+js(`USER_AI_ = { user: '_dung_thu', key: '${TRIAL}', trial: true }; USAGE_ = [];`);
+sent.length = 0; plan = [resp(200, JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"so_cccd":"9"}' }] } }], usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 200, thoughtsTokenCount: 50 } }))];
+scan();
+assert.deepStrictEqual(sent, [TRIAL]);
+assert.deepStrictEqual(JSON.parse(js('JSON.stringify(USAGE_.map((u) => [u.vao, u.ra]))')), [[1000, 250]]);
+plan = [resp(429)];
+assert.throws(scan, (e) => /hết hạn mức/.test(e.message) && !/riêng|OWN_QUOTA/.test(e.message));
 console.log('userkey.test OK');

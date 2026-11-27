@@ -150,7 +150,7 @@ async function loadConfig() {
   const byCode = new Map(cfg.types.map((t) => [t.code, t]));
   state.config = {
     types: ENABLED_TYPES.map((c) => byCode.get(c)).filter(Boolean),
-    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles, scanPer10Min: cfg.scanPer10Min || DEFAULT_LIMITS.scanPer10Min, anonPerDay: Number(cfg.anonPerDay) || 0, anonResetHours: Number(cfg.anonResetHours) || 48, sessionHours: cfg.sessionHours || DEFAULT_LIMITS.sessionHours }
+    limits: { maxFileBytes: cfg.maxFileBytes || DEFAULT_LIMITS.maxFileBytes, maxTotalBytes: cfg.maxTotalBytes || DEFAULT_LIMITS.maxTotalBytes, maxFiles: cfg.maxFiles || DEFAULT_LIMITS.maxFiles, scanPer10Min: cfg.scanPer10Min || DEFAULT_LIMITS.scanPer10Min, anonPerDay: Number(cfg.anonPerDay) || 0, anonResetHours: Number(cfg.anonResetHours) || 48, blockTrial: !!cfg.blockTrial, sessionHours: cfg.sessionHours || DEFAULT_LIMITS.sessionHours }
   };
 }
 
@@ -163,6 +163,8 @@ async function enter(keepDraft) {
   checkFboPermission();
   resetScan(keepDraft);
   show('scan');
+  // Máy đã đăng nhập tài khoản thì không còn lượt dùng thử (quản trị viên không bị áp dụng); lỗi thì bỏ qua
+  if (state.auth.me.role !== 'ADMIN') getDeviceId().then((id) => api('bindDevice', [id])).catch(() => {});
 }
 
 /* ---------- Bước 1-2: chọn loại, thêm tệp ---------- */
@@ -274,7 +276,7 @@ function renderCredit() {
   bar.hidden = !c.line || !$('view-login').hidden;
   bar.className = 'credit' + (c.warn ? ' warn' : '');
   $('credit-line').textContent = c.line;
-  const trial = !!(state.anon && v && c.short);
+  const trial = !!(state.anon && v && c.short && !v.blocked);
   const note = $('credit-note');
   note.hidden = !trial;
   if (trial) {
@@ -408,7 +410,9 @@ function stopScanProgress(success, detail) {
 let scanStop = null; // lượt quét đang chạy, để nút Dừng huỷ
 function showOwnQuota(text) {
   $('own-quota-text').textContent = text || '';
-  $('btn-scan-anon').hidden = !(state.config && state.config.limits.anonPerDay > 0);
+  // máy đã đăng nhập bị chặn dùng thử thì không mời quét không đăng nhập (trừ quản trị viên)
+  const blocked = state.config && state.config.limits.blockTrial && !(state.auth && state.auth.me.role === 'ADMIN');
+  $('btn-scan-anon').hidden = !(state.config && state.config.limits.anonPerDay > 0) || !!blocked;
   $('own-quota').hidden = !text;
 }
 

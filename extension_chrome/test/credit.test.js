@@ -18,6 +18,7 @@ test('hiển thị lượt và khoá nút Quét', () => {
   assert.equal(creditStatus({ remaining: 1, low: 0 }, 1).blocked, false);
   assert.equal(creditStatus({ remaining: 0, resetAt: 0 }, 0).blocked, false); // chỉ đọc QR
   assert.equal(creditStatus({ remaining: 0, resetAt: 5 }).line, 'Đã hết lượt dùng thử.');
+  assert.match(creditStatus({ remaining: 0, resetAt: 0, blocked: true }).line, /đã đăng nhập/);
 });
 test('báo trừ lượt: lỗi mạng thì giữ phiếu gửi lại, đúng chủ phiếu, phiếu hỏng thì bỏ', async () => {
   let list = [], fail = true; const sent = [], got = [];

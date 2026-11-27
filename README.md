@@ -261,4 +261,6 @@ Chuyên ngành trên CV được đối chiếu với danh mục chuyên ngành 
 - Không đăng nhập: lượt dùng thử theo thiết bị, hết thì tự cấp lại sau 48 giờ; có nút "Đề nghị gia hạn số lượt" (tên công ty, số điện thoại).
 - Web Admin > Lượt quét: bậc thang số tiền / số lượt, gia hạn (đã thu / chờ thanh toán), điều chỉnh, chuyển lượt, danh sách cần gia hạn, cài đặt.
 - Dữ liệu nằm trong file `OCR_USERS`: các sheet `LUOT_VI`, `LUOT_NHATKY`, `LUOT_DOT`, `LUOT_DENGHI` (tự tạo). Không sửa tay.
-
+- Khoá dùng thử: chọn khoá chung (trả phí) hoặc khoá miễn phí riêng (Script Property `GEMINI_TRIAL_KEY`, khai ở Cài đặt lượt), áp cho máy không đăng nhập và tài khoản chưa mua đợt nào.
+- Máy đã đăng nhập tài khoản OCR (không phải ADMIN) không còn dùng thử; có công tắc ở Cài đặt lượt.
+- Token mỗi lần gọi Gemini được cộng dồn theo ngày ở sheet `LUOT_TOKEN`; Web Admin có mục Khách hàng và Doanh thu - chi phí (chi phí là ước tính theo đơn giá khai báo).
