@@ -70,7 +70,7 @@ Cài thử: `chrome://extensions` → bật Developer mode → Load unpacked →
 
 ### Cấu hình trung tâm và tài khoản đã lưu
 
-- **Link bản triển khai Apps Script** nằm ở một nơi duy nhất: dòng `var APP_URL = '...'` trong `public/index.html` trên GitHub (AutoSynCode tự cập nhật sau mỗi lần deploy). Extension đọc tệp này (`linkUrl` trong `extension_chrome/config.json`) mỗi lần mở Side Panel; biến `GAS_WEB_APP_URL` trên Vercel chỉ là dự phòng. Link **không** lưu trong extension, người dùng không nhập link. Lần đầu cần có mạng; sau đó extension giữ bản đã lấy khi mất mạng. Địa chỉ FBO mặc định (tuỳ chọn) lấy từ `EXTENSION_FBO_ORIGINS` trên Vercel; mặc định không có, người dùng tự thêm ở Cài đặt.
+- **Link bản triển khai Apps Script** nằm ở một nơi duy nhất: dòng `var APP_URL = '...'` trong `public/index.html` trên GitHub (AutoSynCode tự cập nhật sau mỗi lần deploy). Extension đọc tệp này (`linkUrl` trong `extension_chrome/config.json`) mỗi lần mở Side Panel; Web Admin (proxy `/api/gas`, trang Quét, `/api/extension-config`) cũng đọc đúng tệp này (đọc lại sau tối đa 60 giây); biến `GAS_WEB_APP_URL` trên Vercel chỉ là dự phòng khi không đọc được GitHub. Mật khẩu đăng nhập được gửi tới link này nên cần giữ quyền ghi nhánh `main`. Link **không** lưu trong extension, người dùng không nhập link. Lần đầu cần có mạng; sau đó extension giữ bản đã lấy khi mất mạng. Địa chỉ FBO mặc định (tuỳ chọn) lấy từ `EXTENSION_FBO_ORIGINS` trên Vercel; mặc định không có, người dùng tự thêm ở Cài đặt.
 - **Nhớ tài khoản OCR:** tên đăng nhập, phiên (5,5 giờ) và, nếu tích "Ghi nhớ", mật khẩu mã hoá AES-GCM (khoá không xuất được trong IndexedDB, không đồng bộ). Hết phiên thì tự đăng nhập lại; bấm Đăng xuất sẽ xoá mật khẩu đã nhớ.
 - **Đăng nhập FBO đã lưu** theo từng địa chỉ (Cài đặt, mục 3): nút "Đăng nhập FBO" ở Side Panel điền Công ty, Tên, Đơn vị, Mật khẩu và bấm Nhận ở tab hiện tại.
 - Địa chỉ FBO trong cấu hình chỉ cần cấp quyền một lần (banner "Cấp quyền FBO" ở Side Panel).
@@ -234,7 +234,7 @@ Nếu pipeline báo lỗi xác thực, chạy lại `clasp login` trên máy và
 ## Gộp về một domain (Web Admin + giao diện quét)
 
 - Một link duy nhất: `https://khoatv-ocr-extensions.vercel.app` (dự án `admin_webapp`). Đăng nhập Web Admin xong vào thẳng **Quét OCR**; thanh menu cùng trang có **Bản ghi**, **Tài khoản**, **Cài đặt AI**.
-- **Quét OCR** (`/scan`) nhúng ứng dụng Apps Script ngay trong khung nội dung, dưới thanh menu. Địa chỉ Apps Script lấy từ biến môi trường **`GAS_WEB_APP_URL`** của dự án Web Admin trên Vercel (cùng biến dùng cho proxy `/api/gas` và `/api/extension-config`). Chưa đặt thì trang báo "Chưa cấu hình". Đổi link Web App thì sửa biến này rồi Redeploy.
+- **Quét OCR** (`/scan`) nhúng ứng dụng Apps Script ngay trong khung nội dung, dưới thanh menu. Địa chỉ Apps Script đọc từ dòng `APP_URL` trong `public/index.html` trên GitHub; biến `GAS_WEB_APP_URL` chỉ là dự phòng. Đổi link Web App không cần Redeploy.
 - `/app` là bản **toàn màn hình, không cần đăng nhập Web Admin** (ứng dụng có đăng nhập OCR riêng), dùng cho người chỉ cần quét. Link cũ `khoatv-ocr-use.vercel.app` tự chuyển hướng sang `/app` (`vercel.json` ở thư mục gốc).
 - `public/index.html` giữ nguyên vì AutoSynCode cập nhật `APP_URL` trong đó và extension đọc `APP_URL` từ tệp này trên GitHub.
 
